@@ -89,12 +89,3 @@ class Tokenizer(Generic[TokenRule]):
 
             pos = match.end()
             char += len(literal)
-
-
-
-tokenizer = Tokenizer(BNFRules)
-
-
-with open("bnf.txt") as f:
-    for token in tokenizer.read(f.read()):
-        print(token)
