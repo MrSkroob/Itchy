@@ -14,12 +14,16 @@ class Token(Generic[TokenRule]):
     line: int
     char: int
 
+# these tend to be treated specially other than the other rules below:
+class GenericRules(StrEnum):
+    Whitespace = r"[ \t]+"
 
-class Keyword(StrEnum):
+# could also be considered as compiler rules. 
+# definitions provide, well, definitions for certain rules that haven't been defined explicitly in
+# your BNF file. 
+# typically, they'd be rules that are too generic or simple to warrant a rule, like numbers and symbols and keywords.
+class Definitions(StrEnum):
     NoRefresh = r"\b(norefresh)\b"
-    Type = r"\b(number|string|list|bool|any)\b"
-    Bool = r"\b(true)|(false)\b"
-    BoolOp = r"(and)|(or)"
     Define = r"\b(define)\b"
     ElseIf = r"\b(elseif)\b"
     Return = r"\b(return)\b"
@@ -34,6 +38,25 @@ class Keyword(StrEnum):
     Let = r"\b(let)\b"
     If = r"\b(if)\b"
     In = r"\b(in)\b"
+    Number = r"[0-9][_0-9]*(\.[0-9][_0-9]*)?"
+    String = r"[a-z0-9]*(\"(?:\\.|[^\\\"])*\"|\'(?:\\.|[^\\'])*\')"
+    Bool = r"\b(true)|(false)\b"
+    Symbol = r"([a-zA-Z_][a-zA-Z0-9_]*)|\$"
+    Binop = r"\+|-|\*|\/|\^|\%|\.{2}|(<=)|<|(>=)|>|(==)|(!=)|(and)|(or)"
+    Assign = r"=|(\*=)|(\%=)|(\^=)|(\+=)|(-=)|(/=)"
+    Unop = r"-|(not)"
+    SingleEqual = r"="
+    Type = r"\b(number)|(string)|(list)|(bool)\b"
+    Colon = r":"
+    Dot = r"\."
+    FieldSeperator = r","
+    OpenBracket = r"\("
+    OpenSquareBracket = r"\["
+    OpenCurlyBracket = r"\{"
+    CloseBracket = r"\)"
+    CloseSquareBracket = r"\]"
+    CloseCurlyBracket = r"\}"
+    StatementSeperator = r"[\n;]"
 
 
 class BNFRules(StrEnum):
@@ -44,7 +67,6 @@ class BNFRules(StrEnum):
     SquareBrackets = r"(?<!\")\[(.*?)\](?!\")"
     Rule = r"<\w*>"
     StringLiteral = r"[a-z0-9]*(\"(?:\\.|[^\\\"])*\"|\'(?:\\.|[^\\'])*\')"
-    # Symbol = r"<([a-zA-Z_][a-zA-Z0-9_]*)>|<\$>"
     Whitespace = r"[ \t]+"
     Pipe = r"\|"
     StatementSeperator = r"[\n]+"
@@ -53,7 +75,6 @@ class BNFRules(StrEnum):
 class Tokenizer(Generic[TokenRule]):
     def __init__(self, rules: type[TokenRule]) -> None:
         # compile the set of regex into singular regex.
-
         parts: list[str] = []
         for rule in rules:
             parts.append(f"(?P<{rule.name}>{rule.value})")
@@ -65,12 +86,14 @@ class Tokenizer(Generic[TokenRule]):
         line = 1
         char = 1
         pos = 0
+        in_comment = False
 
         while pos < len(text):
             if text[pos] == "\n":
                 line += 1
                 char = 1
                 pos += 1
+                in_comment = False
                 continue
 
             match = self.regex.match(text, pos)
@@ -82,10 +105,15 @@ class Tokenizer(Generic[TokenRule]):
             literal = match.group()
 
             if group is None:
-                raise AssertionError("Empty group [this should not happen]")
+                raise AssertionError("Empty group")
 
             kind = self.rules[group]
-            yield Token(kind, literal, line, char)
+
+            if kind.name == "Comment":
+                in_comment = True
+
+            if not in_comment:
+                yield Token(kind, literal, line, char)
 
             pos = match.end()
             char += len(literal)
