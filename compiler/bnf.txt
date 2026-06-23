@@ -1,0 +1,32 @@
+<chunk> ::= {<stat>} [<laststat>]
+<stat> ::= <whilestat> | <ifstat> | <forstat> | <functionstat> | <vardefstat> | <varassignstat> | <wrap> | <StatementSeperator>
+
+<whilestat> ::= <While> <equation> <wrap>
+<ifstat> ::= <If> <equation> <wrap> {<ElseIf> <equation> <wrap>} [<Else> <wrap>]
+<forstat> ::= <For> <Symbol> <forbody> <wrap>
+<functionstat> ::= [<NoRefresh>] <Define> <function>
+<vardefstat> ::= [<Shared>] <Type> <Symbol> <StatementSeperator>
+<varassignstat> ::= <var> <assignorcall>
+
+<assignorcall> ::= <Assign> <equation> | <functioncall>
+<forbody> ::= <SingleEqual> <equation> <FieldSeperator> <equation> <FieldSeperator> <equation> | <In> <var>
+<functioncall> ::= <args> {<args>}
+<namelist> ::= <Symbol> {<FieldSeperator> <Symbol>}
+<tableconstructor> ::= <OpenSquareBracket> [<explist1>] <CloseSquareBracket>
+<wrap> ::= <OpenCurlyBracket> [<chunk>] <CloseCurlyBracket>
+<function> ::= <Symbol> <funcbody>
+<funcbody> ::= <OpenBracket> [<paramlist>] <CloseBracket> <wrap>
+<slice> ::= <OpenSquareBracket> <equation> <CloseSquareBracket>
+// <exp> ::= <OpenBracket> <equation> <CloseBracket> | <equation>
+<equation> ::= <bracketequation> {<Binop> <equation>} | [<Unop>] <literals> {<Binop> <equation>}
+<bracketequation> ::= <OpenBracket> [<Unop>] <literals> {<Binop> <equation>} <CloseBracket>
+<var> ::= <Symbol> {<Dot> <Symbol>} [<slice>]
+<literals> ::= <Bool> | <Number> | <String> | <var> [<functioncall>] | <tableconstructor>
+<explist1> ::= <equation> {<FieldSeperator> <explist1>}
+<laststat> ::= <Return> [<explist1>] | <Break> | <StatementSeperator>
+<varlist1> ::= <literals> {<FieldSeperator> <literals>}
+<args> ::= <OpenBracket> [<varlist1>] <CloseBracket>
+<argtype> ::= <Symbol> <Colon> <Type>
+<paramlist> ::= <argtype> {<FieldSeperator> <argtype>}
+
+// note that rules with capital letters are terminators. 
