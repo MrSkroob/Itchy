@@ -58,7 +58,7 @@ class Definitions(StrEnum):
     CloseCurlyBracket = r"\}"
     StatementSeperator = r"[\n;]"
 
-
+# regex that is vital in interpreting regex. 
 class BNFRules(StrEnum):
     Flag = "^--!"
     Comment = r"//.*"
@@ -66,7 +66,7 @@ class BNFRules(StrEnum):
     CurlyBrackets = r"(?<!\")\{(.*?)\}(?!\")"
     SquareBrackets = r"(?<!\")\[(.*?)\](?!\")"
     Rule = r"<\w*>"
-    StringLiteral = r"[a-z0-9]*(\"(?:\\.|[^\\\"])*\"|\'(?:\\.|[^\\'])*\')"
+    # StringLiteral = r"[a-z0-9]*(\"(?:\\.|[^\\\"])*\"|\'(?:\\.|[^\\'])*\')"
     Whitespace = r"[ \t]+"
     Pipe = r"\|"
     StatementSeperator = r"[\n]+"
@@ -86,14 +86,12 @@ class Tokenizer(Generic[TokenRule]):
         line = 1
         char = 1
         pos = 0
-        in_comment = False
 
         while pos < len(text):
             if text[pos] == "\n":
                 line += 1
                 char = 1
                 pos += 1
-                in_comment = False
                 continue
 
             match = self.regex.match(text, pos)
@@ -109,11 +107,14 @@ class Tokenizer(Generic[TokenRule]):
 
             kind = self.rules[group]
 
-            if kind.name == "Comment":
-                in_comment = True
-
-            if not in_comment:
-                yield Token(kind, literal, line, char)
+            yield Token(kind, literal, line, char)
 
             pos = match.end()
             char += len(literal)
+
+
+if __name__ == "__main__":
+    tokenizer = Tokenizer(BNFRules)
+    with open("bnf.txt") as f:
+        for token in tokenizer.read(f.read()):
+            print(token)
