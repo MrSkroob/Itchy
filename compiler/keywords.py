@@ -61,7 +61,7 @@ class Tokenizer(Generic[TokenRule]):
         self.rules = rules
         self.regex = re.compile("|".join(parts))
 
-    def read(self, text: str):
+    def read(self, text: str) -> Iterator[Token[TokenRule]]:
         line = 1
         char = 1
         pos = 0
