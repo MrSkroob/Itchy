@@ -33,14 +33,10 @@ class Repeat(GrammarNode):
     child: GrammarNode
 
 
-@dataclass(frozen=True)
-class TempNonTerminal(GrammarNode):
-    rule: str
-
-
-@dataclass(frozen=True)
+@dataclass
 class NonTerminal(GrammarNode):
-    rule: Rule
+    name: str
+    rule: Rule | None = None
 
 
 @dataclass(frozen=True)
@@ -241,7 +237,7 @@ class BNFTreeBuilder:
         match token.kind:
             case BNFRules.NonTerminalRule:
                 self.pos += 1
-                return TempNonTerminal(token.literal[1:-1])
+                return NonTerminal(token.literal[1:-1])
             case BNFRules.TerminalRule:
                 self.pos += 1
                 return Terminal(token.literal[1:-1])
@@ -267,7 +263,36 @@ class BNFTreeBuilder:
 
 
 def link_grammar(rules: list[Rule]):
-    pass
+    rule_map = {rule.name: rule for rule in rules}
+
+    for rule in rules:
+        link_node(rule.body, rule_map)
+
+
+def link_node(node: GrammarNode, rule_map: dict[str, Rule]) -> None:
+    match node:
+        case NonTerminal():
+            node.rule = rule_map[node.name]
+
+        case Sequence():
+            for child in node.children:
+                link_node(child, rule_map)
+
+        case Alternative():
+            for option in node.options:
+                link_node(option, rule_map)
+
+        case OptionalNode():
+            link_node(node.child, rule_map)
+
+        case Repeat():
+            link_node(node.child, rule_map)
+
+        case Terminal():
+            pass
+
+        case GrammarNode():
+            pass
 
 
 def build_parse_tree():
@@ -275,8 +300,7 @@ def build_parse_tree():
     with open("bnf.txt") as f:
         token_stream = tokenizer.read(f.read())
         rules = BNFTreeBuilder(list(token_stream)).parse_rules()
-        for rule in rules:
-            print(rule)
+        link_grammar(rules)
 
 
 if __name__ == "__main__":

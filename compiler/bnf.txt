@@ -24,7 +24,7 @@
 <addition> ::= <multiplication> { ("+" | "-") <multiplication> }
 <multiplication> ::= <unary> { ("*" | "/") <unary> }
 <unary> ::= [<Unop>] <primary>
-<primary> ::= <literal> | "(" <equation> ")"
+<primary> ::= <literals> | "(" <equation> ")"
 <var> ::= <Symbol> {<Dot> <Symbol>} [<slice>]
 <literals> ::= <Bool> | <Number> | <String> | <var> [<functioncall>] | <tableconstructor>
 <explist1> ::= <equation> {<FieldSeperator> <explist1>}
