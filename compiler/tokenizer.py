@@ -3,20 +3,23 @@ from typing import Generic, Iterator, TypeVar
 from enum import StrEnum
 import re
 
+# these tend to be treated specially other than the other rules below:
+class GenericRules(StrEnum):
+    Whitespace = "PLACEHOLDER_WHITESPACE"
+    StatementSeperator = "PLACEHOLDER_STATEMENT_SEPERATOR"
+    EOF = "EOF"
+
 
 TokenRule = TypeVar("TokenRule", bound=StrEnum)
 
 
 @dataclass(frozen=True)
 class Token(Generic[TokenRule]):
-    kind: TokenRule
+    kind: TokenRule | GenericRules
     literal: str
     line: int
     char: int
 
-# these tend to be treated specially other than the other rules below:
-class GenericRules(StrEnum):
-    Whitespace = r"[ \t]+"
 
 # could also be considered as compiler rules. 
 # definitions provide, well, definitions for certain rules that haven't been defined explicitly in
@@ -56,20 +59,25 @@ class Definitions(StrEnum):
     CloseBracket = r"\)"
     CloseSquareBracket = r"\]"
     CloseCurlyBracket = r"\}"
-    StatementSeperator = r"[\n;]"
+    Whitespace = r"[ \t]+"
+    StatementSeperator = r";"
 
 # regex that is vital in interpreting regex. 
 class BNFRules(StrEnum):
-    Flag = "^--!"
     Comment = r"//.*"
     Assign = "::="
-    CurlyBrackets = r"(?<!\")\{(.*?)\}(?!\")"
-    SquareBrackets = r"(?<!\")\[(.*?)\](?!\")"
-    Rule = r"<\w*>"
-    # StringLiteral = r"[a-z0-9]*(\"(?:\\.|[^\\\"])*\"|\'(?:\\.|[^\\'])*\')"
+    # CurlyBrackets = r"(?<!\")\{(.*?)\}(?!\")"
+    # SquareBrackets = r"(?<!\")\[(.*?)\](?!\")"
+    NonTerminalRule = r"<[a-z][a-z0-9_]*>"
+    TerminalRule = r"[a-z0-9]*(\"(?:\\.|[^\\\"])*\"|\'(?:\\.|[^\\'])*\')|<[A-Z][A-Za-z0-9_]*>"
+    OpenCurlyBrace = r"\{"
+    CloseCurlyBrace = r"\}"
+    OpenSquareBrace = r"\["
+    CloseSquareBrace = r"\]"
+    OpenBrace = r"\("
+    CloseBrace = r"\)"
     Whitespace = r"[ \t]+"
     Pipe = r"\|"
-    StatementSeperator = r"[\n]+"
 
 
 class Tokenizer(Generic[TokenRule]):
@@ -89,6 +97,7 @@ class Tokenizer(Generic[TokenRule]):
 
         while pos < len(text):
             if text[pos] == "\n":
+                yield Token(GenericRules.StatementSeperator, text[pos], line, char)
                 line += 1
                 char = 1
                 pos += 1
@@ -103,6 +112,7 @@ class Tokenizer(Generic[TokenRule]):
             literal = match.group()
 
             if group is None:
+                # should not happen, but we have it here to shut the linter up.
                 raise AssertionError("Empty group")
 
             kind = self.rules[group]
@@ -111,6 +121,8 @@ class Tokenizer(Generic[TokenRule]):
 
             pos = match.end()
             char += len(literal)
+            
+        yield Token(GenericRules.EOF, "", line, char)
 
 
 if __name__ == "__main__":

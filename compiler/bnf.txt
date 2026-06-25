@@ -9,24 +9,30 @@
 <varassignstat> ::= <var> <assignorcall>
 
 <assignorcall> ::= <Assign> <equation> | <functioncall>
-<forbody> ::= <SingleEqual> <equation> <FieldSeperator> <equation> <FieldSeperator> <equation> | <In> <var>
+<forbody> ::= "=" <equation> <FieldSeperator> <equation> <FieldSeperator> <equation> | <In> <var>
 <functioncall> ::= <args> {<args>}
 <namelist> ::= <Symbol> {<FieldSeperator> <Symbol>}
-<tableconstructor> ::= <OpenSquareBracket> [<explist1>] <CloseSquareBracket>
-<wrap> ::= <OpenCurlyBracket> [<chunk>] <CloseCurlyBracket>
+<tableconstructor> ::= "[" [<explist1>] "]"
+<wrap> ::= "{" [<chunk>] "}"
 <function> ::= <Symbol> <funcbody>
-<funcbody> ::= <OpenBracket> [<paramlist>] <CloseBracket> <wrap>
-<slice> ::= <OpenSquareBracket> <equation> <CloseSquareBracket>
-// <exp> ::= <OpenBracket> <equation> <CloseBracket> | <equation>
-<equation> ::= <bracketequation> {<Binop> <equation>} | [<Unop>] <literals> {<Binop> <equation>}
-<bracketequation> ::= <OpenBracket> [<Unop>] <literals> {<Binop> <equation>} <CloseBracket>
+<funcbody> ::= "(" [<paramlist>] ")" <wrap>
+<slice> ::= "[" <equation> "]"
+// <equation> ::= <bracketequation> {<Binop> <equation>} | [<Unop>] <literals> {<Binop> <equation>}
+// <bracketequation> ::= "(" [<Unop>] <literals> {<Binop> <equation>} ")"
+<equation> ::= <comparison>
+<comparison> ::= <addition> { ("=" | ">" | "<") <addition> }
+<addition> ::= <multiplication> { ("+" | "-") <multiplication> }
+<multiplication> ::= <unary> { ("*" | "/") <unary> }
+<unary> ::= [<Unop>] <primary>
+<primary> ::= <literal> | "(" <equation> ")"
 <var> ::= <Symbol> {<Dot> <Symbol>} [<slice>]
 <literals> ::= <Bool> | <Number> | <String> | <var> [<functioncall>] | <tableconstructor>
 <explist1> ::= <equation> {<FieldSeperator> <explist1>}
-<laststat> ::= <Return> [<explist1>] | <Break> | <StatementSeperator>
+<laststat> ::= <Break> | <StatementSeperator> | <Return> [<explist1>] |
 <varlist1> ::= <literals> {<FieldSeperator> <literals>}
-<args> ::= <OpenBracket> [<varlist1>] <CloseBracket>
+<args> ::= "(" [<varlist1>] ")"
 <argtype> ::= <Symbol> <Colon> <Type>
 <paramlist> ::= <argtype> {<FieldSeperator> <argtype>}
 
+// for performance, it's better to have non-terminators at the end. 
 // note that rules with capital letters are terminators. 
