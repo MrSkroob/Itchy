@@ -44,104 +44,6 @@ class Terminal(GrammarNode):
     child: str
 
 
-"""
-class EBNFParser:
-    def __init__(self, tokens: list[Token]) -> None:
-        self.tokens = tokens
-        self.pos = 0
-
-    def peek(self) -> Token | None:
-        if self.pos >= len(self.tokens):
-            return None
-        return self.tokens[self.pos]
-
-    def match(self, kind: Tok) -> Token | None:
-        tok = self.peek()
-        if tok is not None and tok.kind is kind:
-            self.pos += 1
-            return tok
-        return None
-
-    def expect(self, kind: Tok) -> Token:
-        tok = self.match(kind)
-        if tok is None:
-            raise SyntaxError(f"Expected {kind}, got {self.peek()}")
-        return tok
-
-    def parse_rule(self) -> Rule:
-        name_tok = self.expect(Tok.NONTERMINAL)
-        self.expect(Tok.DEFINE)
-        body = self.parse_alternative()
-
-        name = name_tok.literal[1:-1]
-        return Rule(name, body)
-
-    def parse_alternative(self) -> GrammarNode:
-        options = [self.parse_sequence()]
-
-        while self.match(Tok.PIPE):
-            options.append(self.parse_sequence())
-
-        if len(options) == 1:
-            return options[0]
-
-        return Alternative(options)
-
-    def parse_sequence(self) -> GrammarNode:
-        children: list[GrammarNode] = []
-
-        while True:
-            tok = self.peek()
-
-            if tok is None:
-                break
-
-            if tok.kind in {Tok.PIPE, Tok.RBRACK, Tok.RBRACE, Tok.RPAREN}:
-                break
-
-            children.append(self.parse_item())
-
-        if len(children) == 1:
-            return children[0]
-
-        return Sequence(children)
-
-    def parse_item(self) -> GrammarNode:
-        tok = self.peek()
-
-        if tok is None:
-            raise SyntaxError("Unexpected end of input")
-
-        if tok.kind is Tok.NONTERMINAL:
-            self.pos += 1
-            return NonTerminal(tok.literal[1:-1])
-
-        if tok.kind is Tok.TERMINAL:
-            self.pos += 1
-            return Terminal(tok.literal[1:-1])
-
-        if tok.kind is Tok.LBRACK:
-            self.pos += 1
-            child = self.parse_alternative()
-            self.expect(Tok.RBRACK)
-            return OptionalNode(child)
-
-        if tok.kind is Tok.LBRACE:
-            self.pos += 1
-            child = self.parse_alternative()
-            self.expect(Tok.RBRACE)
-            return Repeat(child)
-
-        if tok.kind is Tok.LPAREN:
-            self.pos += 1
-            child = self.parse_alternative()
-            self.expect(Tok.RPAREN)
-            return child
-
-        raise SyntaxError(f"Unexpected token: {tok}")
-"""
-
-
 BNFToken = Token[BNFRules]
 
 
@@ -301,6 +203,7 @@ def build_parse_tree():
         token_stream = tokenizer.read(f.read())
         rules = BNFTreeBuilder(list(token_stream)).parse_rules()
         link_grammar(rules)
+        return rules
 
 
 if __name__ == "__main__":
