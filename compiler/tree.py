@@ -15,33 +15,39 @@ class Rule:
 
 @dataclass(frozen=True)
 class Alternative(GrammarNode):
+    """A tuple of rules that one should be fulfilled"""
     options: tuple[GrammarNode, ...]
 
 
 @dataclass(frozen=True)
 class Sequence(GrammarNode):
+    """A tuple of rules that should all be fulfilled"""
     children: tuple[GrammarNode, ...]
 
 
 @dataclass(frozen=True)
 class OptionalNode(GrammarNode):
+    """A rule that can be fulfilled"""
     child: GrammarNode
 
 
 @dataclass(frozen=True)
 class Repeat(GrammarNode):
+    """A rule that can be fulfilled more than once"""
     child: GrammarNode
 
 
 @dataclass
 class NonTerminal(GrammarNode):
+    """A rule that requires the fulfilment of another rule"""
     name: str
     rule: Rule | None = None
 
 
 @dataclass(frozen=True)
 class Terminal(GrammarNode):
-    child: str
+    """A rule that can be fulfilled or not (no traversal)"""
+    child: Definitions
 
 
 BNFToken = Token[BNFRules]
@@ -142,7 +148,7 @@ class BNFTreeBuilder:
                 return NonTerminal(token.literal[1:-1])
             case BNFRules.TerminalRule:
                 self.pos += 1
-                return Terminal(token.literal[1:-1])
+                return Terminal(Definitions[token.literal[1:-1]])
             case BNFRules.OpenSquareBrace:
                 self.pos += 1
                 child = self.parse_alternative()
@@ -199,7 +205,7 @@ def link_node(node: GrammarNode, rule_map: dict[str, Rule]) -> None:
 
 def build_parse_tree():
     tokenizer = Tokenizer(BNFRules)
-    with open("bnf.txt") as f:
+    with open("compiler/bnf.txt") as f:
         token_stream = tokenizer.read(f.read())
         rules = BNFTreeBuilder(list(token_stream)).parse_rules()
         link_grammar(rules)
@@ -207,13 +213,15 @@ def build_parse_tree():
     return rules
 
 
-def walk_tree():
-    pass
+def get_root_node(rules: list[Rule]):
+    for rule in rules:
+        if rule.name == "chunk":
+            return rule
+    raise AssertionError("root node not found. check if bnf file has 'chunk' as a rule.")
 
 
 if __name__ == "__main__":
     rules = build_parse_tree()
     for rule in rules:
-        if rule.name == "<chunk>":
-            print(rule)
+        print(rule.name)
 

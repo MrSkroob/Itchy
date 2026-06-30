@@ -20,7 +20,6 @@ class Token(Generic[TokenRule]):
     line: int
     char: int
 
-
 # could also be considered as compiler rules. 
 # definitions provide, well, definitions for certain rules that haven't been defined explicitly in
 # your BNF file. 
@@ -62,7 +61,7 @@ class Definitions(StrEnum):
     Whitespace = r"[ \t]+"
     StatementSeperator = r";"
 
-# regex that is vital in interpreting regex. 
+# regex that is vital in interpreting bnf. 
 class BNFRules(StrEnum):
     Comment = r"//.*"
     Assign = "::="
@@ -80,15 +79,19 @@ class BNFRules(StrEnum):
     Pipe = r"\|"
 
 
+# compile the set of regex into singular regex.
+def compile_rules(rules: type[TokenRule]):
+    parts: list[str] = []
+    for rule in rules:
+        parts.append(f"(?P<{rule.name}>{rule.value})")
+
+    return re.compile("|".join(parts))
+
+
 class Tokenizer(Generic[TokenRule]):
     def __init__(self, rules: type[TokenRule]) -> None:
-        # compile the set of regex into singular regex.
-        parts: list[str] = []
-        for rule in rules:
-            parts.append(f"(?P<{rule.name}>{rule.value})")
-        
         self.rules = rules
-        self.regex = re.compile("|".join(parts))
+        self.regex = compile_rules(rules)
 
     def read(self, text: str) -> Iterator[Token[TokenRule]]:
         line = 1
@@ -122,11 +125,11 @@ class Tokenizer(Generic[TokenRule]):
             pos = match.end()
             char += len(literal)
             
-        yield Token(GenericRules.EOF, "", line, char)
+        yield Token(GenericRules.EOF, r"\Z", line, char)
 
 
 if __name__ == "__main__":
     tokenizer = Tokenizer(BNFRules)
-    with open("bnf.txt") as f:
+    with open("compiler/bnf.txt") as f:
         for token in tokenizer.read(f.read()):
             print(token)

@@ -1,4 +1,4 @@
-<chunk> ::= {<stat>} [<laststat>]
+<chunk> ::= {<stat>} [<laststat>] [<EOF>]
 <stat> ::= <whilestat> | <ifstat> | <forstat> | <functionstat> | <vardefstat> | <varassignstat> | <wrap> | <StatementSeperator>
 
 <whilestat> ::= <While> <equation> <wrap>
