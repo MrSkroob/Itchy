@@ -3,14 +3,14 @@ from dataclasses import dataclass
 from tokenizer import *
 
 
+class GrammarNode:
+    pass
+
+
 @dataclass(frozen=True)
 class Rule:
     name: str
     body: GrammarNode
-
-
-class GrammarNode:
-    pass
 
 
 @dataclass(frozen=True)
@@ -207,6 +207,13 @@ def build_parse_tree():
     return rules
 
 
+def walk_tree():
+    pass
+
+
 if __name__ == "__main__":
-    build_parse_tree()
+    rules = build_parse_tree()
+    for rule in rules:
+        if rule.name == "<chunk>":
+            print(rule)
 
