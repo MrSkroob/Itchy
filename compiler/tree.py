@@ -203,7 +203,8 @@ def build_parse_tree():
         token_stream = tokenizer.read(f.read())
         rules = BNFTreeBuilder(list(token_stream)).parse_rules()
         link_grammar(rules)
-        return rules
+    
+    return rules
 
 
 if __name__ == "__main__":

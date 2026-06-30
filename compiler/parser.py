@@ -1,16 +1,17 @@
 from tokenizer import *
-from tree import Node
+from tree import build_parse_tree
 
 
 class Parser:
     def __init__(self, bnf_file: str) -> None:
-        self.rules: Node[Token[BNFRules]] = Node(None)
+        self.rules = build_parse_tree()
         self.tokenizer = Tokenizer(Definitions)
 
         current_node = self.rules
 
         with open(bnf_file) as f:
             bnf_tokenizer = Tokenizer(BNFRules)
+            
             for token in bnf_tokenizer.read(f.read()):
                 # no need to interpret these rules.
                 if token.kind is BNFRules.Whitespace:
@@ -18,8 +19,8 @@ class Parser:
                 if token.kind is BNFRules.Comment:
                     continue
 
-                node = Node(token)
-                current_node.children.append(node)
+                node.append(node)
+                # current_node.children.append(node)
 
     
     def read(self, text: str) -> Iterator[Token[Definitions]]:
