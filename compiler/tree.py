@@ -15,11 +15,11 @@ class Rule:
     body: GrammarNode
 
 
-def print_array(array: Iterable[Any]):
+def print_array(array: Iterable[Any], brackets: tuple[str, str], glue: str):
     output: list[str] = []
     for thing in array:
         output.append(str(thing))
-    return f"[ {", ".join(output)} ]"
+    return f"{brackets[0]}{glue.join(output)}{brackets[1]}"
 
 
 @dataclass(frozen=True)
@@ -28,7 +28,7 @@ class Alternative(GrammarNode):
     options: tuple[GrammarNode, ...]
 
     def __repr__(self) -> str:
-        return print_array(self.options)
+        return print_array(self.options, ('', ''), " | ")
 
 
 @dataclass(frozen=True)
@@ -36,7 +36,7 @@ class Sequence(GrammarNode):
     """A tuple of rules that should all be fulfilled"""
     children: tuple[GrammarNode, ...]
     def __repr__(self) -> str:
-        return print_array(self.children)
+        return print_array(self.children, ('', ''), ', ')
 
 
 @dataclass(frozen=True)
@@ -45,7 +45,7 @@ class OptionalNode(GrammarNode):
     child: GrammarNode
 
     def __repr__(self) -> str:
-        return str(self.child)
+        return "[" + str(self.child) + "]"
 
 @dataclass(frozen=True)
 class Repeat(GrammarNode):
@@ -53,7 +53,7 @@ class Repeat(GrammarNode):
     child: GrammarNode
 
     def __repr__(self) -> str:
-        return str(self.child)
+        return "{" + str(self.child) + "}"
 
 
 @dataclass
@@ -88,6 +88,12 @@ class BNFTreeBuilder:
     def str_to_rule_enum(self, text: str):
         # first try matching rule directly
         try: 
+            matched_group = GenericRules[text]
+            return matched_group
+        except KeyError:
+            pass
+
+        try: 
             matched_group = Definitions[text]
             return matched_group
         except KeyError:
@@ -105,13 +111,6 @@ class BNFTreeBuilder:
             raise AssertionError("Empty group")
 
         return Definitions[group]
-
-    def return_token(self, token: BNFToken | None) -> None:
-        if token is None:
-            return
-        if self.saved_token is not None:
-            raise AssertionError("Should not return more than one token at once.")
-        self.saved_token = token
 
     def peek(self) -> BNFToken | None:
         if self.pos >= len(self.tokens):
@@ -139,7 +138,7 @@ class BNFTreeBuilder:
         rules: list[Rule] = []
         while True:
             rules.append(self.parse_rule())
-            while self.match(GenericRules.StatementSeperator):
+            while self.match(GenericRules.Newline):
                 pass
             if self.match(GenericRules.EOF):
                 break
@@ -173,7 +172,7 @@ class BNFTreeBuilder:
             if tok is None:
                 break
 
-            if tok.kind in {BNFRules.Pipe, BNFRules.CloseSquareBrace, BNFRules.CloseCurlyBrace, BNFRules.CloseBrace, GenericRules.StatementSeperator}:
+            if tok.kind in {BNFRules.Pipe, BNFRules.CloseSquareBrace, BNFRules.CloseCurlyBrace, BNFRules.CloseBrace, GenericRules.StatementSeperator, GenericRules.Newline}:
                 break
 
             children.append(self.parse_item())
@@ -254,7 +253,7 @@ def link_node(node: GrammarNode, rule_map: dict[str, Rule]) -> None:
 
 
 def build_parse_tree():
-    tokenizer = Tokenizer(BNFRules)
+    tokenizer = Tokenizer(BNFRules, {"Whitespace", "Comment"})
     with open("compiler/bnf.txt") as f:
         token_stream = tokenizer.read(f.read())
         rules = BNFTreeBuilder(list(token_stream)).parse_rules()
@@ -265,13 +264,13 @@ def build_parse_tree():
 
 def get_root_node(rules: list[Rule]):
     for rule in rules:
-        if rule.name == "chunk":
+        if rule.name == "program":
             return rule
-    raise AssertionError("root node not found. check if bnf file has 'chunk' as a rule.")
+    raise AssertionError("root node not found. check if bnf file has 'program' as a rule.")
 
 
 if __name__ == "__main__":
     rules = build_parse_tree()
     for rule in rules:
-        print(rule.name)
+        print(rule.body)
 

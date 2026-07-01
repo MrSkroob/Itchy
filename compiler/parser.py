@@ -8,10 +8,15 @@ class ParseResult:
     pos: int
 
 
+def print_token_safe(tokens: list[Token[Definitions]], pos: int):
+    return tokens[min(pos, len(tokens) - 1)].kind.name
+
+
 class Parser:
     def __init__(self) -> None:
         self.rules = build_parse_tree()
-        self.tokenizer = Tokenizer(Definitions)
+        # {"Whitespace", "Comment"}
+        self.tokenizer = Tokenizer(Definitions, {"Comment", "Whitespace", "Newline"})
         self.visited: dict[str, int] = {}
 
     def parse_node(self, node: GrammarNode, tokens: list[Token[Definitions]], pos: int) -> ParseResult:
@@ -26,9 +31,9 @@ class Parser:
             case Terminal(value):
                 if pos < len(tokens) and node.child.name == tokens[pos].kind.name:
                     self.visited.clear()
-                    print(f"Match OKAY: {tokens[pos].kind.name}, {node}")
+                    print(f"Match OKAY: {print_token_safe(tokens, pos)}, {node}")
                     return ParseResult(tokens[pos], pos + 1)
-                raise SyntaxError(f"Terminal rule not matched: {value.name} != {tokens[pos].kind.name}")
+                raise SyntaxError(f"Terminal rule not matched: {print_token_safe(tokens, pos)} != {value.name}")
             
             case NonTerminal(_, rule):
                 if rule is None:
@@ -45,46 +50,46 @@ class Parser:
                     if result is None:
                         raise AssertionError("Invalid tree - empty sequence")
                     
-                    print(f"Match OKAY: {tokens[pos].kind.name}, {node}")
+                    print(f"Match OKAY: {print_token_safe(tokens, pos)}, {node}")
 
                     return result
                 except SyntaxError as e:
                     print(e)
-                    raise SyntaxError(f"Could not match sequence. {tokens[pos].kind.name} not in {node}")
+                    raise SyntaxError(f"Could not match sequence. {print_token_safe(tokens, pos)} not in {node}")
 
             case Alternative(options):
+                print(f"Try match {print_token_safe(tokens, pos)} {node}")
                 for option in options:
                     try:
                         result = self.parse_node(option, tokens, pos)
-                        print(f"Match OKAY (so far): {tokens[pos].kind.name}, {node}")
+                        print(f"Success {print_token_safe(tokens, pos)} {node}")
                         return result
                     except SyntaxError as e:
-                        print(e)
                         pass
-                raise SyntaxError(f"No valid options. {tokens[pos].kind.name} not in {node}")
+                raise SyntaxError(f"No valid options. {print_token_safe(tokens, pos)} not in {node}")
         
             case OptionalNode(child):
                 try:
                     return self.parse_node(child, tokens, pos)
                 except SyntaxError:
-                    print(f"Skipping {node}")
+                    print(f"Skipping optional {node}")
                     return ParseResult(None, pos)
                 
             case Repeat(child):
+                print(f"Try match {print_token_safe(tokens, pos)} {node}")
                 while True:
                     try:
                         result = self.parse_node(child, tokens, pos)
+                        print(f"Success {print_token_safe(tokens, pos)} {node}")
                     except SyntaxError as e:
                         print(e)
-                        print(f"Skipping {node}")
+                        print(f"Exit repeat member {node}")
                         break
 
                     if result.pos == pos:
                         break
 
                     pos = result.pos
-
-                print(f"Match OKAY: {tokens[pos].kind.name}, {node}")
 
                 return ParseResult(None, pos)
             

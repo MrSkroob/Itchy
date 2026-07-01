@@ -5,8 +5,9 @@ import re
 
 # these tend to be treated specially other than the other rules below:
 class GenericRules(StrEnum):
-    Whitespace = "PLACEHOLDER_WHITESPACE"
-    StatementSeperator = "PLACEHOLDER_STATEMENT_SEPERATOR"
+    Whitespace = "WHITESPACE"
+    StatementSeperator = "STATEMENT_SEPERATOR"
+    Newline = "NEWLINE"
     EOF = "EOF"
 
 
@@ -25,6 +26,7 @@ class Token(Generic[TokenRule]):
 # your BNF file. 
 # typically, they'd be rules that are too generic or simple to warrant a rule, like numbers and symbols and keywords.
 class Definitions(StrEnum):
+    Comment = r"//.*"
     NoRefresh = r"\b(norefresh)\b"
     Define = r"\b(define)\b"
     ElseIf = r"\b(elseif)\b"
@@ -89,9 +91,10 @@ def compile_rules(rules: type[TokenRule]):
 
 
 class Tokenizer(Generic[TokenRule]):
-    def __init__(self, rules: type[TokenRule]) -> None:
+    def __init__(self, rules: type[TokenRule], blacklist: set[str]) -> None:
         self.rules = rules
         self.regex = compile_rules(rules)
+        self.blacklist = blacklist
 
     def read(self, text: str) -> Iterator[Token[TokenRule]]:
         line = 1
@@ -100,7 +103,8 @@ class Tokenizer(Generic[TokenRule]):
 
         while pos < len(text):
             if text[pos] == "\n":
-                yield Token(GenericRules.StatementSeperator, text[pos], line, char)
+                if GenericRules.Newline.name not in self.blacklist:
+                    yield Token(GenericRules.Newline, text[pos], line, char)
                 line += 1
                 char = 1
                 pos += 1
@@ -120,7 +124,7 @@ class Tokenizer(Generic[TokenRule]):
 
             kind = self.rules[group]
 
-            if kind.name not in {"Whitespace", "Comment"}:
+            if kind.name not in self.blacklist:
                 yield Token(kind, literal, line, char)
 
             pos = match.end()
@@ -129,8 +133,11 @@ class Tokenizer(Generic[TokenRule]):
         yield Token(GenericRules.EOF, r"\Z", line, char)
 
 
-if __name__ == "__main__":
-    regex = compile_rules(Definitions)
+# {"Whitespace", "Comment"}
 
-    match = regex.match("define")
-    print(match.lastgroup, match.group())
+
+if __name__ == "__main__":
+    tokenizer = Tokenizer(BNFRules, set())
+
+    for token in tokenizer.read(open('compiler/bnf.txt').read()):
+        print(token)
