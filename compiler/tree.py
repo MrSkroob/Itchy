@@ -1,9 +1,11 @@
 # special multi node tree for easier traversal
 from dataclasses import dataclass
 from tokenizer import *
+from typing import Any, Iterable
+from abstractclass import EmptyAbstractClass
 
 
-class GrammarNode:
+class GrammarNode(EmptyAbstractClass):
     pass
 
 
@@ -13,16 +15,28 @@ class Rule:
     body: GrammarNode
 
 
+def print_array(array: Iterable[Any]):
+    output: list[str] = []
+    for thing in array:
+        output.append(str(thing))
+    return f"[ {", ".join(output)} ]"
+
+
 @dataclass(frozen=True)
 class Alternative(GrammarNode):
     """A tuple of rules that one should be fulfilled"""
     options: tuple[GrammarNode, ...]
+
+    def __repr__(self) -> str:
+        return print_array(self.options)
 
 
 @dataclass(frozen=True)
 class Sequence(GrammarNode):
     """A tuple of rules that should all be fulfilled"""
     children: tuple[GrammarNode, ...]
+    def __repr__(self) -> str:
+        return print_array(self.children)
 
 
 @dataclass(frozen=True)
@@ -30,11 +44,16 @@ class OptionalNode(GrammarNode):
     """A rule that can be fulfilled"""
     child: GrammarNode
 
+    def __repr__(self) -> str:
+        return str(self.child)
 
 @dataclass(frozen=True)
 class Repeat(GrammarNode):
     """A rule that can be fulfilled more than once"""
     child: GrammarNode
+
+    def __repr__(self) -> str:
+        return str(self.child)
 
 
 @dataclass
@@ -43,11 +62,17 @@ class NonTerminal(GrammarNode):
     name: str
     rule: Rule | None = None
 
+    def __repr__(self) -> str:
+        return self.name
+
 
 @dataclass(frozen=True)
 class Terminal(GrammarNode):
     """A rule that can be fulfilled or not (no traversal)"""
-    child: Definitions
+    child: Definitions | GenericRules
+
+    def __repr__(self) -> str:
+        return self.child.name
 
 
 BNFToken = Token[BNFRules]
@@ -58,6 +83,28 @@ class BNFTreeBuilder:
         self.tokens = tokens
         self.saved_token = None
         self.pos = 0
+        self.regex = compile_rules(Definitions)
+
+    def str_to_rule_enum(self, text: str):
+        # first try matching rule directly
+        try: 
+            matched_group = Definitions[text]
+            return matched_group
+        except KeyError:
+            pass
+
+        # no match, so we try matching via regex instead (most likely is a literal string)
+        match = self.regex.match(text)
+        
+        if match is None:
+            raise KeyError(text)
+
+        group = match.lastgroup
+        if group is None:
+            # should not happen, but we have it here to shut the linter up.
+            raise AssertionError("Empty group")
+
+        return Definitions[group]
 
     def return_token(self, token: BNFToken | None) -> None:
         if token is None:
@@ -148,7 +195,10 @@ class BNFTreeBuilder:
                 return NonTerminal(token.literal[1:-1])
             case BNFRules.TerminalRule:
                 self.pos += 1
-                return Terminal(Definitions[token.literal[1:-1]])
+                try:
+                    return Terminal(self.str_to_rule_enum(token.literal[1:-1]))
+                except KeyError:
+                    return Terminal(GenericRules[token.literal[1:-1]])
             case BNFRules.OpenSquareBrace:
                 self.pos += 1
                 child = self.parse_alternative()
