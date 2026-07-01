@@ -91,7 +91,7 @@ class Parser:
                     )
                 
             case Repeat(child):
-                parsed_children: list[ParsedNode | Token[Definitions]] = []
+                parsed_children: list[ParsedNode | Token[Definitions]] = []  # type: ignore[no-redef]
 
                 while True:
                     try:
