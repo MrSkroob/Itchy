@@ -36,7 +36,7 @@ class Definitions(StrEnum):
     List = r"\b(list)\b"
     For = r"\b(for)\b"
     Var = r"\b(var)\b"
-    Not = r"\b(not)\b"
+    # Not = r"\b(not)\b"
     Let = r"\b(let)\b"
     If = r"\b(if)\b"
     In = r"\b(in)\b"
@@ -44,9 +44,9 @@ class Definitions(StrEnum):
     String = r"[a-z0-9]*(\"(?:\\.|[^\\\"])*\"|\'(?:\\.|[^\\'])*\')"
     Bool = r"\b(true)|(false)\b"
     Symbol = r"([a-zA-Z_][a-zA-Z0-9_]*)|\$"
-    Binop = r"\+|-|\*|\/|\^|\%|\.{2}|(<=)|<|(>=)|>|(==)|(!=)|(and)|(or)"
+    Binop = r"\.{2}|<=|>=|==|!=|\+|-|\*|/|\^|%|<|>|\b(and|or)\b"
     Assign = r"=|(\*=)|(\%=)|(\^=)|(\+=)|(-=)|(/=)"
-    Unop = r"-|(not)"
+    Unop = r"-|\b(not)\b"
     SingleEqual = r"="
     Type = r"\b(number)|(string)|(list)|(bool)\b"
     Colon = r":"
@@ -120,7 +120,8 @@ class Tokenizer(Generic[TokenRule]):
 
             kind = self.rules[group]
 
-            yield Token(kind, literal, line, char)
+            if kind.name not in {"Whitespace", "Comment"}:
+                yield Token(kind, literal, line, char)
 
             pos = match.end()
             char += len(literal)
@@ -129,7 +130,7 @@ class Tokenizer(Generic[TokenRule]):
 
 
 if __name__ == "__main__":
-    tokenizer = Tokenizer(BNFRules)
-    with open("compiler/bnf.txt") as f:
-        for token in tokenizer.read(f.read()):
-            print(token)
+    regex = compile_rules(Definitions)
+
+    match = regex.match("define")
+    print(match.lastgroup, match.group())

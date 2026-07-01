@@ -1,11 +1,11 @@
-<chunk> ::= {<stat>} [<laststat>] [<EOF>]
-<stat> ::= <whilestat> | <ifstat> | <forstat> | <functionstat> | <vardefstat> | <varassignstat> | <wrap> | <StatementSeperator>
+<chunk> ::= {<stat>} [<StatementSeperator>] [<laststat> [<StatementSeperator>]]
+<stat> ::= <wrap> | <whilestat> | <ifstat> | <forstat> | <functionstat> | <vardefstat> | <varassignstat>
 
 <whilestat> ::= <While> <equation> <wrap>
 <ifstat> ::= <If> <equation> <wrap> {<ElseIf> <equation> <wrap>} [<Else> <wrap>]
 <forstat> ::= <For> <Symbol> <forbody> <wrap>
 <functionstat> ::= [<NoRefresh>] <Define> <function>
-<vardefstat> ::= [<Shared>] <Type> <Symbol> <StatementSeperator>
+<vardefstat> ::= [<Shared>] <Type> <Symbol>
 <varassignstat> ::= <var> <assignorcall>
 
 <assignorcall> ::= <Assign> <equation> | <functioncall>
@@ -28,7 +28,7 @@
 <var> ::= <Symbol> {<Dot> <Symbol>} [<slice>]
 <literals> ::= <Bool> | <Number> | <String> | <var> [<functioncall>] | <tableconstructor>
 <explist1> ::= <equation> {<FieldSeperator> <explist1>}
-<laststat> ::= <Break> | <StatementSeperator> | <Return> [<explist1>] |
+<laststat> ::= <Break> | <Return> [<explist1>]
 <varlist1> ::= <literals> {<FieldSeperator> <literals>}
 <args> ::= "(" [<varlist1>] ")"
 <argtype> ::= <Symbol> <Colon> <Type>
