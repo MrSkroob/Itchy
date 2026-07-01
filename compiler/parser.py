@@ -1,10 +1,17 @@
+from __future__ import annotations
 from tokenizer import *
 from tree import *
 
 
+@dataclass(frozen=True)
+class ParsedNode():
+    name: str
+    children: tuple[ParsedNode | Token[Definitions], ...]
+
+
 @dataclass
-class ParseResult:
-    node: Token[Definitions] | None
+class ParseResult():
+    tree: ParsedNode | Token[Definitions]
     pos: int
 
 
@@ -41,21 +48,21 @@ class Parser:
                 return self.parse_node(rule.body, tokens, pos)
             
             case Sequence(children):
-                try:
-                    result = None
-                    for child in children:
-                        result = self.parse_node(child, tokens, pos)
-                        pos = result.pos
-                    
-                    if result is None:
-                        raise AssertionError("Invalid tree - empty sequence")
-                    
-                    print(f"Match OKAY: {print_token_safe(tokens, pos)}, {node}")
+                parsed_children: list[ParsedNode | Token[Definitions]] = []
+                result = None
+                for child in children:
+                    result = self.parse_node(child, tokens, pos)
+                    parsed_children.append(result.tree)
+                    pos = result.pos
+                
+                if result is None:
+                    raise AssertionError("Invalid tree - empty sequence")
+                
+                print(f"Match OKAY: {print_token_safe(tokens, pos)}, {node}")
 
-                    return result
-                except SyntaxError as e:
-                    print(e)
-                    raise SyntaxError(f"Could not match sequence. {print_token_safe(tokens, pos)} not in {node}")
+                return ParseResult(
+                    ParsedNode(Sequence.__name__, tuple(parsed_children)), pos
+                )
 
             case Alternative(options):
                 print(f"Try match {print_token_safe(tokens, pos)} {node}")
@@ -63,41 +70,63 @@ class Parser:
                     try:
                         result = self.parse_node(option, tokens, pos)
                         print(f"Success {print_token_safe(tokens, pos)} {node}")
-                        return result
-                    except SyntaxError as e:
-                        pass
+                        # return result
+                        return ParseResult(
+                            ParsedNode(Alternative.__name__, (result.tree,)),
+                            result.pos
+                        )
+                    except SyntaxError:
+                        continue
                 raise SyntaxError(f"No valid options. {print_token_safe(tokens, pos)} not in {node}")
         
             case OptionalNode(child):
                 try:
-                    return self.parse_node(child, tokens, pos)
+                    result = self.parse_node(child, tokens, pos)
+                    return ParseResult(
+                        ParsedNode(
+                            OptionalNode.__name__, (result.tree,)
+                        ),
+                        result.pos
+                    )
                 except SyntaxError:
-                    print(f"Skipping optional {node}")
-                    return ParseResult(None, pos)
+                    return ParseResult(
+                        ParsedNode(
+                            OptionalNode.__name__, ()
+                        ),
+                        pos
+                    )
                 
             case Repeat(child):
                 print(f"Try match {print_token_safe(tokens, pos)} {node}")
+                parsed_children: list[ParsedNode | Token[Definitions]] = []
+
                 while True:
                     try:
                         result = self.parse_node(child, tokens, pos)
                         print(f"Success {print_token_safe(tokens, pos)} {node}")
-                    except SyntaxError as e:
-                        print(e)
-                        print(f"Exit repeat member {node}")
+                    except SyntaxError:
                         break
 
                     if result.pos == pos:
                         break
 
+                    parsed_children.append(result.tree)
+
                     pos = result.pos
 
-                return ParseResult(None, pos)
+                return ParseResult(
+                    ParsedNode(Repeat.__name__, tuple(parsed_children)),
+                    pos
+                )
             
             case GrammarNode():
-                raise AssertionError("Reached bare GrammarNode")
+                raise TypeError("Reached bare GrammarNode")
+            
+
+    def build_ast():
+        pass
+
 
     def read(self, text: str) -> ParseResult:
         tokens = list(self.tokenizer.read(text))
         return self.parse_node(get_root_node(self.rules).body, tokens, 0)
-
-            
