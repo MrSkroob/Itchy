@@ -18,8 +18,6 @@
 <function> ::= <Symbol> <funcbody>
 <funcbody> ::= "(" [<paramlist>] ")" <wrap>
 <slice> ::= "[" <equation> "]"
-// <equation> ::= <bracketequation> {<Binop> <equation>} | [<Unop>] <literals> {<Binop> <equation>}
-// <bracketequation> ::= "(" [<Unop>] <literals> {<Binop> <equation>} ")"
 <equation> ::= <comparison>
 <comparison> ::= <addition> { ("=" | ">" | "<") <addition> }
 <addition> ::= <multiplication> { ("+" | "-") <multiplication> }

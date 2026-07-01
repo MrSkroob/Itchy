@@ -85,17 +85,15 @@ class BNFTreeBuilder:
         self.pos = 0
         self.regex = compile_rules(Definitions)
 
-    def str_to_rule_enum(self, text: str):
+    def str_to_rule_enum(self, text: str) -> GenericRules | Definitions:
         # first try matching rule directly
         try: 
-            matched_group = GenericRules[text]
-            return matched_group
+            return GenericRules[text]
         except KeyError:
             pass
 
         try: 
-            matched_group = Definitions[text]
-            return matched_group
+            return Definitions[text]
         except KeyError:
             pass
 
