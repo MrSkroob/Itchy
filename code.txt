@@ -9,3 +9,6 @@ define e() {
 define e2() {
 
 }
+
+
+hello[0]

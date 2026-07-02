@@ -1,6 +1,7 @@
 from __future__ import annotations
-from tokenizer import *
-from tree import *
+from dataclasses import dataclass
+from tokenizer import Definitions, Tokenizer, Token
+from tree import Terminal, NonTerminal, Alternative, OptionalNode, Repeat, Sequence, GrammarNode, build_parse_tree, get_root_node
 
 
 @dataclass(frozen=True)
@@ -118,7 +119,7 @@ class Parser:
             
             case GrammarNode():
                 raise TypeError("Reached bare GrammarNode")
-            
+
 
     def build_ast(self) -> None:
         raise NotImplementedError()

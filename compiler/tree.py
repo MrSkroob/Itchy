@@ -1,6 +1,7 @@
 # special multi node tree for easier traversal
 from dataclasses import dataclass
-from tokenizer import *
+# from tokenizer import *
+from tokenizer import BNFRules, Definitions, GenericRules, Token, Tokenizer, compile_rules
 from typing import Any, Iterable
 from abstractclass import EmptyAbstractClass
 
