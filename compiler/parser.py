@@ -19,6 +19,10 @@ def print_token_safe(tokens: list[Token[Definitions]], pos: int):
     return tokens[min(pos, len(tokens) - 1)].kind.name
 
 
+class ASTNode():
+    node_type: str
+
+
 class Parser:
     def __init__(self) -> None:
         self.rules = build_parse_tree()
@@ -35,7 +39,7 @@ class Parser:
 
         match node:
             case Terminal(value):
-                if pos < len(tokens) and node.child.name == tokens[pos].kind.name:
+                if pos < len(tokens) and value.name == tokens[pos].kind.name:
                     self.visited.clear()
                     return ParseResult(tokens[pos], pos + 1)
                 raise SyntaxError(f"Terminal rule not matched: {print_token_safe(tokens, pos)} != {value.name}")
@@ -50,6 +54,7 @@ class Parser:
                 result = None
                 for child in children:
                     result = self.parse_node(child, tokens, pos)
+                        
                     parsed_children.append(result.tree)
                     pos = result.pos
                 
@@ -71,7 +76,7 @@ class Parser:
                         )
                     except SyntaxError:
                         continue
-                raise SyntaxError(f"No valid options. {print_token_safe(tokens, pos)} not in {node}")
+                raise SyntaxError
         
             case OptionalNode(child):
                 try:

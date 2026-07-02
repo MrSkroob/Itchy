@@ -1,5 +1,5 @@
 <program> ::= <chunk> <EOF> 
-<chunk> ::= {<stat>} {<StatementSeperator>}  [<laststat>] {<StatementSeperator>}
+<chunk> ::= {<stat> {<StatementSeperator>}}   [<laststat> [<StatementSeperator>]]
 <stat> ::= <wrap> | <whilestat> | <ifstat> | <forstat> | <functionstat> | <vardefstat> | <varassignstat>
 
 <whilestat> ::= <While> <equation> <wrap>
@@ -27,7 +27,7 @@
 <var> ::= <Symbol> {<Dot> <Symbol>} [<slice>]
 <literals> ::= <Bool> | <Number> | <String> | <var> [<functioncall>] | <tableconstructor>
 <explist1> ::= <equation> {<FieldSeperator> <explist1>}
-<laststat> ::= {<StatementSeperator>} ( <Break> | <Return> [<explist1>] )
+<laststat> ::= <Break> | <Return> [<explist1>]
 <varlist1> ::= <literals> {<FieldSeperator> <literals>}
 <args> ::= "(" [<varlist1>] ")"
 <argtype> ::= <Symbol> <Colon> <Type>
