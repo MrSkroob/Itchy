@@ -1,7 +1,7 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from tokenizer import Definitions, Tokenizer, Token
-from tree import Terminal, NonTerminal, Alternative, OptionalNode, Repeat, Sequence, GrammarNode, build_parse_tree, get_root_node
+from tree import Rule, Terminal, NonTerminal, Alternative, OptionalNode, Repeat, Sequence, GrammarNode, build_parse_tree, get_root_node
 
 
 @dataclass(frozen=True)
@@ -9,11 +9,22 @@ class ParsedNode():
     name: str
     children: tuple[ParsedNode | Token[Definitions], ...]
 
+    def __repr__(self) -> str:
+        output: list[str] = []
+
+        for i in self.children:
+            output.append(str(i))
+
+        return f"[{', '.join(output)}]"
+
 
 @dataclass
 class ParseResult():
     tree: ParsedNode | Token[Definitions]
     pos: int
+
+    def __repr__(self) -> str:
+        return str(self.tree)
 
 
 def print_token_safe(tokens: list[Token[Definitions]], pos: int):
@@ -28,27 +39,24 @@ class Parser:
     def __init__(self) -> None:
         self.rules = build_parse_tree()
         self.tokenizer = Tokenizer(Definitions, {"Comment", "Whitespace", "Newline"})
-        self.visited: dict[str, int] = {}
+
+    def parse_rule(self, rule: Rule, tokens: list[Token[Definitions]], pos: int) -> ParseResult:
+        result = self.parse_node(rule.body, tokens, pos)
+
+        return ParseResult(ParsedNode(rule.name, (result.tree, )), result.pos)
 
     def parse_node(self, node: GrammarNode, tokens: list[Token[Definitions]], pos: int) -> ParseResult:
-        if type(node) is NonTerminal:
-            if node.name not in self.visited:
-                self.visited[node.name] = 0
-            self.visited[node.name] += 1
-            if self.visited[node.name] > 2:
-                raise SyntaxError("Recursion depth reached")
-
         match node:
             case Terminal(value):
                 if pos < len(tokens) and value.name == tokens[pos].kind.name:
-                    self.visited.clear()
                     return ParseResult(tokens[pos], pos + 1)
                 raise SyntaxError(f"Terminal rule not matched: {print_token_safe(tokens, pos)} != {value.name}")
             
             case NonTerminal(_, rule):
                 if rule is None:
                     raise AssertionError("Invalid tree - no linking rule")
-                return self.parse_node(rule.body, tokens, pos)
+
+                return self.parse_rule(rule, tokens, pos)
             
             case Sequence(children):
                 parsed_children: list[ParsedNode | Token[Definitions]] = []
@@ -76,7 +84,7 @@ class Parser:
                             result.pos
                         )
                     except SyntaxError:
-                        continue
+                        pass
                 raise SyntaxError
         
             case OptionalNode(child):
@@ -126,5 +134,8 @@ class Parser:
 
 
     def read(self, text: str) -> ParseResult:
+        root = get_root_node(self.rules)
         tokens = list(self.tokenizer.read(text))
-        return self.parse_node(get_root_node(self.rules).body, tokens, 0)
+        result = self.parse_rule(root, tokens, 0)
+
+        return result

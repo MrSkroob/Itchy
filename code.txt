@@ -1,14 +1,13 @@
-list hello
+list hello1
 
-define e() {
-    hello = [1, 2, 3]
+hello2 = [1, 2, 3]
 
+
+define hello() {
+    hello2[0] = 4
 }
 
 
-define e2() {
-
+if hello2[0] == 1 {
+    hello()
 }
-
-
-hello[0]

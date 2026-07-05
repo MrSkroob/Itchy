@@ -21,6 +21,9 @@ class Token(Generic[TokenRule]):
     line: int
     char: int
 
+    def __repr__(self) -> str:
+        return f"Token: {self.kind.name} on line {self.line}"
+
 # could also be considered as compiler rules. 
 # definitions provide, well, definitions for certain rules that haven't been defined explicitly in
 # your BNF file. 
