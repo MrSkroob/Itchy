@@ -815,6 +815,6 @@ def build_ast(tree: ParsedChild) -> Program:
     if isinstance(tree, Token):
         raise ValueError("gang what do you expect me to do with this")
 
-    assert tree.name == "program", "give me a root node"
+    assert tree.name == "program", f"give me a root node. i got {tree.name} instead :/"
 
     return build_program(tree)
