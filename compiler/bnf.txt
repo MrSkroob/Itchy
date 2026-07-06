@@ -1,6 +1,6 @@
-<program> ::= <chunk> <EOF> 
-<chunk> ::= {<stat> {<StatementSeperator>}}   [<laststat> [<StatementSeperator>]]
-<stat> ::= <wrap> | <whilestat> | <ifstat> | <forstat> | <functionstat> | <vardefstat> | <varassignstat>
+<program> ::= {<vardefstat>} <chunk> <EOF> 
+<chunk> ::= {<stat> {<StatementSeperator>}} [<laststat> [<StatementSeperator>]]
+<stat> ::= <wrap> | <whilestat> | <ifstat> | <forstat> | <functionstat> | <varassignstat>
 
 <whilestat> ::= <While> <equation> <wrap>
 <ifstat> ::= <If> <equation> <wrap> {<ElseIf> <equation> <wrap>} [<Else> <wrap>]
@@ -19,12 +19,12 @@
 <funcbody> ::= "(" [<paramlist>] ")" <wrap>
 <slice> ::= "[" <equation> "]"
 <equation> ::= <comparison>
-<comparison> ::= <addition> { ("=" | ">" | "<") <addition> }
+<comparison> ::= <addition> { ("==" | ">" | "<") <addition> }
 <addition> ::= <multiplication> { ("+" | "-") <multiplication> }
 <multiplication> ::= <unary> { ("*" | "/") <unary> }
 <unary> ::= [<Unop>] <primary>
 <primary> ::= <literals> | "(" <equation> ")"
-<var> ::= <Symbol> {<Dot> <Symbol>} [<slice>]
+<var> ::= <Symbol> [<slice>]
 <literals> ::= <Bool> | <Number> | <String> | <var> [<functioncall>] | <tableconstructor>
 <explist1> ::= <equation> {<FieldSeperator> <explist1>}
 <laststat> ::= <Break> | <Return> [<explist1>]

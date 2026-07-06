@@ -110,7 +110,6 @@ class Param(ASTNode):
 @dataclass(frozen=True)
 class VarRef(ASTNode):
     root: str
-    fields: tuple[str, ...] = ()
     slice_expr: Expr | None = None
 
 
@@ -276,6 +275,8 @@ def search_nodes(nodes: list[ParsedChild], name: str) -> list[ParsedNode]:
 
 # def all_nodes(node: ParsedNode, name: str):
 #     return search_nodes(flat_children(node), name)
+def has_node(node: ParsedNode, name: str) -> bool:
+    return any(is_node(i, name) for i in flat_children(node))
 
 
 def first_token(node: ParsedNode, name: str):
@@ -352,7 +353,7 @@ def build_left_associative(
             operators.append(child.literal)
 
     if not operands:
-        raise ValueError(f"No operands found in <{node.name}>")
+        raise ValueError(f"i wanted an operand. you gave me: <{node.name}>")
 
     expr = operand_builder(operands[0])
 
@@ -381,7 +382,7 @@ def build_unary(node: ParsedNode) -> Expr:
             primary = child
 
     if primary is None:
-        raise ValueError(f"Unary expression missing primary: {node!r}")
+        raise ValueError(f"need something to work with big dawg: {node!r}")
 
     expr = build_primary(primary)
 
@@ -401,7 +402,7 @@ def build_primary(node: ParsedNode) -> Expr:
         if isinstance(child, ParsedNode) and child.name == "equation":
             return build_equation(child)
 
-    raise ValueError(f"Invalid primary: {node!r}")
+    raise ValueError(f"this ain't a primary g: {node!r}")
 
 
 def build_literals(node: ParsedNode) -> Expr:
@@ -444,29 +445,37 @@ def build_literals(node: ParsedNode) -> Expr:
 
         return var_expr
 
-    raise ValueError(f"Invalid literal: {node!r}")
+    raise ValueError(f"this ain't a literal g: {node!r}")
 
 
 def build_var(node: ParsedNode) -> VarRef:
-    children = flat_children(node)
+    # children = flat_children(node)
 
-    symbols: list[str] = []
+    symbols: str = first_token(node, Definitions.Symbol.name).literal
     slice_expr: Expr | None = None
+    has_slice = has_node(node, "slice")
+    if has_slice:
+        slice_expr = build_slice(find_first_node(node, "slice"))
+    # slice_expr: Expr | None = None
 
-    for child in children:
-        if is_token(child, "Symbol"):
-            assert isinstance(child, Token)
-            symbols.append(child.literal)
+    # for child in children:
+    #     # this represents the dot operator
+    #     # i.e. var1.var2.var3
+    #     # thing is, scratch doesn't really support this stuff, 
+    #     # so i have no idea why the language supports this. 
+    #     # i might just remove this functionality outright?
+    #     if is_token(child, Definitions.Symbol.name):
+    #         assert isinstance(child, Token)
+    #         symbols.append(child.literal)
 
-        elif isinstance(child, ParsedNode) and child.name == "slice":
-            slice_expr = build_slice(child)
+    #     elif isinstance(child, ParsedNode) and child.name == "slice":
+    #         slice_expr = build_slice(child)
 
     if not symbols:
-        raise ValueError(f"Variable has no symbol: {node!r}")
+        raise ValueError(f"how u gonna want a variable with no name: {node!r}")
 
     return VarRef(
         root=symbols[0],
-        fields=tuple(symbols[1:]),
         slice_expr=slice_expr,
     )
 
@@ -785,7 +794,7 @@ def build_stat(node: ParsedNode) -> Stmt:
             case _:
                 pass
     
-    raise ValueError(f"No valid statements in node {node}")
+    raise ValueError(f"this is very bad: {node}")
 
 
 def build_chunk(node: ParsedNode):
