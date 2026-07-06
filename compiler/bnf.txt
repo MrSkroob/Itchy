@@ -1,5 +1,9 @@
 <program> ::= {<vardefstat>} <chunk> <EOF> 
+<<<<<<< HEAD
 <chunk> ::= {<stat> {<StatementSeperator>}} [<laststat> [<StatementSeperator>]]
+=======
+<chunk> ::= {<stat> {<StatementSeperator>}}   [<laststat> [<StatementSeperator>]]
+>>>>>>> b23df987048d970204e8a5575999133c7f70e007
 <stat> ::= <wrap> | <whilestat> | <ifstat> | <forstat> | <functionstat> | <varassignstat>
 
 <whilestat> ::= <While> <equation> <wrap>
