@@ -1,6 +1,6 @@
-<program> ::= <chunk> <EOF> 
+<program> ::= {<vardefstat>} <chunk> <EOF> 
 <chunk> ::= {<stat> {<StatementSeperator>}}   [<laststat> [<StatementSeperator>]]
-<stat> ::= <wrap> | <whilestat> | <ifstat> | <forstat> | <functionstat> | <vardefstat> | <varassignstat>
+<stat> ::= <wrap> | <whilestat> | <ifstat> | <forstat> | <functionstat> | <varassignstat>
 
 <whilestat> ::= <While> <equation> <wrap>
 <ifstat> ::= <If> <equation> <wrap> {<ElseIf> <equation> <wrap>} [<Else> <wrap>]
