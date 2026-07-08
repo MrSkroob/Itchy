@@ -1,2 +1,4 @@
 compiler/__pycache__/*
 mypy.ini
+output/*
+input/*

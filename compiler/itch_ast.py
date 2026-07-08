@@ -80,8 +80,14 @@ class VarDefStmt(Stmt):
 
 
 @dataclass(frozen=True)
+class VarRef(ASTNode):
+    root: str
+    slice_expr: Expr | None = None
+
+
+@dataclass(frozen=True)
 class AssignStmt(Stmt):
-    target: "VarRef"
+    target: VarRef
     value: Expr
 
 
@@ -105,12 +111,6 @@ class ReturnStmt(Stmt):
 class Param(ASTNode):
     name: str
     type_name: str
-
-
-@dataclass(frozen=True)
-class VarRef(ASTNode):
-    root: str
-    slice_expr: Expr | None = None
 
 
 @dataclass(frozen=True)

@@ -4,6 +4,6 @@ from itch_ast import build_ast
 
 parser = Parser()
 
-with open("code.txt") as f:
+with open("input/code.txt") as f:
     result = parser.read(f.read())
     build_ast(result.tree)
