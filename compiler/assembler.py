@@ -1,6 +1,7 @@
 from __future__ import annotations
 import uuid
 import json
+import zipfile
 
 from dataclasses import dataclass
 from enum import Enum, StrEnum
@@ -8,7 +9,7 @@ from enum import Enum, StrEnum
 from typing import Any
 from itch_ast import \
     Stmt, VarRef, Expr, BlockStmt, IfStmt, BreakStmt, ForInStmt, WhileStmt, AssignStmt, ReturnStmt, VarDefStmt, ForRangeStmt, FunctionCallStmt, FunctionDefStmt, \
-    IfBranch, NumberExpr, BoolExpr, StringExpr, VarExpr, UnaryOpExpr, BinaryOpExpr, TableExpr, FunctionCallExpr
+    IfBranch, NumberExpr, BoolExpr, StringExpr, VarExpr, UnaryOpExpr, BinaryOpExpr, TableExpr, FunctionCallExpr, Program
 
 
 ScratchBlock = dict[str, Any]
@@ -73,7 +74,6 @@ class Assembler:
         self.blocks: dict[str, ScratchBlock] = {}
         # the sprite's variables
         self.variables: dict[str, list[Any]] = {}
-        self.lists: dict[str, list[Any]] = {}
         self.procedures: dict[str, ProcedureInfo] = {}
         # i.e. stage's variables
         self.global_lists: dict[str, list[Any]] = {}
@@ -248,24 +248,6 @@ class Assembler:
         }
 
         return BlockRange(block_id, block_id)
-        
-    def emit_var_expr(self, ref: VarRef) -> ScratchInput:
-        if ref.slice_expr is not None:
-            raise NotImplementedError("Scratch variable reporter only supports simple variables")
-
-        var_id = self.get_variable(ref.root)
-
-        block_id = self.make_block(
-            opcode="data_variable",
-            fields={
-                "VARIABLE": [ref.root, var_id],
-            },
-        )
-
-        return ScratchInput(
-            [InputType.REPORTER, block_id, [DataType.STRING, ref.root]],
-
-        )
             
     def emit_function_def(self, stmt: FunctionDefStmt, parent: str | None = None) -> BlockRange:
         definition_id = self.make_block(
@@ -407,6 +389,24 @@ class Assembler:
         var_id = self.define_variable(False, "number", list_variable_name) # not to be used by the programmer, so is given garbage name.
         var_list_item_id = self.define_variable(False, "number", stmt.variable) # variable type doesn't matter as long as it's not 'list'
 
+        """
+        temp = 1 // set_id
+        repeat until temp > len(stmt.iterable) // repeat_id
+            // substack
+            i = stmt.iterable[temp] // list_set_id
+            temp += 1 // change_id
+            ... body ...
+        end repeat
+
+        temp is parented to parent
+        repeat is parented to temp
+
+        list_set_id is parented to repeat's substack
+        change_id is parented to list_set_id
+
+        subsequent body is parented to change_id
+        """
+
         # iterator variable
         set_id = self.make_block(
             "data_setvariableto",
@@ -420,7 +420,7 @@ class Assembler:
         )
 
         # operator that gets n item of list
-        
+
         if self.is_list(iterable_id):
             itemoflist = self.make_block(
                 "data_itemoflist",
@@ -448,7 +448,7 @@ class Assembler:
                     "LETTER": [InputType.REPORTER, [
                         DataType.VARIABLE,
                         list_variable_name,
-                        set_id,
+                        var_id,
                     ]],
                     "STRING": [InputType.REPORTER, [
                         DataType.VARIABLE,
@@ -457,19 +457,6 @@ class Assembler:
                     ]]
                 }
             )
-        # utility variable that is set to the item# of the array
-        list_set_id = self.make_block(
-            "data_setvariableto",
-            parent=set_id,
-            fields={
-                "VARIABLE": [stmt.variable, var_list_item_id]
-            },
-            inputs={
-                "VALUE": [InputType.REPORTER, var_id]
-            }
-        )
-
-        self.blocks[itemoflist]["parent"] = list_set_id
 
         stop_condition = BinaryOpExpr(
             left=VarExpr(VarRef(stmt.variable)),
@@ -485,12 +472,26 @@ class Assembler:
                 "CONDITION": self.emit_expr(stop_condition).value
             }
         )
-        
+
         self.blocks[set_id]["next"] = repeat_id
+
+        # utility variable that is set to the item# of the array
+        list_set_id = self.make_block(
+            "data_setvariableto",
+            parent=repeat_id,
+            fields={
+                "VARIABLE": [stmt.variable, var_list_item_id]
+            },
+            inputs={
+                "VALUE": [InputType.REPORTER, itemoflist]
+            }
+        )
+
+        self.blocks[itemoflist]["parent"] = list_set_id
 
         change_id = self.make_block(
             opcode="data_changevariableby",
-            parent=repeat_id,
+            parent=list_set_id,
             fields={
                 "VARIABLE": [stmt.variable, var_id]
             },
@@ -499,16 +500,15 @@ class Assembler:
             }
         )
 
+        self.blocks[list_set_id]["next"] = change_id
+
         body = self.emit_sequence(stmt.body, change_id)
 
-        if body.first is None:
-            self.blocks[repeat_id]["inputs"]["SUBSTACK"] = [InputType.SHADOWED, change_id]
-        else:
-            self.blocks[repeat_id]["inputs"]["SUBSTACK"] = [InputType.SHADOWED, body.first]
-            assert body.last is not None, "body.first isn't None, but body.last is?"
-            self.blocks[body.last]["next"] = change_id
-            self.blocks[change_id]["parent"] = body.last
-        
+        if body.first is not None:
+            self.blocks[change_id]["next"] = body.first
+
+        self.blocks[repeat_id]["inputs"]["SUBSTACK"] = [InputType.SHADOWED, list_set_id]
+
         return BlockRange(set_id, repeat_id)
     
     def emit_while(self, stmt: WhileStmt, parent: StrOptional):
@@ -692,7 +692,7 @@ class Assembler:
                 raise TypeError("Bare expression (coder sucks :/)")
 
         
-        return expression
+        # return expression
     
 
     def emit_unary_expr(self, op: str, value: Expr) -> ScratchInput:
@@ -773,10 +773,29 @@ class Assembler:
             ],
             VariableTypes(var_type)
         )
+    
+    def assemble(self, program: Program, target: str):
+        block_range = self.emit_sequence(program.body, None)
+
+        with zipfile.ZipFile(target, "r") as f:
+            data = json.loads(f.read("project.json").decode("utf-8"))
+            # for i in 
+
+        with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as f:
+            project = json.dumps(data, ensure_ascii=True)
+            f.writestr("project.json", data=project)
+            f.testzip()
 
         
     
-
+# def augment_program(project_name: str, target_name: str, code: dict[str, Any]):
+#     with open(project_name, "w", encoding="utf-8") as f:
+#         project = json.load(f)
+#         targets: list[dict[str, Any]] = project["targets"]
+#         for target in targets:
+#             if target["name"] == target_name:
+                
+#                 break
 
             
         
@@ -832,11 +851,3 @@ class Assembler:
     },
 }
 """
-def augment_program(project_name: str, target_name: str, code: dict[str, Any]):
-    with open(project_name, "w", encoding="utf-8") as f:
-        project = json.load(f)
-        targets: list[dict[str, Any]] = project["targets"]
-        for target in targets:
-            if target["name"] == target_name:
-                
-                break
