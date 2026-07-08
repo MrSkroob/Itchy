@@ -92,9 +92,9 @@ class AssignStmt(Stmt):
 
 
 @dataclass(frozen=True)
-class CallStmt(Stmt):
-    callee: Expr
-    arg_groups: tuple[tuple[Expr, ...], ...]
+class FunctionCallStmt(Stmt):
+    callee: str
+    arg_groups: tuple[Expr, ...]
 
 
 @dataclass(frozen=True)
@@ -120,8 +120,8 @@ class VarExpr(Expr):
 
 @dataclass(frozen=True)
 class FunctionCallExpr(Expr):
-    callee: Expr
-    arg_groups: tuple[tuple[Expr, ...], ...]
+    callee: str
+    arg_groups: tuple[Expr, ...]
 
 
 @dataclass(frozen=True)
@@ -179,11 +179,11 @@ class FunctionParts:
 @dataclass(frozen=True)
 class AssignAction:
     value: Expr
-
+    
 
 @dataclass(frozen=True)
 class CallAction:
-    arg_groups: tuple[tuple[Expr, ...], ...]
+    arg_groups: tuple[Expr, ...]
 
 
 ForBody = ForRangeBody | ForInBody
@@ -423,35 +423,53 @@ def build_literals(node: ParsedNode) -> Expr:
 
         if isinstance(child, ParsedNode) and child.name == "tableconstructor":
             return build_tableconstructor(child)
-
-    var_node: ParsedNode | None = None
-    functioncall_node: ParsedNode | None = None
-
-    for child in children:
+        
         if isinstance(child, ParsedNode) and child.name == "var":
-            var_node = child
-
-        elif isinstance(child, ParsedNode) and child.name == "functioncall":
-            functioncall_node = child
-
-    if var_node is not None:
-        var_expr = VarExpr(build_var(var_node))
-
-        if functioncall_node is not None:
+            return VarExpr(VarRef(
+                first_token(child, Definitions.Symbol.name).literal,
+                build_slice(find_first_node(child, "slice"))
+            ))
+        
+        if isinstance(child, ParsedNode) and child.name == "functioncall":
             return FunctionCallExpr(
-                callee=var_expr,
-                arg_groups=build_functioncall(functioncall_node),
+                first_token(node, Definitions.Symbol.name).literal,
+                build_explist1(find_first_node(node, "args"))
             )
+        
+        # if isinstance(child, ParsedNode) and child.name == "var":
+        #     return VarExpr(
+        #         VarRef(child.name)
+        #     )
 
-        return var_expr
+        # if isinstance(child, ParsedNode) and child.name == "functioncall":
+        #     pass
 
-    raise ValueError(f"this ain't a literal g: {node!r}")
+    # var_node: ParsedNode | None = None
+    # functioncall_node: ParsedNode | None = None
+
+    # for child in children:
+    #     if isinstance(child, ParsedNode) and child.name == "functioncall":
+    #         functioncall_node = child
+
+    # if var_node is not None:
+    #     # assert isinstance(var_node)
+    #     func_name = first_token(node, Definitions.Symbol.name).literal
+
+    #     if functioncall_node is not None:
+    #         return FunctionCallExpr(
+    #             callee=var_expr,
+    #             arg_groups=build_functioncall(functioncall_node),
+    #         )
+
+    #     return var_expr
+
+    raise ValueError(f"this ain't a literal g: {node.children}")
 
 
 def build_var(node: ParsedNode) -> VarRef:
     # children = flat_children(node)
 
-    symbols: str = first_token(node, Definitions.Symbol.name).literal
+    symbol: str = first_token(node, Definitions.Symbol.name).literal
     slice_expr: Expr | None = None
     has_slice = has_node(node, "slice")
     if has_slice:
@@ -471,11 +489,11 @@ def build_var(node: ParsedNode) -> VarRef:
     #     elif isinstance(child, ParsedNode) and child.name == "slice":
     #         slice_expr = build_slice(child)
 
-    if not symbols:
+    if not symbol:
         raise ValueError(f"how u gonna want a variable with no name: {node!r}")
 
     return VarRef(
-        root=symbols[0],
+        root=symbol,
         slice_expr=slice_expr,
     )
 
@@ -521,51 +539,42 @@ def build_namelist(node: ParsedNode) -> tuple[str, ...]:
     )
 
 
-def build_args(node: ParsedNode) -> tuple[Expr, ...]:
-    for child in flat_children(node):
-        if isinstance(child, ParsedNode) and child.name == "varlist1":
-            return build_varlist1(child)
+# def build_assignorcall(node: ParsedNode) -> AssignOrCall:
+#     children = flat_children(node)
 
-    return ()
+#     if any(is_token(i, name="Assign") for i in children):
+#         equation = find_first_node(node, "equation")
+#         return AssignAction(build_equation(equation))
 
-
-def build_assignorcall(node: ParsedNode) -> AssignOrCall:
-    children = flat_children(node)
-
-    if any(is_token(i, name="Assign") for i in children):
-        equation = find_first_node(node, "equation")
-        return AssignAction(build_equation(equation))
-
-    functioncall = find_first_node(node, "functioncall")
-    return CallAction(build_functioncall(functioncall))
+#     functioncall = find_first_node(node, "functioncall")
+#     return CallAction(build_varlist1(functioncall))
 
 
-def build_functioncall(node: ParsedNode) -> tuple[tuple[Expr, ...], ...]:
-    return tuple(
-        build_args(child)
-        for child in flat_children(node)
-        if isinstance(child, ParsedNode) and child.name == "args"
+# def build_functioncall(node: ParsedNode) -> tuple[Expr, ...]:
+#     return tuple(
+#         build_varlist1(node)
+#         for child in flat_children(node)
+#         if isinstance(child, ParsedNode) and child.name == "args"
+#     )
+
+def build_functioncall(node: ParsedNode) -> Stmt:
+    return FunctionCallStmt(
+        first_token(node, Definitions.Symbol.name).literal,
+        build_varlist1(find_first_node(node, "args"))
     )
 
 
 def build_varassignstat(node: ParsedNode) -> Stmt:
     var_node = find_first_node(node, "var")
-    action_node = find_first_node(node, "assignorcall")
+    action_node = find_first_node(node, "equation")
 
     target = build_var(var_node)
-    action = build_assignorcall(action_node)
+    action = build_equation(action_node)
 
-    if isinstance(action, AssignAction):
-        return AssignStmt(
-            target,
-            action.value,
-        )
-
-    return CallStmt(
-        VarExpr(target),
-        action.arg_groups,
+    return AssignStmt(
+        target,
+        action,
     )
-
 
 def build_vardefstat(node: ParsedNode) -> VarDefStmt:
     shared = has_token(node, "Shared")
@@ -791,6 +800,9 @@ def build_stat(node: ParsedNode) -> Stmt:
             case "varassignstat":
                 return build_varassignstat(child)
             
+            case "functioncall":
+                return build_functioncall(child)
+
             case _:
                 pass
     
