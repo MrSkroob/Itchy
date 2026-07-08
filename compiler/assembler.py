@@ -684,9 +684,9 @@ class Assembler:
                 return self.emit_unary_expr(op, value)
             case BinaryOpExpr(left=left, op=op, right=right):
                 return self.emit_binary_expr(left, op, right)
-            case FunctionCallExpr(callee=callee, arg_groups=arg_groups):
+            case FunctionCallExpr():
                 raise NotImplementedError("returns are hard :(")
-            case TableExpr(values=values):
+            case TableExpr():
                 raise NotImplementedError("out of scope for now :v")
             case _:
                 raise TypeError("Bare expression (coder sucks :/)")
