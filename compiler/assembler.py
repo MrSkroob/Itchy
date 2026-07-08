@@ -3,16 +3,29 @@ import uuid
 import json
 
 from dataclasses import dataclass
-from enum import Enum
+from enum import Enum, StrEnum
 
 from typing import Any
-from itch_ast import Stmt, VarRef, Expr, BlockStmt, IfStmt, CallStmt, BreakStmt, ForInStmt, WhileStmt, AssignStmt, ReturnStmt, VarDefStmt, ForRangeStmt, FunctionDefStmt, \
-    IfBranch, NumberExpr, BoolExpr, StringExpr, VarExpr, UnaryOpExpr, BinaryOpExpr, CallAction, TableExpr, FunctionCallExpr
+from itch_ast import \
+    Stmt, VarRef, Expr, BlockStmt, IfStmt, BreakStmt, ForInStmt, WhileStmt, AssignStmt, ReturnStmt, VarDefStmt, ForRangeStmt, FunctionCallStmt, FunctionDefStmt, \
+    IfBranch, NumberExpr, BoolExpr, StringExpr, VarExpr, UnaryOpExpr, BinaryOpExpr, TableExpr, FunctionCallExpr
 
 
 ScratchBlock = dict[str, Any]
-ScratchInput = list[Any]
 StrOptional = str | None
+
+
+class VariableTypes(StrEnum):
+    NUMBER = "number"
+    STRING = "string"
+    BOOLEAN = "boolean"
+    UNKNOWN = "unknown"
+
+
+@dataclass(frozen=True)
+class ScratchInput:
+    value: list[Any]
+    return_type: VariableTypes = VariableTypes.UNKNOWN
 
 
 class DataType(Enum):
@@ -45,17 +58,29 @@ class BlockRange:
     last: StrOptional
 
 
+@dataclass(frozen=True)
+class ProcedureInfo:
+    name: str
+    prototype_id: str
+    proccode: str
+    argument_ids: tuple[str, ...]
+    argument_names: tuple[str, ...]
+    argument_defaults: tuple[str, ...]
+
+
 class Assembler:
     def __init__(self) -> None:
         self.blocks: dict[str, ScratchBlock] = {}
         # the sprite's variables
         self.variables: dict[str, list[Any]] = {}
         self.lists: dict[str, list[Any]] = {}
+        self.procedures: dict[str, ProcedureInfo] = {}
         # i.e. stage's variables
         self.global_lists: dict[str, list[Any]] = {}
         self.global_variables: dict[str, list[Any]] = {}
         self.variable_ids: dict[str, str] = {}
         self.lists: dict[str, list[Any]] = {}
+        self.var_types: dict[str, str] = {}
 
     def new_id(self) -> str:
         return uuid.uuid4().hex[:20]
@@ -69,7 +94,7 @@ class Assembler:
             self,
             opcode: str,
             parent: StrOptional=None,
-            inputs: dict[str, ScratchInput] | None=None,
+            inputs: dict[str, list[Any]] | None=None,
             fields: dict[str, Any] | None=None,
             mutation: dict[str, Any] | None=None,
             top_level: bool=False,
@@ -100,6 +125,10 @@ class Assembler:
     
 
     def get_variable(self, name: str) -> str:
+        """
+        Returns a variable ID without any extra functionality.
+        Do this when you strictly expect the variable to exist, and want to error if it wasn't implicitly/explicitly defined previously.
+        """
         assert name in self.variable_ids, "variable not defined!"
         return self.variable_ids[name]
 
@@ -107,6 +136,7 @@ class Assembler:
     def define_variable(self, shared: bool, type_name: str, name: str) -> str:
         """
         Returns a variable ID. NOT a block ID.
+        You may also use this if you're okay with the variable not existing beforehand (typically for loop variables and other compiler-defined, single use variables.)
         """
         # shared defines if the variable can be accessible to all sprites
         if shared:
@@ -125,13 +155,12 @@ class Assembler:
                 default_value = 0
 
         if name in self.variable_ids:
-            # highkey this should raise an error instead otherwise it's confusing...
             return self.variable_ids[name]
-            # raise CompilerError(f"Do not define {name} more than once.")
 
         var_id = self.new_id()
         self.variable_ids[name] = var_id
         variable_location[var_id] = [name, default_value]
+        self.var_types[var_id] = type_name
         return var_id
     
     def emit_sequence(
@@ -180,15 +209,46 @@ class Assembler:
                 return self.emit_for_in(stmt, parent)
             case FunctionDefStmt():
                 return self.emit_function_def(stmt, parent)
-            case CallStmt():
-                return self.emit_call(stmt, parent)
+            case FunctionCallStmt():
+                return self.emit_function_call(stmt, parent)
             case BreakStmt():
                 raise NotImplementedError("Not implemented")
             case ReturnStmt():
                 raise NotImplementedError("Not implemented")
             case _:
                 raise TypeError("Bad statement type")
-    
+        
+    def emit_function_call(self, stmt: FunctionCallStmt, parent: str | None = None) -> BlockRange:
+        info = self.procedures[stmt.callee]
+
+        if len(stmt.arg_groups) != len(info.argument_ids):
+            raise ValueError(
+                f"Function {stmt.callee!r} expects {len(info.argument_ids)} arguments, "
+                f"got {len(stmt.arg_groups)}"
+            )
+
+        inputs: dict[str, list[Any]] = {}
+
+        for arg_id, arg_expr in zip(info.argument_ids, stmt.arg_groups):
+            emitted_arg = self.emit_expr(arg_expr)
+            inputs[arg_id] = emitted_arg.value
+
+        block_id = self.make_block(
+            opcode="procedures_call",
+            parent=parent,
+            inputs=inputs,
+        )
+
+        self.blocks[block_id]["mutation"] = {
+            "tagName": "mutation",
+            "children": [],
+            "proccode": info.proccode,
+            "argumentids": json.dumps(list(info.argument_ids)),
+            "warp": "false",
+        }
+
+        return BlockRange(block_id, block_id)
+        
     def emit_var_expr(self, ref: VarRef) -> ScratchInput:
         if ref.slice_expr is not None:
             raise NotImplementedError("Scratch variable reporter only supports simple variables")
@@ -202,44 +262,87 @@ class Assembler:
             },
         )
 
-        return [InputType.REPORTER, block_id, [DataType.STRING, ref.root]]
+        return ScratchInput(
+            [InputType.REPORTER, block_id, [DataType.STRING, ref.root]],
+
+        )
             
-    def emit_function_def(self, stmt: FunctionDefStmt, parent: StrOptional):
-        proccode = stmt.name
+    def emit_function_def(self, stmt: FunctionDefStmt, parent: str | None = None) -> BlockRange:
+        definition_id = self.make_block(
+            opcode="procedures_definition",
+            parent=parent,
+            inputs={},
+        )
 
         prototype_id = self.make_block(
             opcode="procedures_prototype",
+            parent=definition_id,
+            inputs={},
             shadow=True,
-            mutation={
-                "tagName": "mutation",
-                "children": [],
-                "proccode": proccode,
-                "argumentids": "[]",
-                "argumentnames": "[]",
-                "argumentdefaults": "[]",
-                "warp": str(stmt.no_refresh)
-            }
         )
 
-        definition_id = self.make_block(
-            opcode="procedures_definition",
-            top_level=True,
-            x=100,
-            y=100,
-            inputs={
-                "custom_block": [InputType.LITERAL, prototype_id]
-            }
-        )
+        argument_ids: list[str] = []
+        argument_names: list[str] = []
+        argument_defaults: list[str] = []
+        proccode_parts: list[str] = [stmt.name]
 
-        self.blocks[prototype_id]["parent"] = definition_id
+        for param in stmt.params:
+            arg_id = self.new_id()
 
-        body = self.emit_sequence(stmt.body, parent=definition_id)
+            argument_ids.append(arg_id)
+            argument_names.append(param.name)
 
-        if body.first is not None:
-            self.blocks[definition_id]["next"] = body.first
-            self.blocks[body.first]["parent"] = definition_id
+            if param.type_name == "bool":
+                proccode_parts.append("%b")
+                argument_defaults.append("false")
+            else:
+                proccode_parts.append("%s")
+                argument_defaults.append("")
+
+            self.define_variable(False, param.type_name, param.name)
+
+        prototype = self.blocks[prototype_id]
+
+        prototype["mutation"] = {
+            "tagName": "mutation",
+            "children": [],
+            "proccode": " ".join(proccode_parts),
+            "argumentids": json.dumps(argument_ids),
+            "argumentnames": json.dumps(argument_names),
+            "argumentdefaults": json.dumps(argument_defaults),
+            "warp": str(stmt.no_refresh).lower(),
+        }
+
+        self.blocks[definition_id]["inputs"]["custom_block"] = [
+            InputType.SHADOWED,
+            prototype_id,
+        ]
+
+        body_range = self.emit_sequence(stmt.body, definition_id)
+
+        if body_range.first is not None:
+            self.blocks[definition_id]["next"] = body_range.first
+            self.blocks[body_range.first]["parent"] = definition_id
         
-        return BlockRange(definition_id, body.last or definition_id)
+
+        argument_ids_tuple = tuple(argument_ids)
+        argument_names_tuple = tuple(argument_names)
+        argument_defaults_tuple = tuple(argument_defaults)
+        proccode = " ".join(proccode_parts)
+
+        self.procedures[stmt.name] = ProcedureInfo(
+            name=stmt.name,
+            prototype_id=prototype_id,
+            proccode=proccode,
+            argument_ids=argument_ids_tuple,
+            argument_names=argument_names_tuple,
+            argument_defaults=argument_defaults_tuple,
+        )
+
+        return BlockRange(
+            first=definition_id,
+            last=body_range.last or definition_id,
+        )
 
         
     
@@ -254,7 +357,7 @@ class Assembler:
                 "VARIABLE": [stmt.variable, var_id]
             },
             inputs={
-                "VALUE": self.emit_expr(stmt.start)
+                "VALUE": self.emit_expr(stmt.start).value
             }
         )
 
@@ -269,7 +372,7 @@ class Assembler:
             "control_repeat_until",
             parent=set_id,
             inputs={
-                "CONDITION": self.emit_expr(stop_condition)
+                "CONDITION": self.emit_expr(stop_condition).value
             }
         )
         
@@ -282,7 +385,7 @@ class Assembler:
                 "VARIABLE": [stmt.variable, var_id]
             },
             inputs={
-                "VALUE": self.emit_expr(stmt.step)
+                "VALUE": self.emit_expr(stmt.step).value
             }
         )
 
@@ -312,7 +415,7 @@ class Assembler:
                 "VARIABLE": [list_variable_name, var_id]
             },
             inputs={
-                "VALUE": self.emit_expr(NumberExpr(1))
+                "VALUE": self.emit_expr(NumberExpr(1)).value
             }
         )
 
@@ -379,7 +482,7 @@ class Assembler:
             "control_repeat_until",
             parent=set_id,
             inputs={
-                "CONDITION": self.emit_expr(stop_condition)
+                "CONDITION": self.emit_expr(stop_condition).value
             }
         )
         
@@ -392,7 +495,7 @@ class Assembler:
                 "VARIABLE": [stmt.variable, var_id]
             },
             inputs={
-                "VALUE": self.emit_expr(NumberExpr(1))
+                "VALUE": self.emit_expr(NumberExpr(1)).value
             }
         )
 
@@ -423,7 +526,7 @@ class Assembler:
             "control_repeat_until",
             parent=parent,
             inputs={
-                "CONDITION": self.emit_expr(not_condition)
+                "CONDITION": self.emit_expr(not_condition).value
             }
         )
 
@@ -454,7 +557,7 @@ class Assembler:
             opcode=opcode,
             parent=parent,
             inputs={
-                "CONDITION": self.emit_expr(branch.condition)
+                "CONDITION": self.emit_expr(branch.condition).value
             }
         )
 
@@ -498,8 +601,8 @@ class Assembler:
                     "data_replaceitemoflist",
                     parent=parent,
                     inputs={
-                        "INDEX": self.emit_expr(target.slice_expr),
-                        "ITEM": self.emit_expr(value)
+                        "INDEX": self.emit_expr(target.slice_expr).value,
+                        "ITEM": self.emit_expr(value).value
                     },
                     fields={
                         "LIST": [target.root, var_id]
@@ -553,7 +656,7 @@ class Assembler:
                     "VARIABLE": [target.root, var_id]
                 },
                 inputs={
-                    "VALUE": self.emit_expr(value)
+                    "VALUE": self.emit_expr(value).value
                 }
             )
             
@@ -568,13 +671,13 @@ class Assembler:
         
         match expr:
             case NumberExpr(value=value):
-                return [InputType.LITERAL, [DataType.NUMBER, str(value)]]
+                return ScratchInput([InputType.LITERAL, [DataType.NUMBER, str(value)]], VariableTypes.NUMBER)
             case StringExpr(value=value):
-                return [InputType.LITERAL, [DataType.STRING, value]]
+                return ScratchInput([InputType.LITERAL, [DataType.STRING, value]], VariableTypes.STRING)
             case BoolExpr(value=value):
                 # in scratch:
                 # if (0 == 0) == "true" is true, so we can just use strings without any fancy conversion :)
-                return [InputType.LITERAL, [DataType.STRING, str(value).lower()]]
+                return ScratchInput([InputType.LITERAL, [DataType.STRING, str(value).lower()]], VariableTypes.BOOLEAN)
             case VarExpr(ref=ref):
                 return self.emit_var_ref(ref)
             case UnaryOpExpr(op=op, value=value):
@@ -590,52 +693,88 @@ class Assembler:
 
         
         return expression
+    
 
     def emit_unary_expr(self, op: str, value: Expr) -> ScratchInput:
         if op in {"not", "!"}:
             block_id = self.make_block(
                 opcode="operator_not",
                 inputs={
-                    "OPERAND": self.emit_expr(value),
+                    "OPERAND": self.emit_expr(value).value,
                 },
             )
-            return [2, block_id]
+            return ScratchInput([InputType.SHADOWED, block_id], VariableTypes.BOOLEAN)
 
         if op == "-":
             block_id = self.make_block(
                 opcode="operator_subtract",
                 inputs={
-                    "NUM1": [1, [4, "0"]],
-                    "NUM2": self.emit_expr(value),
+                    "NUM1": [InputType.LITERAL, [DataType.NUMBER, "0"]],
+                    "NUM2": self.emit_expr(value).value,
                 },
             )
-            return [2, block_id]
+            return ScratchInput([InputType.SHADOWED, block_id], VariableTypes.NUMBER)
 
         raise NotImplementedError(f"Unsupported unary operator: {op}")
     
     def emit_binary_expr(self, left: Expr, op: str, right: Expr) -> ScratchInput:
-        opcode, left_name, right_name = {
-            "+": ("operator_add", "NUM1", "NUM2"),
-            "-": ("operator_subtract", "NUM1", "NUM2"),
-            "*": ("operator_multiply", "NUM1", "NUM2"),
-            "/": ("operator_divide", "NUM1", "NUM2"),
-            "=": ("operator_equals", "OPERAND1", "OPERAND2"),
-            ">": ("operator_gt", "OPERAND1", "OPERAND2"),
-            "<": ("operator_lt", "OPERAND1", "OPERAND2"),
-            "and": ("operator_and", "OPERAND1", "OPERAND2"),
-            "or": ("operator_or", "OPERAND1", "OPERAND2"),
-        }[op]
+        left_expr = self.emit_expr(left)
+        right_expr = self.emit_expr(right)
+
+        if op == "+" and (
+            left_expr.return_type != VariableTypes.NUMBER
+            or right_expr.return_type != VariableTypes.NUMBER
+        ):
+            opcode, left_name, right_name = "operator_join", "STRING1", "STRING2"
+            return_type = VariableTypes.STRING
+        else:
+            opcode, left_name, right_name = {
+                "+": ("operator_add", "NUM1", "NUM2"),
+                "-": ("operator_subtract", "NUM1", "NUM2"),
+                "*": ("operator_multiply", "NUM1", "NUM2"),
+                "/": ("operator_divide", "NUM1", "NUM2"),
+                "=": ("operator_equals", "OPERAND1", "OPERAND2"),
+                ">": ("operator_gt", "OPERAND1", "OPERAND2"),
+                "<": ("operator_lt", "OPERAND1", "OPERAND2"),
+                "and": ("operator_and", "OPERAND1", "OPERAND2"),
+                "or": ("operator_or", "OPERAND1", "OPERAND2"),
+            }[op]
+
+            if op in {"=", ">", "<", "and", "or"}:
+                return_type = VariableTypes.BOOLEAN
+            else:
+                return_type = VariableTypes.NUMBER
 
         block_id = self.make_block(
             opcode=opcode,
             inputs={},
         )
 
-        # there are issues that arise if we try and join strings, but because scratch has different
-        self.blocks[block_id]["inputs"][left_name] = self.emit_expr(left)
-        self.blocks[block_id]["inputs"][right_name] = self.emit_expr(right)
+        self.blocks[block_id]["inputs"][left_name] = left_expr.value
+        self.blocks[block_id]["inputs"][right_name] = right_expr.value
 
-        return [2, block_id]
+        return ScratchInput(
+            [InputType.SHADOWED, block_id],
+            return_type,
+        )
+
+    def emit_var_ref(self, ref: VarRef) -> ScratchInput:
+        var_id = self.get_variable(ref.root)
+        var_type = self.var_types[var_id]
+
+        return ScratchInput(
+            [
+                InputType.LITERAL,
+                [
+                    DataType.VARIABLE,
+                    ref.root,
+                    var_id
+                ]
+            ],
+            VariableTypes(var_type)
+        )
+
+        
     
 
 
