@@ -1,21 +1,16 @@
 <program> ::= {<vardefstat>} <chunk> <EOF> 
-<<<<<<< HEAD
 <chunk> ::= {<stat> {<StatementSeperator>}} [<laststat> [<StatementSeperator>]]
-=======
-<chunk> ::= {<stat> {<StatementSeperator>}}   [<laststat> [<StatementSeperator>]]
->>>>>>> b23df987048d970204e8a5575999133c7f70e007
-<stat> ::= <wrap> | <whilestat> | <ifstat> | <forstat> | <functionstat> | <varassignstat>
+<stat> ::= <wrap> | <whilestat> | <ifstat> | <forstat> | <functionstat> | <varassignstat> | <functioncall>
 
 <whilestat> ::= <While> <equation> <wrap>
 <ifstat> ::= <If> <equation> <wrap> {<ElseIf> <equation> <wrap>} [<Else> <wrap>]
 <forstat> ::= <For> <Symbol> <forbody> <wrap>
 <functionstat> ::= [<NoRefresh>] <Define> <function>
 <vardefstat> ::= [<Shared>] <Type> <Symbol>
-<varassignstat> ::= <var> <assignorcall>
+<varassignstat> ::= <var> <Assign> <equation>
+<functioncall> ::= <Symbol> <args>
 
-<assignorcall> ::= <Assign> <equation> | <functioncall>
 <forbody> ::= "=" <equation> <FieldSeperator> <equation> <FieldSeperator> <equation> | <In> <var>
-<functioncall> ::= <args> {<args>}
 <namelist> ::= <Symbol> {<FieldSeperator> <Symbol>}
 <tableconstructor> ::= "[" [<explist1>] "]"
 <wrap> ::= "{" [<chunk>] "}"
@@ -23,13 +18,13 @@
 <funcbody> ::= "(" [<paramlist>] ")" <wrap>
 <slice> ::= "[" <equation> "]"
 <equation> ::= <comparison>
-<comparison> ::= <addition> { ("==" | ">" | "<") <addition> }
+<comparison> ::= <addition> { ("==" | ">" | "<" | <In>) <addition> }
 <addition> ::= <multiplication> { ("+" | "-") <multiplication> }
 <multiplication> ::= <unary> { ("*" | "/") <unary> }
 <unary> ::= [<Unop>] <primary>
 <primary> ::= <literals> | "(" <equation> ")"
 <var> ::= <Symbol> [<slice>]
-<literals> ::= <Bool> | <Number> | <String> | <var> [<functioncall>] | <tableconstructor>
+<literals> ::= <Bool> | <Number> | <String> | <var> | <functioncall> | <tableconstructor>
 <explist1> ::= <equation> {<FieldSeperator> <explist1>}
 <laststat> ::= <Break> | <Return> [<explist1>]
 <varlist1> ::= <literals> {<FieldSeperator> <literals>}
@@ -37,5 +32,6 @@
 <argtype> ::= <Symbol> <Colon> <Type>
 <paramlist> ::= <argtype> {<FieldSeperator> <argtype>}
 
+// note that rules are evaluated left to right
 // for performance, it's better to have non-terminators at the end. 
 // note that rules with capital letters are terminators. 
