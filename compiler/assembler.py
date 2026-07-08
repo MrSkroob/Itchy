@@ -73,6 +73,7 @@ class Assembler:
             fields: dict[str, Any] | None=None,
             mutation: dict[str, Any] | None=None,
             top_level: bool=False,
+            shadow: bool=False,
             x: int | None=None,
             y: int | None=None
         ) -> str:
@@ -84,7 +85,7 @@ class Assembler:
             "parent": parent,
             "inputs": inputs or {},
             "fields": fields or {},
-            "shadow": False,
+            "shadow": shadow,
             "topLevel": top_level
         }
 
@@ -125,8 +126,8 @@ class Assembler:
 
         if name in self.variable_ids:
             # highkey this should raise an error instead otherwise it's confusing...
-            # return self.variable_ids[name]
-            raise CompilerError(f"Do not define {name} more than once.")
+            return self.variable_ids[name]
+            # raise CompilerError(f"Do not define {name} more than once.")
 
         var_id = self.new_id()
         self.variable_ids[name] = var_id
@@ -188,6 +189,60 @@ class Assembler:
             case _:
                 raise TypeError("Bad statement type")
     
+    def emit_var_expr(self, ref: VarRef) -> ScratchInput:
+        if ref.slice_expr is not None:
+            raise NotImplementedError("Scratch variable reporter only supports simple variables")
+
+        var_id = self.get_variable(ref.root)
+
+        block_id = self.make_block(
+            opcode="data_variable",
+            fields={
+                "VARIABLE": [ref.root, var_id],
+            },
+        )
+
+        return [InputType.REPORTER, block_id, [DataType.STRING, ref.root]]
+            
+    def emit_function_def(self, stmt: FunctionDefStmt, parent: StrOptional):
+        proccode = stmt.name
+
+        prototype_id = self.make_block(
+            opcode="procedures_prototype",
+            shadow=True,
+            mutation={
+                "tagName": "mutation",
+                "children": [],
+                "proccode": proccode,
+                "argumentids": "[]",
+                "argumentnames": "[]",
+                "argumentdefaults": "[]",
+                "warp": str(stmt.no_refresh)
+            }
+        )
+
+        definition_id = self.make_block(
+            opcode="procedures_definition",
+            top_level=True,
+            x=100,
+            y=100,
+            inputs={
+                "custom_block": [InputType.LITERAL, prototype_id]
+            }
+        )
+
+        self.blocks[prototype_id]["parent"] = definition_id
+
+        body = self.emit_sequence(stmt.body, parent=definition_id)
+
+        if body.first is not None:
+            self.blocks[definition_id]["next"] = body.first
+            self.blocks[body.first]["parent"] = definition_id
+        
+        return BlockRange(definition_id, body.last or definition_id)
+
+        
+    
     def emit_for_range(self, stmt: ForRangeStmt, parent: StrOptional):
         # variable
         var_id = self.define_variable(False, "number", stmt.variable)
@@ -244,23 +299,79 @@ class Assembler:
         return BlockRange(set_id, repeat_id)
     
     def emit_for_in(self, stmt: ForInStmt, parent: StrOptional):
-        var_id = self.define_variable(False, "number", stmt.variable)
+        list_variable_name = "list_getter" + self.new_id()
+        iterable_id = self.get_variable(stmt.iterable.root)
+        var_id = self.define_variable(False, "number", list_variable_name) # not to be used by the programmer, so is given garbage name.
+        var_list_item_id = self.define_variable(False, "number", stmt.variable) # variable type doesn't matter as long as it's not 'list'
 
+        # iterator variable
         set_id = self.make_block(
             "data_setvariableto",
             parent=parent,
             fields={
-                "VARIABLE": [stmt.variable, var_id]
+                "VARIABLE": [list_variable_name, var_id]
             },
             inputs={
                 "VALUE": self.emit_expr(NumberExpr(1))
             }
         )
 
+        # operator that gets n item of list
+        
+        if self.is_list(iterable_id):
+            itemoflist = self.make_block(
+                "data_itemoflist",
+                inputs={
+                    "INDEX": [
+                        InputType.REPORTER,
+                        [
+                            DataType.VARIABLE,
+                            list_variable_name,
+                            var_id
+                        ]
+                    ]
+                },
+                fields={
+                    "LIST": [
+                        stmt.iterable.root,
+                        iterable_id
+                    ]
+                }
+            )
+        else:
+            itemoflist = self.make_block(
+                "operator_letter_of",
+                inputs={
+                    "LETTER": [InputType.REPORTER, [
+                        DataType.VARIABLE,
+                        list_variable_name,
+                        set_id,
+                    ]],
+                    "STRING": [InputType.REPORTER, [
+                        DataType.VARIABLE,
+                        stmt.iterable.root,
+                        iterable_id
+                    ]]
+                }
+            )
+        # utility variable that is set to the item# of the array
+        list_set_id = self.make_block(
+            "data_setvariableto",
+            parent=set_id,
+            fields={
+                "VARIABLE": [stmt.variable, var_list_item_id]
+            },
+            inputs={
+                "VALUE": [InputType.REPORTER, var_id]
+            }
+        )
+
+        self.blocks[itemoflist]["parent"] = list_set_id
+
         stop_condition = BinaryOpExpr(
             left=VarExpr(VarRef(stmt.variable)),
             op=">",
-            right=FunctionCallExpr()
+            right=FunctionCallExpr("length", (VarExpr(stmt.iterable),))
         )
 
         # repeat
@@ -370,17 +481,18 @@ class Assembler:
         
         return block_id
 
+
+    def is_list(self, var_id: str) -> bool:
+        return var_id in self.lists or var_id in self.global_lists
+
     
     def emit_assignment(self, target: VarRef, value: Expr, parent: StrOptional) -> BlockRange:
-        is_list = False
-
         if target.slice_expr is not None:
             assert target.root in self.variable_ids, "list usage before declaration!"
             
             var_id = self.variable_ids[target.root]
-            is_list = var_id in self.lists or var_id in self.global_lists
 
-            if is_list:
+            if self.is_list(var_id):
                 # is a list!
                 block_id = self.make_block(
                     "data_replaceitemoflist",
@@ -469,7 +581,7 @@ class Assembler:
                 return self.emit_unary_expr(op, value)
             case BinaryOpExpr(left=left, op=op, right=right):
                 return self.emit_binary_expr(left, op, right)
-            case CallAction(arg_groups=arg_groups):
+            case FunctionCallExpr(callee=callee, arg_groups=arg_groups):
                 raise NotImplementedError("returns are hard :(")
             case TableExpr(values=values):
                 raise NotImplementedError("out of scope for now :v")
@@ -478,6 +590,52 @@ class Assembler:
 
         
         return expression
+
+    def emit_unary_expr(self, op: str, value: Expr) -> ScratchInput:
+        if op in {"not", "!"}:
+            block_id = self.make_block(
+                opcode="operator_not",
+                inputs={
+                    "OPERAND": self.emit_expr(value),
+                },
+            )
+            return [2, block_id]
+
+        if op == "-":
+            block_id = self.make_block(
+                opcode="operator_subtract",
+                inputs={
+                    "NUM1": [1, [4, "0"]],
+                    "NUM2": self.emit_expr(value),
+                },
+            )
+            return [2, block_id]
+
+        raise NotImplementedError(f"Unsupported unary operator: {op}")
+    
+    def emit_binary_expr(self, left: Expr, op: str, right: Expr) -> ScratchInput:
+        opcode, left_name, right_name = {
+            "+": ("operator_add", "NUM1", "NUM2"),
+            "-": ("operator_subtract", "NUM1", "NUM2"),
+            "*": ("operator_multiply", "NUM1", "NUM2"),
+            "/": ("operator_divide", "NUM1", "NUM2"),
+            "=": ("operator_equals", "OPERAND1", "OPERAND2"),
+            ">": ("operator_gt", "OPERAND1", "OPERAND2"),
+            "<": ("operator_lt", "OPERAND1", "OPERAND2"),
+            "and": ("operator_and", "OPERAND1", "OPERAND2"),
+            "or": ("operator_or", "OPERAND1", "OPERAND2"),
+        }[op]
+
+        block_id = self.make_block(
+            opcode=opcode,
+            inputs={},
+        )
+
+        # there are issues that arise if we try and join strings, but because scratch has different
+        self.blocks[block_id]["inputs"][left_name] = self.emit_expr(left)
+        self.blocks[block_id]["inputs"][right_name] = self.emit_expr(right)
+
+        return [2, block_id]
     
 
 
