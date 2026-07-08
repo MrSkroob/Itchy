@@ -58,16 +58,16 @@ class Parser:
         match node:
             case Terminal(value):
                 if pos < len(tokens) and value.name == tokens[pos].kind.name:
-                    debug_print(f"Matched: {print_token_safe(tokens, pos)} == {value.name}")
+                    debug_print(f"{print_token_safe(tokens, pos)}. Matched {value.name}")
                     return ParseResult(tokens[pos], pos + 1)
-                debug_print(f"Terminal rule not matched: {print_token_safe(tokens, pos)} != {value.name}")
+                debug_print(f"{print_token_safe(tokens, pos)}. Terminal rule not matched {value.name}")
                 raise SyntaxError
             
             case NonTerminal(_, rule):
                 if rule is None:
                     raise AssertionError("Invalid tree - no linking rule")
 
-                debug_print(f"Trying: {print_token_safe(tokens, pos)} in {node}")
+                debug_print(f"{print_token_safe(tokens, pos)}. Trying {node}")
                 return self.parse_rule(rule, tokens, pos)
             
             case Sequence(children):
@@ -80,14 +80,14 @@ class Parser:
                         parsed_children.append(result.tree)
                         pos = result.pos
                     except SyntaxError:
-                        debug_print(f"Sequence broken {node}. {print_token_safe(tokens, pos)}")
+                        debug_print(f"{print_token_safe(tokens, pos)}. Sequence broken {node}.")
                         raise SyntaxError
                     
                 
                 if result is None:
                     raise AssertionError("Invalid tree - empty sequence")
                 
-                debug_print(f"Matched: {print_token_safe(tokens, pos)} in {node}")
+                debug_print(f"{print_token_safe(tokens, pos)}. Matched {node}")
                 return ParseResult(
                     ParsedNode(Sequence.__name__, tuple(parsed_children)), pos
                 )
@@ -96,7 +96,7 @@ class Parser:
                 for option in options:
                     try:
                         result = self.parse_node(option, tokens, pos)
-                        debug_print(f"Matched: {print_token_safe(tokens, pos)} in {node}")
+                        debug_print(f"{print_token_safe(tokens, pos)}. Matched {node}")
                         return ParseResult(
                             ParsedNode(Alternative.__name__, (result.tree,)),
                             result.pos
@@ -109,7 +109,7 @@ class Parser:
             case OptionalNode(child):
                 try:
                     result = self.parse_node(child, tokens, pos)
-                    debug_print(f"Matched: {print_token_safe(tokens, pos)} in {node}")
+                    debug_print(f"{print_token_safe(tokens, pos)}. Matched {node}")
                     return ParseResult(
                         ParsedNode(
                             OptionalNode.__name__, (result.tree,)
@@ -117,7 +117,7 @@ class Parser:
                         result.pos
                     )
                 except SyntaxError:
-                    debug_print(f"Skipping {print_token_safe(tokens, pos)}")
+                    debug_print(f"{print_token_safe(tokens, pos)}. Skipping {node}")
                     return ParseResult(
                         ParsedNode(
                             OptionalNode.__name__, ()
@@ -132,7 +132,7 @@ class Parser:
                     try:
                         result = self.parse_node(child, tokens, pos)
                     except SyntaxError:
-                        debug_print(f"Skipping {print_token_safe(tokens, pos)}")
+                        debug_print(f"{print_token_safe(tokens, pos)}. Skipping {node}")
                         break
 
                     if result.pos == pos:

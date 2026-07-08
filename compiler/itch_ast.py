@@ -280,11 +280,12 @@ def has_node(node: ParsedNode, name: str) -> bool:
 
 
 def first_token(node: ParsedNode, name: str):
-    for child in flat_children(node):
+    children = flat_children(node)
+    for child in children:
         if is_token(child, name):
             assert isinstance(child, Token)
             return child
-    
+
     raise ValueError(f"No token found with name {name}")
 
 
@@ -425,15 +426,22 @@ def build_literals(node: ParsedNode) -> Expr:
             return build_tableconstructor(child)
         
         if isinstance(child, ParsedNode) and child.name == "var":
-            return VarExpr(VarRef(
-                first_token(child, Definitions.Symbol.name).literal,
-                build_slice(find_first_node(child, "slice"))
-            ))
+            has_slice = has_node(child, "slice")
+
+            if has_slice:
+                return VarExpr(VarRef(
+                    first_token(child, Definitions.Symbol.name).literal,
+                    build_slice(find_first_node(child, "slice"))
+                ))
+            else:
+                return VarExpr(VarRef(
+                    first_token(child, Definitions.Symbol.name).literal
+                ))
         
         if isinstance(child, ParsedNode) and child.name == "functioncall":
             return FunctionCallExpr(
-                first_token(node, Definitions.Symbol.name).literal,
-                build_explist1(find_first_node(node, "args"))
+                first_token(child, Definitions.Symbol.name).literal,
+                build_explist1(find_first_node(child, "args"))
             )
         
         # if isinstance(child, ParsedNode) and child.name == "var":
