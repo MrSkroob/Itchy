@@ -1,7 +1,7 @@
 from __future__ import annotations
 import uuid
 import json
-import zipfile
+# import zipfile
 
 from dataclasses import dataclass
 from enum import Enum, StrEnum
@@ -90,6 +90,11 @@ class Assembler:
         self.blocks[block_id] = block
         return block_id
     
+    def safe_append(self, context: list[str], object: str | None):
+        if object is None:
+            return
+        context.append(object)
+    
     def make_block(
             self,
             opcode: str,
@@ -172,6 +177,8 @@ class Assembler:
         first: StrOptional = None
         last: StrOptional = None
 
+        self.safe_append(context, parent)
+
         for stmt in statements:
             emitted = self.emit_stmt(stmt, parent, context)
 
@@ -188,6 +195,8 @@ class Assembler:
 
             
             last = emitted.last
+        
+        context.pop()
         
         return BlockRange(first, last)
     
@@ -220,6 +229,7 @@ class Assembler:
                 raise TypeError("Bad statement type")
         
     def emit_function_call(self, stmt: FunctionCallStmt, parent: str | None, context: list[str]) -> BlockRange:
+        self.safe_append(context, parent)
         info = self.procedures[stmt.callee]
 
         if len(stmt.arg_groups) != len(info.argument_ids):
@@ -777,17 +787,8 @@ class Assembler:
             VariableTypes(var_type)
         )
     
-    def assemble(self, program: Program, target: str, context: list[str]):
-        block_range = self.emit_sequence(program.body, None, context)
-
-        with zipfile.ZipFile(target, "r") as f:
-            data = json.loads(f.read("project.json").decode("utf-8"))
-            # for i in 
-
-        with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as f:
-            project = json.dumps(data, ensure_ascii=True)
-            f.writestr("project.json", data=project)
-            f.testzip()
+    def assemble(self, program: Program, target: str, context: list[str]) -> None:
+        raise NotImplementedError("asse")
 
         
     
