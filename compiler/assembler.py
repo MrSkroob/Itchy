@@ -133,7 +133,7 @@ class Assembler:
         return self.variable_ids[name]
 
 
-    def define_variable(self, shared: bool, type_name: str, name: str) -> str:
+    def define_variable(self, shared: bool, type_name: str, name: str, context: list[str]) -> str:
         """
         Returns a variable ID. NOT a block ID.
         You may also use this if you're okay with the variable not existing beforehand (typically for loop variables and other compiler-defined, single use variables.)
@@ -167,12 +167,13 @@ class Assembler:
             self,
             statements: tuple[Stmt, ...],
             parent: StrOptional,
+            context: list[str]
         ) -> BlockRange:
         first: StrOptional = None
         last: StrOptional = None
 
         for stmt in statements:
-            emitted = self.emit_stmt(stmt, parent)
+            emitted = self.emit_stmt(stmt, parent, context)
 
             if emitted.first is None:
                 continue
@@ -190,27 +191,27 @@ class Assembler:
         
         return BlockRange(first, last)
     
-    def emit_stmt(self, stmt: Stmt, parent: StrOptional) -> BlockRange:
+    def emit_stmt(self, stmt: Stmt, parent: StrOptional, context: list[str]) -> BlockRange:
         match stmt:
             case BlockStmt(body=body):
-                return self.emit_sequence(body, parent)
+                return self.emit_sequence(body, parent, context)
             case VarDefStmt(shared=shared, type_name=type_name, name=name):
-                self.define_variable(shared, type_name, name)
+                self.define_variable(shared, type_name, name, context)
                 return BlockRange(None, None)
             case AssignStmt(target=target, value=value):
-                return self.emit_assignment(target, value, parent)
+                return self.emit_assignment(target, value, parent, context)
             case IfStmt():
-                return self.emit_if(stmt, parent)
+                return self.emit_if(stmt, parent, context)
             case WhileStmt():
-                return self.emit_while(stmt, parent)
+                return self.emit_while(stmt, parent, context)
             case ForRangeStmt():
-                return self.emit_for_range(stmt, parent)
+                return self.emit_for_range(stmt, parent, context)
             case ForInStmt():
-                return self.emit_for_in(stmt, parent)
+                return self.emit_for_in(stmt, parent, context)
             case FunctionDefStmt():
-                return self.emit_function_def(stmt, parent)
+                return self.emit_function_def(stmt, parent, context)
             case FunctionCallStmt():
-                return self.emit_function_call(stmt, parent)
+                return self.emit_function_call(stmt, parent, context)
             case BreakStmt():
                 raise NotImplementedError("Not implemented")
             case ReturnStmt():
@@ -218,7 +219,7 @@ class Assembler:
             case _:
                 raise TypeError("Bad statement type")
         
-    def emit_function_call(self, stmt: FunctionCallStmt, parent: str | None = None) -> BlockRange:
+    def emit_function_call(self, stmt: FunctionCallStmt, parent: str | None, context: list[str]) -> BlockRange:
         info = self.procedures[stmt.callee]
 
         if len(stmt.arg_groups) != len(info.argument_ids):
@@ -230,7 +231,7 @@ class Assembler:
         inputs: dict[str, list[Any]] = {}
 
         for arg_id, arg_expr in zip(info.argument_ids, stmt.arg_groups):
-            emitted_arg = self.emit_expr(arg_expr)
+            emitted_arg = self.emit_expr(arg_expr, context)
             inputs[arg_id] = emitted_arg.value
 
         block_id = self.make_block(
@@ -249,7 +250,7 @@ class Assembler:
 
         return BlockRange(block_id, block_id)
             
-    def emit_function_def(self, stmt: FunctionDefStmt, parent: str | None = None) -> BlockRange:
+    def emit_function_def(self, stmt: FunctionDefStmt, parent: str | None, context: list[str]) -> BlockRange:
         definition_id = self.make_block(
             opcode="procedures_definition",
             parent=parent,
@@ -281,7 +282,7 @@ class Assembler:
                 proccode_parts.append("%s")
                 argument_defaults.append("")
 
-            self.define_variable(False, param.type_name, param.name)
+            self.define_variable(False, param.type_name, param.name, context)
 
         prototype = self.blocks[prototype_id]
 
@@ -300,7 +301,7 @@ class Assembler:
             prototype_id,
         ]
 
-        body_range = self.emit_sequence(stmt.body, definition_id)
+        body_range = self.emit_sequence(stmt.body, definition_id, context)
 
         if body_range.first is not None:
             self.blocks[definition_id]["next"] = body_range.first
@@ -328,9 +329,9 @@ class Assembler:
 
         
     
-    def emit_for_range(self, stmt: ForRangeStmt, parent: StrOptional):
+    def emit_for_range(self, stmt: ForRangeStmt, parent: StrOptional, context: list[str]):
         # variable
-        var_id = self.define_variable(False, "number", stmt.variable)
+        var_id = self.define_variable(False, "number", stmt.variable, context)
 
         set_id = self.make_block(
             "data_setvariableto",
@@ -339,7 +340,7 @@ class Assembler:
                 "VARIABLE": [stmt.variable, var_id]
             },
             inputs={
-                "VALUE": self.emit_expr(stmt.start).value
+                "VALUE": self.emit_expr(stmt.start, context).value
             }
         )
 
@@ -354,7 +355,7 @@ class Assembler:
             "control_repeat_until",
             parent=set_id,
             inputs={
-                "CONDITION": self.emit_expr(stop_condition).value
+                "CONDITION": self.emit_expr(stop_condition, context).value
             }
         )
         
@@ -367,11 +368,11 @@ class Assembler:
                 "VARIABLE": [stmt.variable, var_id]
             },
             inputs={
-                "VALUE": self.emit_expr(stmt.step).value
+                "VALUE": self.emit_expr(stmt.step, context).value
             }
         )
 
-        body = self.emit_sequence(stmt.body, change_id)
+        body = self.emit_sequence(stmt.body, change_id, context)
 
         if body.first is None:
             self.blocks[repeat_id]["inputs"]["SUBSTACK"] = [InputType.SHADOWED, change_id]
@@ -383,11 +384,11 @@ class Assembler:
         
         return BlockRange(set_id, repeat_id)
     
-    def emit_for_in(self, stmt: ForInStmt, parent: StrOptional):
+    def emit_for_in(self, stmt: ForInStmt, parent: StrOptional, context: list[str]):
         list_variable_name = "list_getter" + self.new_id()
         iterable_id = self.get_variable(stmt.iterable.root)
-        var_id = self.define_variable(False, "number", list_variable_name) # not to be used by the programmer, so is given garbage name.
-        var_list_item_id = self.define_variable(False, "number", stmt.variable) # variable type doesn't matter as long as it's not 'list'
+        var_id = self.define_variable(False, "number", list_variable_name, context) # not to be used by the programmer, so is given garbage name.
+        var_list_item_id = self.define_variable(False, "number", stmt.variable, context) # variable type doesn't matter as long as it's not 'list'
 
         """
         temp = 1 // set_id
@@ -415,7 +416,7 @@ class Assembler:
                 "VARIABLE": [list_variable_name, var_id]
             },
             inputs={
-                "VALUE": self.emit_expr(NumberExpr(1)).value
+                "VALUE": self.emit_expr(NumberExpr(1), context).value
             }
         )
 
@@ -469,7 +470,7 @@ class Assembler:
             "control_repeat_until",
             parent=set_id,
             inputs={
-                "CONDITION": self.emit_expr(stop_condition).value
+                "CONDITION": self.emit_expr(stop_condition, context).value
             }
         )
 
@@ -496,13 +497,13 @@ class Assembler:
                 "VARIABLE": [stmt.variable, var_id]
             },
             inputs={
-                "VALUE": self.emit_expr(NumberExpr(1)).value
+                "VALUE": self.emit_expr(NumberExpr(1), context).value
             }
         )
 
         self.blocks[list_set_id]["next"] = change_id
 
-        body = self.emit_sequence(stmt.body, change_id)
+        body = self.emit_sequence(stmt.body, change_id, context)
 
         if body.first is not None:
             self.blocks[change_id]["next"] = body.first
@@ -511,7 +512,7 @@ class Assembler:
 
         return BlockRange(set_id, repeat_id)
     
-    def emit_while(self, stmt: WhileStmt, parent: StrOptional):
+    def emit_while(self, stmt: WhileStmt, parent: StrOptional, context: list[str]):
         """
         Scratch does not support while loops normally, but *does* support repeat until blocks. A good way to emulate it is to
         do:
@@ -526,28 +527,29 @@ class Assembler:
             "control_repeat_until",
             parent=parent,
             inputs={
-                "CONDITION": self.emit_expr(not_condition).value
+                "CONDITION": self.emit_expr(not_condition, context).value
             }
         )
 
-        body = self.emit_sequence(stmt.body, block_id)
+        body = self.emit_sequence(stmt.body, block_id, context)
 
         if body.first is not None:
             self.blocks[block_id]["inputs"]["SUBSTACK"] = [InputType.SHADOWED, body.first]
         
         return BlockRange(block_id, block_id)
             
-    def emit_if(self, stmt: IfStmt, parent: StrOptional):
+    def emit_if(self, stmt: IfStmt, parent: StrOptional, context: list[str]):
         first = self.emit_if_branch_chain(
             stmt.branches,
             stmt.else_body,
             0,
-            parent
+            parent,
+            context
         )
 
         return BlockRange(first, first)
 
-    def emit_if_branch_chain(self, branches: tuple[IfBranch, ...], else_body: tuple[Stmt, ...], index: int, parent: StrOptional):
+    def emit_if_branch_chain(self, branches: tuple[IfBranch, ...], else_body: tuple[Stmt, ...], index: int, parent: StrOptional, context: list[str]):
         branch = branches[index]
         has_else = index + 1 < len(branches) or bool(else_body)
 
@@ -557,11 +559,11 @@ class Assembler:
             opcode=opcode,
             parent=parent,
             inputs={
-                "CONDITION": self.emit_expr(branch.condition).value
+                "CONDITION": self.emit_expr(branch.condition, context).value
             }
         )
 
-        then_blocks = self.emit_sequence(branch.body, block_id)
+        then_blocks = self.emit_sequence(branch.body, block_id, context)
 
         if then_blocks.first is not None:
             self.blocks[block_id]["inputs"]["SUBSTACK"] = [InputType.SHADOWED, then_blocks.first]
@@ -573,12 +575,13 @@ class Assembler:
                     branches,
                     else_body,
                     index + 1,
-                    block_id
+                    block_id,
+                    context
                 )
                 self.blocks[block_id]["inputs"]["SUBSTACK2"] = [InputType.SHADOWED, nested_if]
             else:
                 # no more if statements. rest of the code is not part of this if branch
-                else_blocks = self.emit_sequence(else_body, block_id)
+                else_blocks = self.emit_sequence(else_body, block_id, context)
                 if else_blocks.first is not None:
                     self.blocks[block_id]["inputs"]["SUBSTACK2"] = [InputType.SHADOWED, else_blocks.first]
         
@@ -589,7 +592,7 @@ class Assembler:
         return var_id in self.lists or var_id in self.global_lists
 
     
-    def emit_assignment(self, target: VarRef, value: Expr, parent: StrOptional) -> BlockRange:
+    def emit_assignment(self, target: VarRef, value: Expr, parent: StrOptional, context: list[str]) -> BlockRange:
         if target.slice_expr is not None:
             assert target.root in self.variable_ids, "list usage before declaration!"
             
@@ -601,8 +604,8 @@ class Assembler:
                     "data_replaceitemoflist",
                     parent=parent,
                     inputs={
-                        "INDEX": self.emit_expr(target.slice_expr).value,
-                        "ITEM": self.emit_expr(value).value
+                        "INDEX": self.emit_expr(target.slice_expr, context).value,
+                        "ITEM": self.emit_expr(value, context).value
                     },
                     fields={
                         "LIST": [target.root, var_id]
@@ -656,7 +659,7 @@ class Assembler:
                     "VARIABLE": [target.root, var_id]
                 },
                 inputs={
-                    "VALUE": self.emit_expr(value).value
+                    "VALUE": self.emit_expr(value, context).value
                 }
             )
             
@@ -665,7 +668,7 @@ class Assembler:
                 block_id
             )
     
-    def emit_expr(self, expr: Expr) -> ScratchInput:
+    def emit_expr(self, expr: Expr, context: list[str]) -> ScratchInput:
         # block_id = self.new_id()
         # expression: ScratchInput = [InputType.REPORTER, block_id]
         
@@ -679,11 +682,11 @@ class Assembler:
                 # if (0 == 0) == "true" is true, so we can just use strings without any fancy conversion :)
                 return ScratchInput([InputType.LITERAL, [DataType.STRING, str(value).lower()]], VariableTypes.BOOLEAN)
             case VarExpr(ref=ref):
-                return self.emit_var_ref(ref)
+                return self.emit_var_ref(ref, context)
             case UnaryOpExpr(op=op, value=value):
-                return self.emit_unary_expr(op, value)
+                return self.emit_unary_expr(op, value, context)
             case BinaryOpExpr(left=left, op=op, right=right):
-                return self.emit_binary_expr(left, op, right)
+                return self.emit_binary_expr(left, op, right, context)
             case FunctionCallExpr():
                 raise NotImplementedError("returns are hard :(")
             case TableExpr():
@@ -695,12 +698,12 @@ class Assembler:
         # return expression
     
 
-    def emit_unary_expr(self, op: str, value: Expr) -> ScratchInput:
+    def emit_unary_expr(self, op: str, value: Expr, context: list[str]) -> ScratchInput:
         if op in {"not", "!"}:
             block_id = self.make_block(
                 opcode="operator_not",
                 inputs={
-                    "OPERAND": self.emit_expr(value).value,
+                    "OPERAND": self.emit_expr(value, context).value,
                 },
             )
             return ScratchInput([InputType.SHADOWED, block_id], VariableTypes.BOOLEAN)
@@ -710,16 +713,16 @@ class Assembler:
                 opcode="operator_subtract",
                 inputs={
                     "NUM1": [InputType.LITERAL, [DataType.NUMBER, "0"]],
-                    "NUM2": self.emit_expr(value).value,
+                    "NUM2": self.emit_expr(value, context).value,
                 },
             )
             return ScratchInput([InputType.SHADOWED, block_id], VariableTypes.NUMBER)
 
         raise NotImplementedError(f"Unsupported unary operator: {op}")
     
-    def emit_binary_expr(self, left: Expr, op: str, right: Expr) -> ScratchInput:
-        left_expr = self.emit_expr(left)
-        right_expr = self.emit_expr(right)
+    def emit_binary_expr(self, left: Expr, op: str, right: Expr, context: list[str]) -> ScratchInput:
+        left_expr = self.emit_expr(left, context)
+        right_expr = self.emit_expr(right, context)
 
         if op == "+" and (
             left_expr.return_type != VariableTypes.NUMBER
@@ -758,7 +761,7 @@ class Assembler:
             return_type,
         )
 
-    def emit_var_ref(self, ref: VarRef) -> ScratchInput:
+    def emit_var_ref(self, ref: VarRef, context: list[str]) -> ScratchInput:
         var_id = self.get_variable(ref.root)
         var_type = self.var_types[var_id]
 
@@ -774,8 +777,8 @@ class Assembler:
             VariableTypes(var_type)
         )
     
-    def assemble(self, program: Program, target: str):
-        block_range = self.emit_sequence(program.body, None)
+    def assemble(self, program: Program, target: str, context: list[str]):
+        block_range = self.emit_sequence(program.body, None, context)
 
         with zipfile.ZipFile(target, "r") as f:
             data = json.loads(f.read("project.json").decode("utf-8"))
