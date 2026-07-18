@@ -80,7 +80,6 @@ class CompilerError(Exception):
 class BlockRange:
     first: StrOptional
     last: StrOptional
-    context: StrOptional=None
 
 
 @dataclass(frozen=True)
@@ -245,7 +244,7 @@ class Assembler:
             last = emitted.last
 
         
-        return BlockRange(first, last, context)
+        return BlockRange(first, last)
     
     def emit_stmt(self, stmt: Stmt, parent: StrOptional, context: StrOptional) -> BlockRange:
         match stmt:
@@ -253,7 +252,7 @@ class Assembler:
                 return self.emit_sequence(body, parent, context)
             case VarDefStmt(shared=shared, type_name=type_name, name=name):
                 self.define_variable(shared, type_name, name, context)
-                return BlockRange(None, None, context)
+                return BlockRange(None, None)
             case AssignStmt(target=target, value=value):
                 return self.emit_assignment(target, value, parent, context)
             case IfStmt():
@@ -330,22 +329,34 @@ class Assembler:
             "warp": "false",
         }
 
-        return BlockRange(block_id, block_id, context)
+        return BlockRange(block_id, block_id)
     
     def emit_event_handler(self, stmt: EventHandlerStmt, context: StrOptional) -> BlockRange:
         match stmt.name:
+            case "when_flagclicked":
+                event_id = self.make_block(
+                    "event_whenflagclicked",
+                    top_level=True
+                )
+                return BlockRange(event_id, event_id)
+
             case "event_whenbroadcastreceived":
                 expression = self.emit_expr(stmt.params[0], context)
-                assert isinstance(expression, StringExpr)
+                # assert isinstance(expression, StringExpr)
 
-                broadcast_id = self.messages[expression.value]
+                if not isinstance(expression, StringExpr):
+                    raise CompilerError("bad, bad, bad. expressions can't be converted to fields in scratch.")
+
+                broadcast_name = expression.value[1][1]
+                broadcast_id = self.messages[broadcast_name]
+
                 event_id = self.make_block(
                     stmt.name,
                     parent=None,
                     fields={
                         # default
                         "BROADCAST_OPTION": [
-                            stmt.params[0].value,
+                            broadcast_name,
                             broadcast_id
                         ]
                     },
@@ -356,10 +367,9 @@ class Assembler:
                 return BlockRange(
                     event_id,
                     body.last or event_id,
-                    context
                 )
             case _:
-                pass
+                raise CompilerError("uh oh")
         # placeholder
             
     def emit_function_def(self, stmt: FunctionDefStmt, parent: StrOptional, context: StrOptional) -> BlockRange:
