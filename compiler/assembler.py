@@ -295,7 +295,7 @@ class Assembler:
         
         
         return BlockRange(None, None)
-        
+            
     def emit_function_call(self, stmt: FunctionCallStmt, parent: str | None, context: StrOptional) -> BlockRange:
         if stmt.callee not in self.procedures:
             # is either a custom scratch block or a hallucination :v
@@ -333,9 +333,15 @@ class Assembler:
     
     def emit_event_handler(self, stmt: EventHandlerStmt, context: StrOptional) -> BlockRange:
         match stmt.name:
-            case "when_flagclicked":
+            case "event_whengreaterthan":
                 event_id = self.make_block(
-                    "event_whenflagclicked",
+                    stmt.name,
+                    top_level=True,
+                )
+
+            case "event_whenflagclicked":
+                event_id = self.make_block(
+                    stmt.name,
                     top_level=True
                 )
                 return BlockRange(event_id, event_id)
@@ -786,7 +792,6 @@ class Assembler:
             return BlockRange(
                 block_id,
                 block_id,
-                context
             )
     
     def emit_expr(self, expr: Expr, context: StrOptional) -> ScratchInput:
