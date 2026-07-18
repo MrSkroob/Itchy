@@ -71,7 +71,7 @@ class ForInStmt(Stmt):
 @dataclass(frozen=True)
 class EventHandlerStmt(Stmt):
     name: str
-    params: tuple["Param", ...]
+    params: tuple[Expr, ...]
     body: tuple[Stmt, ...]
 
 
@@ -178,6 +178,13 @@ class ForRangeBody:
 @dataclass(frozen=True)
 class ForInBody:
     iterable: VarRef
+
+
+@dataclass(frozen=True)
+class EventParts:
+    name: str
+    params: tuple[Expr, ...]
+    body: tuple[Stmt, ...]
 
 
 @dataclass(frozen=True)
@@ -452,7 +459,7 @@ def build_literals(node: ParsedNode) -> Expr:
         if isinstance(child, ParsedNode) and child.name == "functioncall":
             return FunctionCallExpr(
                 first_token(child, Definitions.Symbol.name).literal,
-                build_explist1(find_first_node(child, "args"))
+                build_varlist1(find_first_node(child, "args"))
             )
         
         # if isinstance(child, ParsedNode) and child.name == "var":
@@ -523,31 +530,37 @@ def build_slice(node: ParsedNode) -> Expr:
 
 def build_tableconstructor(node: ParsedNode) -> TableExpr:
     for child in flat_children(node):
-        if isinstance(child, ParsedNode) and child.name == "explist1":
-            return TableExpr(build_explist1(child))
+        if isinstance(child, ParsedNode) and child.name == "varlist1":
+            return TableExpr(build_varlist1(child))
 
     return TableExpr(())
 
 
-def build_explist1(node: ParsedNode) -> tuple[Expr, ...]:
-    values: list[Expr] = []
+# def build_explist1(node: ParsedNode) -> tuple[Expr, ...]:
+#     values: list[Expr] = []
 
-    for child in flat_children(node):
-        if isinstance(child, ParsedNode) and child.name == "equation":
-            values.append(build_equation(child))
+#     print(flat_children(node))
 
-        elif isinstance(child, ParsedNode) and child.name == "explist1":
-            values.extend(build_explist1(child))
+#     for child in flat_children(node):
+#         if isinstance(child, ParsedNode) and child.name == "equation":
+#             values.append(build_equation(child))
 
-    return tuple(values)
+#         elif isinstance(child, ParsedNode) and child.name == "explist1":
+#             values.extend(build_explist1(child))
+    
+#     return tuple(values)
 
 
 def build_varlist1(node: ParsedNode) -> tuple[Expr, ...]:
     values: list[Expr] = []
 
     for child in flat_children(node):
-        if isinstance(child, ParsedNode) and child.name == "literals":
-            values.append(build_literals(child))
+        # if isinstance(child, ParsedNode) and child.name == "literals":
+        #     values.append(build_literals(child))
+        if isinstance(child, ParsedNode) and child.name == "equation":
+            values.append(build_equation(child))
+        elif isinstance(child, ParsedNode) and child.name == "varlist1":
+            values.extend(build_varlist1(child))
 
     return tuple(values)
 
@@ -625,6 +638,19 @@ def build_argtype(node: ParsedNode) -> Param:
     return Param(name, type_name)
 
 
+# def build_eventbody(node: ParsedNode) -> tuple[tuple[Expr, ...], tuple[Stmt, ...]]:
+#     params: tuple[Expr, ...] = ()
+#     body: tuple[Stmt, ...] = ()
+
+#     for child in flat_children(node):
+#         if isinstance(child, ParsedNode) and child.name == "args":
+#             params = build_explist1(child)
+#         elif isinstance(child, ParsedNode) and child.name == "wrap":
+#             body = build_wrap(child)
+    
+#     return params, body
+
+
 def build_funcbody(node: ParsedNode) -> tuple[tuple[Param, ...], tuple[Stmt, ...]]:
     params: tuple[Param, ...] = ()
     body: tuple[Stmt, ...] = ()
@@ -637,6 +663,19 @@ def build_funcbody(node: ParsedNode) -> tuple[tuple[Param, ...], tuple[Stmt, ...
             body = build_wrap(child)
 
     return params, body    
+
+
+# def build_event(node: ParsedNode) -> EventParts:
+#     children = flat_children(node)
+#     name = expect_token(children[0], Definitions.Symbol.name).literal
+#     eventbody = expect_node(children[1], "args")
+#     wrap = expect_node(children[2], "wrap")
+
+#     return EventParts(
+#         name, 
+#         build_equation(eventbody),
+#         build_wrap(wrap)
+#     )
 
 
 def build_function(node: ParsedNode) -> FunctionParts:
@@ -667,13 +706,17 @@ def build_functionstat(node: ParsedNode) -> FunctionDefStmt:
 
 
 def build_eventstat(node: ParsedNode) -> EventHandlerStmt:
-    function = find_first_node(node, "function")
-    parts = build_function(function)
+    children = flat_children(node)
+    name = expect_token(children[1], Definitions.Symbol.name).literal
+    eventbody = expect_node(children[2], "args")
+    wrap = expect_node(children[3], "wrap")
+
+    print(flat_children(eventbody)[1].name)
 
     return EventHandlerStmt(
-        parts.name,
-        parts.params,
-        parts.body,
+        name, 
+        build_varlist1(eventbody),
+        build_wrap(wrap)
     )
 
 
@@ -795,8 +838,8 @@ def build_laststat(node: ParsedNode) -> Stmt:
         values: tuple[Expr, ...] = ()
 
         for child in children:
-            if isinstance(child, ParsedNode) and child.name == "explist1":
-                values = build_explist1(child)
+            if isinstance(child, ParsedNode) and child.name == "varlist1":
+                values = build_varlist1(child)
         
         return ReturnStmt(values)
 

@@ -6,7 +6,7 @@
 <ifstat> ::= <If> <equation> <wrap> {<ElseIf> <equation> <wrap>} [<Else> <wrap>]
 <forstat> ::= <For> <Symbol> <forbody> <wrap>
 <functionstat> ::= [<Warp>] <Define> <function>
-<eventstat> ::= <Event> <function>
+<eventstat> ::= <Event> <Symbol> <args> <wrap>
 <vardefstat> ::= [<Shared>] <Type> <Symbol>
 <varassignstat> ::= <var> <Assign> <equation>
 <functioncall> ::= <Symbol> <args>
@@ -16,6 +16,8 @@
 <tableconstructor> ::= "[" [<explist1>] "]"
 <wrap> ::= "{" [<chunk>] "}"
 <function> ::= <Symbol> <funcbody>
+// <event> ::= <Symbol> <eventbody>
+// <eventbody> ::= <args> <wrap>
 <funcbody> ::= "(" [<paramlist>] ")" <wrap>
 <slice> ::= "[" <equation> "]"
 <equation> ::= <comparison>
