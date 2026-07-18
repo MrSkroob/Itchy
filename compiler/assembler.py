@@ -290,9 +290,8 @@ class Assembler:
                 )
             case _:
                 pass
-
         
-        
+        # TODO: finish this. read scratch_blocks.py to parse and return BlockRange
         
         return BlockRange(None, None)
             
@@ -332,11 +331,21 @@ class Assembler:
         return BlockRange(block_id, block_id)
     
     def emit_event_handler(self, stmt: EventHandlerStmt, context: StrOptional) -> BlockRange:
+        # TODO: finish this.
         match stmt.name:
             case "event_whengreaterthan":
                 event_id = self.make_block(
                     stmt.name,
                     top_level=True,
+                )
+
+            case "event_whenbackdropswitchesto":
+                event_id = self.make_block(
+                    stmt.name,
+                    fields={
+
+                    }
+                    top_level=True
                 )
 
             case "event_whenflagclicked":
