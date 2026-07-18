@@ -1,11 +1,12 @@
 <program> ::= {<vardefstat>} <chunk> <EOF> 
 <chunk> ::= {<stat> {<StatementSeperator>}} [<laststat> {<StatementSeperator>}]
-<stat> ::= <wrap> | <whilestat> | <ifstat> | <forstat> | <functionstat> | <varassignstat> | <functioncall>
+<stat> ::= <wrap> | <whilestat> | <ifstat> | <forstat> | <functionstat> | <eventstat> | <varassignstat> | <functioncall>
 
 <whilestat> ::= <While> <equation> <wrap>
 <ifstat> ::= <If> <equation> <wrap> {<ElseIf> <equation> <wrap>} [<Else> <wrap>]
 <forstat> ::= <For> <Symbol> <forbody> <wrap>
-<functionstat> ::= [<NoRefresh>]  ( <Event> | <Define> ) <function>
+<functionstat> ::= [<NoRefresh>] <Define> <function>
+<eventstat> ::= <Event> <function>
 <vardefstat> ::= [<Shared>] <Type> <Symbol>
 <varassignstat> ::= <var> <Assign> <equation>
 <functioncall> ::= <Symbol> <args>
