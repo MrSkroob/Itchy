@@ -80,7 +80,7 @@ class FunctionDefStmt(Stmt):
     name: str
     params: tuple["Param", ...]
     body: tuple[Stmt, ...]
-    no_refresh: bool = False
+    warp: bool = False
 
 
 @dataclass(frozen=True)
@@ -654,7 +654,7 @@ def build_function(node: ParsedNode) -> FunctionParts:
 
 
 def build_functionstat(node: ParsedNode) -> FunctionDefStmt:
-    no_refresh = has_token(node, Definitions.NoRefresh.name)
+    warp = has_token(node, Definitions.Warp.name)
     function = find_first_node(node, "function")
     parts = build_function(function)
 
@@ -662,7 +662,7 @@ def build_functionstat(node: ParsedNode) -> FunctionDefStmt:
         parts.name,
         parts.params,
         parts.body,
-        no_refresh,
+        warp,
     )
 
 

@@ -30,7 +30,6 @@ class Token(Generic[TokenRule]):
 # typically, they'd be rules that are too generic or simple to warrant a rule, like numbers and symbols and keywords.
 class Definitions(StrEnum):
     Comment = r"//.*"
-    NoRefresh = r"\b(norefresh)\b"
     Define = r"\b(define)\b"
     ElseIf = r"\b(elseif)\b"
     Return = r"\b(return)\b"
@@ -38,6 +37,7 @@ class Definitions(StrEnum):
     Event = r"\b(event)\b"
     While = r"\b(while)\b"
     Break = r"\b(break)\b"
+    Warp = r"\b(warp)\b"
     Else = r"\b(else)\b"
     For = r"\b(for)\b"
     Var = r"\b(var)\b"
