@@ -710,9 +710,7 @@ def build_eventstat(node: ParsedNode) -> EventHandlerStmt:
     name = expect_token(children[1], Definitions.Symbol.name).literal
     eventbody = expect_node(children[2], "args")
     wrap = expect_node(children[3], "wrap")
-
-    print(flat_children(eventbody)[1].name)
-
+    
     return EventHandlerStmt(
         name, 
         build_varlist1(eventbody),
