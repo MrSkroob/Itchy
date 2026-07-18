@@ -5,7 +5,7 @@
 <whilestat> ::= <While> <equation> <wrap>
 <ifstat> ::= <If> <equation> <wrap> {<ElseIf> <equation> <wrap>} [<Else> <wrap>]
 <forstat> ::= <For> <Symbol> <forbody> <wrap>
-<functionstat> ::= [<NoRefresh>] <Define> <function>
+<functionstat> ::= [<NoRefresh>]  ( <Event> | <Define> ) <function>
 <vardefstat> ::= [<Shared>] <Type> <Symbol>
 <varassignstat> ::= <var> <Assign> <equation>
 <functioncall> ::= <Symbol> <args>

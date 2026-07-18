@@ -35,6 +35,7 @@ class Definitions(StrEnum):
     ElseIf = r"\b(elseif)\b"
     Return = r"\b(return)\b"
     Shared = r"\b(shared)\b"
+    Event = r"\b(event)\b"
     While = r"\b(while)\b"
     Break = r"\b(break)\b"
     Else = r"\b(else)\b"

@@ -70,6 +70,7 @@ class FunctionDefStmt(Stmt):
     params: tuple["Param", ...]
     body: tuple[Stmt, ...]
     no_refresh: bool = False
+    is_hat: bool = False
 
 
 @dataclass(frozen=True)
@@ -643,6 +644,7 @@ def build_function(node: ParsedNode) -> FunctionParts:
 
 
 def build_functionstat(node: ParsedNode) -> FunctionDefStmt:
+    is_hat = has_token(node, Definitions.Event.name)
     no_refresh = has_token(node, Definitions.NoRefresh.name)
     function = find_first_node(node, "function")
     parts = build_function(function)
@@ -651,7 +653,8 @@ def build_functionstat(node: ParsedNode) -> FunctionDefStmt:
         parts.name,
         parts.params,
         parts.body,
-        no_refresh
+        no_refresh,
+        is_hat
     )
 
 
