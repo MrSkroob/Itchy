@@ -57,6 +57,18 @@ class CompilerError(Exception):
 class BlockRange:
     first: StrOptional
     last: StrOptional
+    context: StrOptional=None
+
+
+@dataclass(frozen=True)
+class VariableData:
+    name: str
+    id: str
+    context: StrOptional
+    var_type: VariableTypes
+    is_list: bool
+    shared: bool
+    initial_value: Any
 
 
 @dataclass(frozen=True)
@@ -70,17 +82,29 @@ class ProcedureInfo:
 
 
 class Assembler:
-    def __init__(self) -> None:
+    def __init__(self, target: str) -> None:
+        self.target: str=""
+        self.variables: dict[str, VariableData]={} # includes lists.
         self.blocks: dict[str, ScratchBlock] = {}
-        # the sprite's variables
-        self.variables: dict[str, list[Any]] = {}
         self.procedures: dict[str, ProcedureInfo] = {}
-        # i.e. stage's variables
-        self.global_lists: dict[str, list[Any]] = {}
-        self.global_variables: dict[str, list[Any]] = {}
-        self.variable_ids: dict[str, str] = {}
-        self.lists: dict[str, list[Any]] = {}
-        self.var_types: dict[str, str] = {}
+
+        # scope is:
+        # variable name, parent block (if applicable)
+        # in scratch, we don't need stacks for variable scopes. 
+        # a variable can either be owned by a function, or not. so, the StrOptional is typically 
+        # the function id.
+        self.variable_map: dict[tuple[str, StrOptional], str]={}
+
+        # self.blocks: dict[str, ScratchBlock] = {}
+        # # the sprite's variables
+        # self.variables: dict[str, list[Any]] = {}
+        # self.procedures: dict[str, ProcedureInfo] = {}
+        # # i.e. stage's variables
+        # self.global_lists: dict[str, list[Any]] = {}
+        # self.global_variables: dict[str, list[Any]] = {}
+        # self.variable_ids: dict[str, str] = {}
+        # self.lists: dict[str, list[Any]] = {}
+        # self.var_types: dict[str, str] = {}
 
     def new_id(self) -> str:
         return uuid.uuid4().hex[:20]
@@ -89,11 +113,6 @@ class Assembler:
         block_id = self.new_id()
         self.blocks[block_id] = block
         return block_id
-    
-    def safe_append(self, context: list[str], object: str | None):
-        if object is None:
-            return
-        context.append(object)
     
     def make_block(
             self,
@@ -129,55 +148,60 @@ class Assembler:
         return self.add_block(block)
     
 
-    def get_variable(self, name: str) -> str:
+    def get_variable(self, name: str, context: StrOptional) -> str:
         """
         Returns a variable ID without any extra functionality.
         Do this when you strictly expect the variable to exist, and want to error if it wasn't implicitly/explicitly defined previously.
         """
-        assert name in self.variable_ids, "variable not defined!"
-        return self.variable_ids[name]
+        key = (name, context)
+        assert key in self.variables, "variable not defined!"
+        return self.variable_map[key]
 
 
-    def define_variable(self, shared: bool, type_name: str, name: str, context: list[str]) -> str:
+    def define_variable(self, shared: bool, type_name: str, name: str, context: StrOptional) -> str:
         """
         Returns a variable ID. NOT a block ID.
         You may also use this if you're okay with the variable not existing beforehand (typically for loop variables and other compiler-defined, single use variables.)
         """
         # shared defines if the variable can be accessible to all sprites
-        if shared:
-            if type_name == "list":
-                variable_location = self.global_lists
-                default_value = []
-            else:
-                variable_location = self.global_variables
-                default_value = 0
+        is_list = type_name == "list"
+        if is_list:
+            default_value = []
         else:
-            if type_name == "list":
-                variable_location = self.lists
-                default_value = []
-            else:
-                variable_location = self.variables
-                default_value = 0
+            default_value = 0
 
-        if name in self.variable_ids:
-            return self.variable_ids[name]
+        key = (name, context)
+
+        if key in self.variable_map:
+            return self.variable_map[(name, context)]
 
         var_id = self.new_id()
-        self.variable_ids[name] = var_id
-        variable_location[var_id] = [name, default_value]
-        self.var_types[var_id] = type_name
+
+        variable = VariableData(
+            name, 
+            self.new_id(),
+            context,
+            VariableTypes(type_name),
+            is_list,
+            shared,
+            default_value
+        )
+
+        self.variables[var_id] = variable
+        self.variable_map[key] = var_id
+        # self.variable_ids[name] = var_id
+        # variable_location[var_id] = [name, default_value]
+        # self.var_types[var_id] = type_name
         return var_id
     
     def emit_sequence(
             self,
             statements: tuple[Stmt, ...],
             parent: StrOptional,
-            context: list[str]
+            context: StrOptional
         ) -> BlockRange:
         first: StrOptional = None
         last: StrOptional = None
-
-        self.safe_append(context, parent)
 
         for stmt in statements:
             emitted = self.emit_stmt(stmt, parent, context)
@@ -195,18 +219,17 @@ class Assembler:
 
             
             last = emitted.last
+
         
-        context.pop()
-        
-        return BlockRange(first, last)
+        return BlockRange(first, last, context)
     
-    def emit_stmt(self, stmt: Stmt, parent: StrOptional, context: list[str]) -> BlockRange:
+    def emit_stmt(self, stmt: Stmt, parent: StrOptional, context: StrOptional) -> BlockRange:
         match stmt:
             case BlockStmt(body=body):
                 return self.emit_sequence(body, parent, context)
             case VarDefStmt(shared=shared, type_name=type_name, name=name):
                 self.define_variable(shared, type_name, name, context)
-                return BlockRange(None, None)
+                return BlockRange(None, None, context)
             case AssignStmt(target=target, value=value):
                 return self.emit_assignment(target, value, parent, context)
             case IfStmt():
@@ -228,8 +251,7 @@ class Assembler:
             case _:
                 raise TypeError("Bad statement type")
         
-    def emit_function_call(self, stmt: FunctionCallStmt, parent: str | None, context: list[str]) -> BlockRange:
-        self.safe_append(context, parent)
+    def emit_function_call(self, stmt: FunctionCallStmt, parent: str | None, context: StrOptional) -> BlockRange:
         info = self.procedures[stmt.callee]
 
         if len(stmt.arg_groups) != len(info.argument_ids):
@@ -258,9 +280,9 @@ class Assembler:
             "warp": "false",
         }
 
-        return BlockRange(block_id, block_id)
+        return BlockRange(block_id, block_id, context)
             
-    def emit_function_def(self, stmt: FunctionDefStmt, parent: str | None, context: list[str]) -> BlockRange:
+    def emit_function_def(self, stmt: FunctionDefStmt, parent: str | None, context: StrOptional) -> BlockRange:
         definition_id = self.make_block(
             opcode="procedures_definition",
             parent=parent,
@@ -292,7 +314,7 @@ class Assembler:
                 proccode_parts.append("%s")
                 argument_defaults.append("")
 
-            self.define_variable(False, param.type_name, param.name, context)
+            self.define_variable(False, param.type_name, param.name, definition_id)
 
         prototype = self.blocks[prototype_id]
 
@@ -311,7 +333,7 @@ class Assembler:
             prototype_id,
         ]
 
-        body_range = self.emit_sequence(stmt.body, definition_id, context)
+        body_range = self.emit_sequence(stmt.body, definition_id, definition_id)
 
         if body_range.first is not None:
             self.blocks[definition_id]["next"] = body_range.first
@@ -339,7 +361,7 @@ class Assembler:
 
         
     
-    def emit_for_range(self, stmt: ForRangeStmt, parent: StrOptional, context: list[str]):
+    def emit_for_range(self, stmt: ForRangeStmt, parent: StrOptional, context: StrOptional):
         # variable
         var_id = self.define_variable(False, "number", stmt.variable, context)
 
@@ -394,9 +416,12 @@ class Assembler:
         
         return BlockRange(set_id, repeat_id)
     
-    def emit_for_in(self, stmt: ForInStmt, parent: StrOptional, context: list[str]):
+    def emit_for_in(self, stmt: ForInStmt, parent: StrOptional, context: StrOptional):
         list_variable_name = "list_getter" + self.new_id()
-        iterable_id = self.get_variable(stmt.iterable.root)
+        iterable_id = self.get_variable(stmt.iterable.root, context)
+
+        # we *still* need this id to be unique, because even if it's in a for loop, scratch considers it global.
+        # so we need a variable with a unique name to avoid amiguity.
         var_id = self.define_variable(False, "number", list_variable_name, context) # not to be used by the programmer, so is given garbage name.
         var_list_item_id = self.define_variable(False, "number", stmt.variable, context) # variable type doesn't matter as long as it's not 'list'
 
@@ -432,7 +457,7 @@ class Assembler:
 
         # operator that gets n item of list
 
-        if self.is_list(iterable_id):
+        if self.variables[iterable_id].is_list:
             itemoflist = self.make_block(
                 "data_itemoflist",
                 inputs={
@@ -522,7 +547,7 @@ class Assembler:
 
         return BlockRange(set_id, repeat_id)
     
-    def emit_while(self, stmt: WhileStmt, parent: StrOptional, context: list[str]):
+    def emit_while(self, stmt: WhileStmt, parent: StrOptional, context: StrOptional):
         """
         Scratch does not support while loops normally, but *does* support repeat until blocks. A good way to emulate it is to
         do:
@@ -548,7 +573,7 @@ class Assembler:
         
         return BlockRange(block_id, block_id)
             
-    def emit_if(self, stmt: IfStmt, parent: StrOptional, context: list[str]):
+    def emit_if(self, stmt: IfStmt, parent: StrOptional, context: StrOptional):
         first = self.emit_if_branch_chain(
             stmt.branches,
             stmt.else_body,
@@ -559,7 +584,7 @@ class Assembler:
 
         return BlockRange(first, first)
 
-    def emit_if_branch_chain(self, branches: tuple[IfBranch, ...], else_body: tuple[Stmt, ...], index: int, parent: StrOptional, context: list[str]):
+    def emit_if_branch_chain(self, branches: tuple[IfBranch, ...], else_body: tuple[Stmt, ...], index: int, parent: StrOptional, context: StrOptional):
         branch = branches[index]
         has_else = index + 1 < len(branches) or bool(else_body)
 
@@ -596,19 +621,14 @@ class Assembler:
                     self.blocks[block_id]["inputs"]["SUBSTACK2"] = [InputType.SHADOWED, else_blocks.first]
         
         return block_id
-
-
-    def is_list(self, var_id: str) -> bool:
-        return var_id in self.lists or var_id in self.global_lists
-
     
-    def emit_assignment(self, target: VarRef, value: Expr, parent: StrOptional, context: list[str]) -> BlockRange:
+    
+    def emit_assignment(self, target: VarRef, value: Expr, parent: StrOptional, context: StrOptional) -> BlockRange:
         if target.slice_expr is not None:
-            assert target.root in self.variable_ids, "list usage before declaration!"
-            
-            var_id = self.variable_ids[target.root]
+            var_id = self.get_variable(target.root, context)
+            variable = self.variables[var_id]
 
-            if self.is_list(var_id):
+            if variable.is_list:
                 # is a list!
                 block_id = self.make_block(
                     "data_replaceitemoflist",
@@ -660,7 +680,7 @@ class Assembler:
 
                 raise TypeError("Strings do not support item assignment")
         else:
-            var_id = self.get_variable(target.root) 
+            var_id = self.get_variable(target.root, context) 
 
             block_id = self.make_block(
                 "data_setvariableto",
@@ -675,10 +695,11 @@ class Assembler:
             
             return BlockRange(
                 block_id,
-                block_id
+                block_id,
+                context
             )
     
-    def emit_expr(self, expr: Expr, context: list[str]) -> ScratchInput:
+    def emit_expr(self, expr: Expr, context: StrOptional) -> ScratchInput:
         # block_id = self.new_id()
         # expression: ScratchInput = [InputType.REPORTER, block_id]
         
@@ -707,8 +728,7 @@ class Assembler:
         
         # return expression
     
-
-    def emit_unary_expr(self, op: str, value: Expr, context: list[str]) -> ScratchInput:
+    def emit_unary_expr(self, op: str, value: Expr, context: StrOptional) -> ScratchInput:
         if op in {"not", "!"}:
             block_id = self.make_block(
                 opcode="operator_not",
@@ -730,7 +750,7 @@ class Assembler:
 
         raise NotImplementedError(f"Unsupported unary operator: {op}")
     
-    def emit_binary_expr(self, left: Expr, op: str, right: Expr, context: list[str]) -> ScratchInput:
+    def emit_binary_expr(self, left: Expr, op: str, right: Expr, context: StrOptional) -> ScratchInput:
         left_expr = self.emit_expr(left, context)
         right_expr = self.emit_expr(right, context)
 
@@ -771,9 +791,9 @@ class Assembler:
             return_type,
         )
 
-    def emit_var_ref(self, ref: VarRef, context: list[str]) -> ScratchInput:
-        var_id = self.get_variable(ref.root)
-        var_type = self.var_types[var_id]
+    def emit_var_ref(self, ref: VarRef, context: StrOptional) -> ScratchInput:
+        var_id = self.get_variable(ref.root, context)
+        var_type = self.variables[var_id].var_type
 
         return ScratchInput(
             [
@@ -784,10 +804,10 @@ class Assembler:
                     var_id
                 ]
             ],
-            VariableTypes(var_type)
+            var_type
         )
     
-    def assemble(self, program: Program, target: str, context: list[str]) -> None:
+    def assemble(self, program: Program, target: str, context: StrOptional) -> None:
         raise NotImplementedError("asse")
 
         
