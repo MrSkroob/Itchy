@@ -21,22 +21,7 @@ class VariableTypes(StrEnum):
     STRING = "string"
     BOOLEAN = "boolean"
     UNKNOWN = "unknown"
-"""
-ScratchInput([InputType.LITERAL, [DataType.STRING, str(value).lower()]], VariableTypes.BOOLEAN)
-"""
 
-
-"""
-[
-                InputType.LITERAL,
-                [
-                    DataType.VARIABLE,
-                    ref.root,
-                    var_id
-                ]
-            ],
-            var_type
-"""
 # return types as tuples are OKAY, because serialisation converts them all to lists anyway.
 ScratchInputRaw = tuple["InputType", tuple["DataType", str] | tuple["DataType", str, str]] | tuple["InputType", str]
 
@@ -104,8 +89,7 @@ class ProcedureInfo:
 
 
 class Assembler:
-    def __init__(self, target: str) -> None:
-        self.target: str=""
+    def __init__(self) -> None:
         self.variables: dict[str, VariableData] = {} # includes lists.
         self.blocks: dict[str, ScratchBlock] = {}
         self.procedures: dict[str, ProcedureInfo] = {}
@@ -118,17 +102,6 @@ class Assembler:
         self.variable_map: dict[tuple[str, StrOptional], str] = {}
 
         self.messages: dict[str, str] = {}
-
-        # self.blocks: dict[str, ScratchBlock] = {}
-        # # the sprite's variables
-        # self.variables: dict[str, list[Any]] = {}
-        # self.procedures: dict[str, ProcedureInfo] = {}
-        # # i.e. stage's variables
-        # self.global_lists: dict[str, list[Any]] = {}
-        # self.global_variables: dict[str, list[Any]] = {}
-        # self.variable_ids: dict[str, str] = {}
-        # self.lists: dict[str, list[Any]] = {}
-        # self.var_types: dict[str, str] = {}
 
     def new_id(self) -> str:
         return uuid.uuid4().hex[:20]
@@ -178,7 +151,7 @@ class Assembler:
         Do this when you strictly expect the variable to exist, and want to error if it wasn't implicitly/explicitly defined previously.
         """
         key = (name, context)
-        assert key in self.variables, "variable not defined!"
+        assert key in self.variable_map, "variable not defined!"
         return self.variable_map[key]
 
 
@@ -264,7 +237,7 @@ class Assembler:
             case ForInStmt():
                 return self.emit_for_in(stmt, parent, context)
             case EventHandlerStmt():
-                return self.emit_event_handler(stmt, parent, context)
+                return self.emit_event_handler(stmt, parent)
             case FunctionDefStmt():
                 return self.emit_function_def(stmt, parent, context)
             case FunctionCallStmt():
@@ -344,7 +317,7 @@ class Assembler:
                     stmt.name,
                     fields={
 
-                    }
+                    },
                     top_level=True
                 )
 
@@ -386,6 +359,7 @@ class Assembler:
             case _:
                 raise CompilerError("uh oh")
         # placeholder
+        raise NotImplementedError()
             
     def emit_function_def(self, stmt: FunctionDefStmt, parent: StrOptional, context: StrOptional) -> BlockRange:
         definition_id = self.make_block(

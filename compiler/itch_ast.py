@@ -906,10 +906,7 @@ def build_program(node: ParsedNode):
     return Program(build_chunk(chunk))
 
 
-def build_ast(tree: ParsedChild) -> Program:
-    if isinstance(tree, Token):
-        raise ValueError("gang what do you expect me to do with this")
-
+def build_ast(tree: ParsedNode) -> Program:
     assert tree.name == "program", f"give me a root node. i got {tree.name} instead :/"
 
     return build_program(tree)
