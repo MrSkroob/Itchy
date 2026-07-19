@@ -814,17 +814,17 @@ class Assembler:
                     "OPERAND": self.emit_expr(value, context).value,
                 },
             )
-            return ScratchInput([InputType.SHADOWED, block_id], VariableTypes.BOOLEAN)
+            return ScratchInput((InputType.SHADOWED, block_id), VariableTypes.BOOLEAN)
 
         if op == "-":
             block_id = self.make_block(
                 opcode="operator_subtract",
                 inputs={
-                    "NUM1": [InputType.LITERAL, [DataType.NUMBER, "0"]],
+                    "NUM1": (InputType.LITERAL, (DataType.NUMBER, "0")),
                     "NUM2": self.emit_expr(value, context).value,
                 },
             )
-            return ScratchInput([InputType.SHADOWED, block_id], VariableTypes.NUMBER)
+            return ScratchInput((InputType.SHADOWED, block_id), VariableTypes.NUMBER)
 
         raise NotImplementedError(f"Unsupported unary operator: {op}")
     
@@ -865,7 +865,7 @@ class Assembler:
         self.blocks[block_id]["inputs"][right_name] = right_expr.value
 
         return ScratchInput(
-            [InputType.SHADOWED, block_id],
+            (InputType.SHADOWED, block_id),
             return_type,
         )
 
