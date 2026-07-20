@@ -105,7 +105,7 @@ class AssignStmt(Stmt):
 @dataclass(frozen=True)
 class FunctionCallStmt(Stmt):
     callee: str
-    arg_groups: tuple[Expr, ...]
+    args: tuple[Expr, ...]
 
 
 @dataclass(frozen=True)
@@ -132,7 +132,7 @@ class VarExpr(Expr):
 @dataclass(frozen=True)
 class FunctionCallExpr(Expr):
     callee: str
-    arg_groups: tuple[Expr, ...]
+    args: tuple[Expr, ...]
 
 
 @dataclass(frozen=True)

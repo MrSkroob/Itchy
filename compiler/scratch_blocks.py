@@ -1,177 +1,180 @@
 from __future__ import annotations
 from dataclasses import dataclass
+from assembler import VariableTypes, DataType
 
 
 @dataclass(frozen=True)
-class Input:
-    """A plain value input (e.g. STEPS, X, MESSAGE). Filled in via emit_expr."""
+class ReturnType:
     name: str
+    return_type: DataType = DataType.NUMBER
 
 
 @dataclass(frozen=True)
-class Field:
+class Menu:
     """
-    A dropdown field (e.g. STYLE, EFFECT). The corresponding itch
-    argument must be a string literal whose value is one of `allowed`.
+    May have default values, but is effectively identical to an Input
     """
+    opcode: str
     name: str
-    allowed: tuple[str, ...]
-
-
-Slot = Input | Field
 
 
 @dataclass(frozen=True)
 class Block:
-    slots: tuple[Slot, ...] = ()
+    inputs: tuple[ReturnType | Menu, ...] = ()
+    fields: tuple[str, ...] = ()
     # note that some blocks (like video sensing) *do* have multiple menus. 
-    menus: tuple[Input] | None=None
 
+    # special case for broadcasts. while on the programmer's side they'd just use a bare string:
+    """
+    event_broadcast("message1")
+    """
+    # but scratch also wants an ID. so what do you do? hardcode that shit.
+    broadcasts: tuple[str, ...] = ()
+
+
+"""
+motion_movesteps(10)
+"""
+@dataclass(frozen=True)
+class Reporter:
+    """
+    Describes how to assemble a floating (reporter-shaped) scratch block.
+    """
+    inputs: tuple[ReturnType | Menu, ...] = ()
+    fields: tuple[str, ...] = ()
+    return_type: VariableTypes = VariableTypes.NUMBER
+ 
+@dataclass(frozen=True)
+class Event:
+    """
+    Describes how to assemble event (hat) blocks.
+    """
+    inputs: tuple[ReturnType | Menu, ...] = ()
+    fields: tuple[str, ...] = ()
+    broadcasts: tuple[str, ...] = ()
 
 # opcode -> ordered slots.
-SIMPLE_SCRATCH_BLOCKS: dict[str, Block] = {
+SCRATCH_BLOCKS: dict[str, Block | Reporter | Event] = {
     # --- motion -------------------------------------------------------
-    "motion_movesteps": Block((Input("STEPS"),)),
-    "motion_turnright": Block((Input("DEGREES"),)),
-    "motion_turnleft": Block((Input("DEGREES"),)),
-    "motion_gotoxy": Block((Input("X"), Input("Y"))),
-    "motion_glidesecstoxy": Block((Input("SECS"), Input("X"), Input("Y"))),
-    "motion_pointindirection": Block((Input("DIRECTION"),)),
-    "motion_changexby": Block((Input("DX"),)),
-    "motion_setx": Block((Input("X"),)),
-    "motion_changeyby": Block((Input("DY"),)),
-    "motion_sety": Block((Input("Y"),)),
+    "motion_movesteps": Block((ReturnType("STEPS"),)),
+    "motion_turnright": Block((ReturnType("DEGREES"),)),
+    "motion_turnleft": Block((ReturnType("DEGREES"),)),
+    "motion_goto": Block((Menu("motion_goto_menu", "TO"),)),
+    "motion_glideto": Block((ReturnType("SECS"), Menu("motion_glideto_menu", "TO"))),
+    "motion_gotoxy": Block((ReturnType("X"), ReturnType("Y"))),
+    "motion_glidesecstoxy": Block((ReturnType("SECS"), ReturnType("X"), ReturnType("Y"))),
+    "motion_pointindirection": Block((ReturnType("DIRECTION", DataType.ANGLE),)),
+    "motion_pointtowards": Block((Menu("motion_pointtowards_menu", "TOWARDS"),)),
+    "motion_changexby": Block((ReturnType("DX"),)),
+    "motion_setx": Block((ReturnType("X"),)),
+    "motion_changeyby": Block((ReturnType("DY"),)),
+    "motion_sety": Block((ReturnType("Y"),)),
     "motion_ifonedgebounce": Block(()),
-    "motion_setrotationstyle": Block((
-        Field("STYLE", ("left-right", "don't rotate", "all around")),
-    )),
+    "motion_setrotationstyle": Block(fields=("STYLE",)),
+
+    "motion_xposition": Reporter((),),
+    "motion_yposition": Reporter((),),
+    "motion_direction": Reporter((),),
 
     # --- looks ----------------------------------------------------------
-    "looks_sayforsecs": Block((Input("MESSAGE"), Input("SECS"))),
-    "looks_say": Block((Input("MESSAGE"),)),
-    "looks_thinkforsecs": Block((Input("MESSAGE"), Input("SECS"))),
-    "looks_think": Block((Input("MESSAGE"),)),
+    "looks_sayforsecs": Block((ReturnType("MESSAGE", DataType.STRING), ReturnType("SECS"))),
+    "looks_say": Block((ReturnType("MESSAGE", DataType.STRING),)),
+    "looks_thinkforsecs": Block((ReturnType("MESSAGE", DataType.STRING), ReturnType("SECS"))),
+    "looks_think": Block((ReturnType("MESSAGE", DataType.STRING),)),
+    "looks_switchcostumeto": Block((Menu("looks_costume", "COSTUME"),)),
+    "looks_nextcostume": Block(()),
+    "looks_switchbackdropto": Block((Menu("looks_backdrops", "BACKDROP"),)),
+    "looks_nextbackdrop": Block(()),
     "looks_show": Block(()),
     "looks_hide": Block(()),
-    "looks_changesizeby": Block((Input("CHANGE"),)),
-    "looks_setsizeto": Block((Input("SIZE"),)),
-    "looks_changeeffectby": Block((
-        Field("EFFECT", ("COLOR", "FISHEYE", "WHIRL", "PIXELATE", "MOSAIC", "BRIGHTNESS", "GHOST")),
-        Input("CHANGE"),
-    )),
-    "looks_seteffectto": Block((
-        Field("EFFECT", ("COLOR", "FISHEYE", "WHIRL", "PIXELATE", "MOSAIC", "BRIGHTNESS", "GHOST")),
-        Input("VALUE"),
-    )),
+    "looks_changesizeby": Block((ReturnType("CHANGE"),)),
+    "looks_setsizeto": Block((ReturnType("SIZE"),)),
+    "looks_changeeffectby": Block((ReturnType("CHANGE"),), ("EFFECT",)),
+    "looks_seteffectto":  Block((ReturnType("VALUE"),), ("EFFECT",)),
     "looks_cleargraphiceffects": Block(()),
-    "looks_gotofrontback": Block((Field("FRONT_BACK", ("front", "back")),)),
-    "looks_goforwardbackwardlayers": Block((
-        Field("FORWARD_BACKWARD", ("forward", "backward")),
-        Input("NUM"),
-    )),
-    "looks_nextcostume": Block(()),
-    "looks_nextbackdrop": Block(()),
+    "looks_gotofrontback": Block(fields=("FRONT_BACK",)),
+    "looks_goforwardbackwardlayers": Block((ReturnType("NUM"),), ("FORWARD_BACKWARD",)),
+    
+
+    "looks_size": Reporter((),),
+    "looks_costumenumbername": Reporter(
+        fields=("NUMBER_NAME",), return_type=VariableTypes.STRING,
+    ),
+    "looks_backdropnumbername": Reporter(
+        (), fields=("NUMBER_NAME",), return_type=VariableTypes.STRING,
+    ),
 
     # --- sound ----------------------------------------------------------
+    "sound_playuntildone": Block((Menu("sound_sounds_menu", "SOUND_MENU"),)),
+    "sound_play": Block((Menu("sound_sounds_menu", "SOUND_MENU"),)),
     "sound_stopallsounds": Block(()),
-    "sound_changevolumeby": Block((Input("VOLUME"),)),
-    "sound_setvolumeto": Block((Input("VOLUME"),)),
-    "sound_changeeffectby": Block((
-        Field("EFFECT", ("PITCH", "PAN")),
-        Input("VALUE"),
-    )),
-    "sound_seteffectto": Block((
-        Field("EFFECT", ("PITCH", "PAN")),
-        Input("VALUE"),
-    )),
+    "sound_changeeffectby": Block((ReturnType("CHANGE"),), ("EFFECT",)),
+    "sound_seteffectto": Block((ReturnType("VALUE"),), ("EFFECT",)),
     "sound_cleareffects": Block(()),
+
+    "sound_changevolumeby": Block((ReturnType("VOLUME"),)),
+    "sound_setvolumeto": Block((ReturnType("VOLUME"),)),
+
+    "sound_volume": Reporter(()),
+
+    # --- operator ----------------------------------------------------------
+    "operator_mod": Reporter((ReturnType("NUM1"), ReturnType("NUM2"))),
+    "operator_round": Reporter((ReturnType("NUM"),)),
+    "operator_mathop": Reporter(
+        (ReturnType("NUM"),), ("OPERATOR",)
+    ),
+    "operator_random": Reporter((ReturnType("FROM"), ReturnType("TO"))),
+    "operator_join": Reporter(
+        (ReturnType("STRING1", DataType.STRING), ReturnType("STRING2", DataType.STRING)),
+        return_type=VariableTypes.STRING,
+    ),
+    "operator_letter_of": Reporter(
+        (ReturnType("LETTER"), ReturnType("STRING", DataType.STRING)),
+        return_type=VariableTypes.STRING,
+    ),
+    "operator_length": Reporter((ReturnType("STRING", DataType.STRING),)),
 
     # --- control ----------------------------------------------------
     # note: control_wait_until takes a CONDITION input like control_repeat_until
     # does elsewhere in the assembler -- it's still just a plain command block.
-    "control_wait": Block((Input("DURATION"),)),
-    "control_wait_until": Block((Input("CONDITION"),)),
-    "control_stop": Block((
-        Field("STOP_OPTION", ("all", "this script", "other scripts in sprite")),
-    )),
+    "event_whenflagclicked": Event(),
+    "event_whenkeypressed": Event(fields=("KEY_OPTION",)),
+    "event_whenthisspriteclicked": Event(),
+    "event_whenbackdropswitchesto": Event(fields=("BACKDROP",)),
+    "event_whengreaterthan": Event((ReturnType("VALUE"),), ("WHENGREATERTHANMENU",)),
+    "event_whenbroadcastreceived": Event(broadcasts=("BROADCAST_OPTION",)),
+
+    "control_wait": Block((ReturnType("DURATION", DataType.POSITIVE_NUMBER),)),
+    "control_wait_until": Block((ReturnType("CONDITION"),)),
+    "control_stop": Block(fields=("STOP_OPTION",)), # this is basically the return block. though we'll need to figure out how to return variables.
     "control_delete_this_clone": Block(()),
 
+    "event_broadcast": Block((ReturnType("BROADCAST_INPUT", DataType.STRING),), broadcasts=("BROADCAST_INPUT",)),
+    "event_broadcastandwait": Block((ReturnType("BROADCAST_INPUT", DataType.STRING),), broadcasts=("BROADCAST_INPUT",)),
+
     # --- sensing ----------------------------------------------------
-    "sensing_askandwait": Block((Input("QUESTION"),)),
-    "sensing_resettimer": Block(()),
-    "sensing_setdragmode": Block((
-        Field("DRAG_MODE", ("draggable", "not draggable")),
-    )),
-}
+    "sensing_touchingobject": Reporter((Menu("sensing_touchingobjectmenu", "TOUCHINGOBJECTMENU"),), return_type=VariableTypes.BOOLEAN),
+    "sensing_touchingcolor": Reporter((ReturnType("COLOR", DataType.COLOR),), return_type=VariableTypes.BOOLEAN),
+    "sensing_coloristouchingcolor": Reporter((ReturnType("COLOR", DataType.COLOR), ReturnType("COLOR2", DataType.COLOR)), return_type=VariableTypes.BOOLEAN),
+    "sensing_distanceto": Reporter((Menu("sensing_distancetomenu", "DISTANCETOMENU"),)),
 
+    "sensing_askandwait": Block((ReturnType("QUESTION", DataType.STRING),)),
+    "sensing_answer": Reporter((), return_type=VariableTypes.STRING),
 
-@dataclass(frozen=True)
-class ReporterSpec:
-    """
-    Describes how to assemble a floating (reporter-shaped) scratch block.
- 
-    `slots` lists the block's inputs/fields, in the same left-to-right
-    order they're expected to appear in FunctionCallExpr.arg_groups,
-    mirroring how the block reads in the Scratch editor.
- 
-    `return_type` is the VariableTypes value ("number", "string", or
-    "boolean") that this reporter evaluates to.
-    """
-    slots: tuple[Slot, ...] = ()
-    return_type: str = "number"
- 
+    "sensing_keypressed": Reporter((Menu("sensing_keyoptions", "KEY_OPTION"),)),
+    "sensing_mousedown": Reporter(return_type=VariableTypes.BOOLEAN),
+    "sensing_mousex": Reporter(),
+    "sensing_mousey": Reporter(),
 
-FLOATING_SCRATCH_BLOCKS: dict[str, ReporterSpec] = {
-    # --- operators (the remaining reporter-shaped ones -- see module
-    # docstring for why +, -, *, /, =, >, <, and, or, not aren't here) ---
-    "operator_mod": ReporterSpec((Input("NUM1"), Input("NUM2")), "number"),
-    "operator_round": ReporterSpec((Input("NUM"),), "number"),
-    "operator_mathop": ReporterSpec(
-        (
-            Field("OPERATOR", (
-                "abs", "floor", "ceiling", "sqrt", "sin", "cos", "tan",
-                "asin", "acos", "atan", "ln", "log", "e ^", "10 ^",
-            )),
-            Input("NUM"),
-        ),
-        "number",
-    ),
-    "operator_random": ReporterSpec((Input("FROM"), Input("TO")), "number"),
-    "operator_join": ReporterSpec((Input("STRING1"), Input("STRING2")), "string"),
-    "operator_letter_of": ReporterSpec((Input("LETTER"), Input("STRING")), "string"),
-    "operator_length": ReporterSpec((Input("STRING"),), "number"),
- 
-    # --- motion -----------------------------------------------------
-    "motion_xposition": ReporterSpec((), "number"),
-    "motion_yposition": ReporterSpec((), "number"),
-    "motion_direction": ReporterSpec((), "number"),
- 
-    # --- looks --------------------------------------------------------
-    "looks_size": ReporterSpec((), "number"),
-    "looks_costumenumbername": ReporterSpec(
-        (Field("NUMBER_NAME", ("number", "name")),), "string",
-    ),
-    "looks_backdropnumbername": ReporterSpec(
-        (Field("NUMBER_NAME", ("number", "name")),), "string",
-    ),
- 
-    # --- sound ----------------------------------------------------------
-    "sound_volume": ReporterSpec((), "number"),
- 
-    # --- sensing ----------------------------------------------------
-    "sensing_answer": ReporterSpec((), "string"),
-    "sensing_mousex": ReporterSpec((), "number"),
-    "sensing_mousey": ReporterSpec((), "number"),
-    "sensing_loudness": ReporterSpec((), "number"),
-    "sensing_timer": ReporterSpec((), "number"),
-    "sensing_username": ReporterSpec((), "string"),
-    "sensing_dayssince2000": ReporterSpec((), "number"),
-    "sensing_current": ReporterSpec(
-        (
-            Field("CURRENTMENU", (
-                "YEAR", "MONTH", "DATE", "DAYOFWEEK", "HOUR", "MINUTE", "SECOND",
-            )),
-        ),
-        "number",
-    ),
+    "sensing_setdragmode": Block(fields=("DRAG_MODE",)),
+    "sensing_loudness": Reporter(),
+    "sensing_timer": Reporter(),
+    "sensing_resettimer": Block(),
+
+    "sensing_of": Reporter((Menu("sensing_of_object_menu", "OBJECT"),), ("PROPERTY",)),
+    "sensing_current": Reporter(fields=("CURRENTMENU",),),
+    "sensing_dayssince2000": Reporter(),
+
+    "sensing_username": Reporter(return_type=VariableTypes.STRING),
+    "sensing_online": Reporter(return_type=VariableTypes.BOOLEAN)
 }

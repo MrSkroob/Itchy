@@ -1,6 +1,7 @@
 from __future__ import annotations
 import uuid
 import json
+import re
 # import zipfile
 
 from dataclasses import dataclass
@@ -16,11 +17,15 @@ ScratchBlock = dict[str, Any]
 StrOptional = str | None
 
 
+HEXCODE = re.compile(r"^#(?:[0-9a-fA-F]{3}){1,2}$")
+
+
 class VariableTypes(StrEnum):
     NUMBER = "number"
     STRING = "string"
     BOOLEAN = "boolean"
     UNKNOWN = "unknown"
+
 
 # return types as tuples are OKAY, because serialisation converts them all to lists anyway.
 ScratchInputRaw = tuple["InputType", tuple["DataType", str] | tuple["DataType", str, str]] | tuple["InputType", str]
@@ -48,6 +53,13 @@ class DataType(Enum):
     BROADCAST = 11
     VARIABLE = 12
     LIST = 13
+
+# scratch_blocks.py imports VariableTypes from this module, so this import
+# has to come after VariableTypes is defined above -- otherwise it's a
+# circular import (assembler -> scratch_blocks -> assembler) that fails
+# because VariableTypes doesn't exist on the partially-initialized module
+# yet.
+from scratch_blocks import SCRATCH_BLOCKS, Block, Reporter, Menu, ReturnType
 
 
 class InputType(Enum):
@@ -154,6 +166,13 @@ class Assembler:
         assert key in self.variable_map, "variable not defined!"
         return self.variable_map[key]
 
+    def define_broadcast(self, name: str) -> str:
+        if name in self.messages:
+            return self.messages[name]
+
+        broadcast_id = self.new_id()
+        self.messages[name] = broadcast_id
+        return broadcast_id
 
     def define_variable(self, shared: bool, type_name: str, name: str, context: StrOptional) -> str:
         """
@@ -190,6 +209,7 @@ class Assembler:
         # variable_location[var_id] = [name, default_value]
         # self.var_types[var_id] = type_name
         return var_id
+        
     
     def emit_sequence(
             self,
@@ -237,7 +257,7 @@ class Assembler:
             case ForInStmt():
                 return self.emit_for_in(stmt, parent, context)
             case EventHandlerStmt():
-                return self.emit_event_handler(stmt, parent)
+                return self.emit_event_handler(stmt, context)
             case FunctionDefStmt():
                 return self.emit_function_def(stmt, parent, context)
             case FunctionCallStmt():
@@ -249,41 +269,100 @@ class Assembler:
             case _:
                 raise TypeError("Bad statement type")
             
-    def emit_scratch_block(self, stmt: FunctionCallStmt, parent: str | None, context: StrOptional) -> BlockRange:
-        # motion
+    def emit_scratch_block(self, stmt: FunctionCallStmt, parent: str | None, context: StrOptional) -> BlockRange | None:
+        if stmt.callee not in SCRATCH_BLOCKS:
+            return None
+
+        block_data = SCRATCH_BLOCKS[stmt.callee]
+
+        if not isinstance(block_data, Block):
+            raise CompilerError(
+                f"{stmt.callee!r} is should be a stack block"
+            )
+
+        expected_args = len(block_data.inputs) + len(block_data.fields)
+
+        if len(stmt.args) != expected_args:
+            raise CompilerError(
+                f"Block {stmt.callee!r} expects {expected_args} argument(s), got {len(stmt.args)}"
+            )
         
-        match stmt.callee:
-            case "motion_movesteps":
-                self.make_block(
-                    opcode="motion_movesteps",
-                    parent=parent,
-                    inputs={
-                        "STEPS": self.emit_expr(stmt.arg_groups[0], context).value
-                    }
+        block_id = self.make_block(
+            opcode=stmt.callee,
+            parent=parent,
+        )
+
+        inputs: dict[str, ScratchInput] = {}
+        fields: dict[str, Any] = {}
+
+        # inputs come first, positionally, then fields -- matches how the
+        # arity check above adds them together.
+        for arg, arg_expr in zip(block_data.inputs, stmt.args):
+            if arg in block_data.broadcasts:
+                if not isinstance(arg_expr, StringExpr):
+                    inputs[arg.name] = (
+                        self.emit_expr(arg_expr, context)
+                    )
+                else:
+                    broadcast_id = self.define_broadcast(arg_expr.value)
+                    inputs[arg.name] = ScratchInput(
+                        (InputType.LITERAL,
+                        (DataType.BROADCAST, arg_expr.value, broadcast_id))
+                    )
+            else:
+                if isinstance(arg_expr, StringExpr):
+                    if isinstance(arg, Menu):
+                        # create the menu
+                        menu_id = self.make_block(
+                            arg.opcode, 
+                            block_id,
+                            fields={
+                                arg.name: (
+                                    arg_expr.value,
+                                    None
+                                )
+                            })
+
+                        inputs[arg.name] = ScratchInput(
+                            (InputType.LITERAL, menu_id)
+                        )
+                    else:
+                        inputs[arg.name] = ScratchInput(
+                            (InputType.LITERAL, 
+                            (arg.return_type, arg_expr.value))
+                        )
+                else:
+                    inputs[arg.name] = self.emit_expr(arg_expr, context)
+
+        for field_name, arg_expr in zip(block_data.fields, stmt.args[len(block_data.inputs):]):
+            if not isinstance(arg_expr, StringExpr):
+                raise CompilerError(
+                    f"{stmt.callee}: argument for {field_name!r} must be a string literal"
                 )
-            case _:
-                pass
-        
-        # TODO: finish this. read scratch_blocks.py to parse and return BlockRange
-        
-        return BlockRange(None, None)
+
+            fields[field_name] = [arg_expr.value, None]
+
+
+        return BlockRange(block_id, block_id)
             
     def emit_function_call(self, stmt: FunctionCallStmt, parent: str | None, context: StrOptional) -> BlockRange:
         if stmt.callee not in self.procedures:
             # is either a custom scratch block or a hallucination :v
-            return self.emit_scratch_block(stmt, parent, context)
+            block_range = self.emit_scratch_block(stmt, parent, context)
+            assert block_range is not None, "bad bad this procedure doesn't exist"
+            return block_range
         
         info = self.procedures[stmt.callee]
 
-        if len(stmt.arg_groups) != len(info.argument_ids):
+        if len(stmt.args) != len(info.argument_ids):
             raise ValueError(
                 f"Function {stmt.callee!r} expects {len(info.argument_ids)} arguments, "
-                f"got {len(stmt.arg_groups)}"
+                f"got {len(stmt.args)}"
             )
 
         inputs: dict[str, ScratchInputRaw] = {}
 
-        for arg_id, arg_expr in zip(info.argument_ids, stmt.arg_groups):
+        for arg_id, arg_expr in zip(info.argument_ids, stmt.args):
             emitted_arg = self.emit_expr(arg_expr, context)
             inputs[arg_id] = emitted_arg.value
 
@@ -329,13 +408,13 @@ class Assembler:
                 return BlockRange(event_id, event_id)
 
             case "event_whenbroadcastreceived":
-                expression = self.emit_expr(stmt.params[0], context)
+                expression = stmt.params[0]
                 # assert isinstance(expression, StringExpr)
 
                 if not isinstance(expression, StringExpr):
                     raise CompilerError("bad, bad, bad. expressions can't be converted to fields in scratch.")
 
-                broadcast_name = expression.value[1][1]
+                broadcast_name = expression.value
                 broadcast_id = self.messages[broadcast_name]
 
                 event_id = self.make_block(
@@ -437,8 +516,6 @@ class Assembler:
             first=definition_id,
             last=body_range.last or definition_id,
         )
-
-        
     
     def emit_for_range(self, stmt: ForRangeStmt, parent: StrOptional, context: StrOptional):
         # variable
@@ -785,7 +862,10 @@ class Assembler:
             case NumberExpr(value=value):
                 return ScratchInput((InputType.LITERAL, (DataType.NUMBER, str(value))), VariableTypes.NUMBER)
             case StringExpr(value=value):
-                return ScratchInput((InputType.LITERAL, (DataType.STRING, value)), VariableTypes.STRING)
+                if re.match(HEXCODE, value) is not None:
+                    return ScratchInput((InputType.LITERAL, (DataType.COLOR, value)), VariableTypes.STRING)
+                else:
+                    return ScratchInput((InputType.LITERAL, (DataType.STRING, value)), VariableTypes.STRING)
             case BoolExpr(value=value):
                 # in scratch:
                 # if (0 == 0) == "true" is true, so we can just use strings without any fancy conversion :)
@@ -797,7 +877,8 @@ class Assembler:
             case BinaryOpExpr(left=left, op=op, right=right):
                 return self.emit_binary_expr(left, op, right, context)
             case FunctionCallExpr():
-                raise NotImplementedError("returns are hard :(")
+                # only available for scratch built-ins :v
+                return self.emit_function_expr(expr, context)
             case TableExpr():
                 raise NotImplementedError("out of scope for now :v")
             case _:
@@ -805,7 +886,79 @@ class Assembler:
 
         
         # return expression
+    def emit_function_expr(self, expr: FunctionCallExpr, context: StrOptional) -> ScratchInput:
+        block_data = SCRATCH_BLOCKS[expr.callee]
+
+        if not isinstance(block_data, Reporter):
+            raise CompilerError(
+                f"{expr.callee!r} is a reporter block, not a command -- it can't be called as a statement"
+            )
     
+        expected_args = len(block_data.inputs) + len(block_data.fields)
+
+        if len(stmt.args) != expected_args:
+            raise CompilerError(
+                f"Block {stmt.callee!r} expects {expected_args} argument(s), got {len(stmt.args)}"
+            )
+        
+        block_id = self.make_block(
+            opcode=expr.callee,
+            parent=parent,
+        )
+
+        inputs: dict[str, ScratchInput] = {}
+        fields: dict[str, Any] = {}
+
+        # inputs come first, positionally, then fields -- matches how the
+        # arity check above adds them together.
+        for arg, arg_expr in zip(block_data.inputs, stmt.args):
+            if arg in block_data.broadcasts:
+                if not isinstance(arg_expr, StringExpr):
+                    inputs[arg.name] = (
+                        self.emit_expr(arg_expr, context)
+                    )
+                else:
+                    broadcast_id = self.define_broadcast(arg_expr.value)
+                    inputs[arg.name] = ScratchInput(
+                        (InputType.LITERAL,
+                        (DataType.BROADCAST, arg_expr.value, broadcast_id))
+                    )
+            else:
+                if isinstance(arg_expr, StringExpr):
+                    if isinstance(arg, Menu):
+                        # create the menu
+                        menu_id = self.make_block(
+                            arg.opcode, 
+                            block_id,
+                            fields={
+                                arg.name: (
+                                    arg_expr.value,
+                                    None
+                                )
+                            })
+
+                        inputs[arg.name] = ScratchInput(
+                            (InputType.LITERAL, menu_id)
+                        )
+                    else:
+                        inputs[arg.name] = ScratchInput(
+                            (InputType.LITERAL, 
+                            (arg.return_type, arg_expr.value))
+                        )
+                else:
+                    inputs[arg.name] = self.emit_expr(arg_expr, context)
+
+        for field_name, arg_expr in zip(block_data.fields, stmt.args[len(block_data.inputs):]):
+            if not isinstance(arg_expr, StringExpr):
+                raise CompilerError(
+                    f"{stmt.callee}: argument for {field_name!r} must be a string literal"
+                )
+
+            fields[field_name] = [arg_expr.value, None]
+
+
+        return BlockRange(block_id, block_id)
+
     def emit_unary_expr(self, op: str, value: Expr, context: StrOptional) -> ScratchInput:
         if op in {"not", "!"}:
             block_id = self.make_block(
