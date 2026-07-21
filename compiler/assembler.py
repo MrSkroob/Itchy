@@ -1,4 +1,5 @@
 from __future__ import annotations
+from pathlib import Path
 import uuid
 import json
 import re
@@ -18,7 +19,9 @@ from itch_ast import \
 
 ScratchBlock = dict[str, Any]
 StrOptional = str | None
-
+DEFAULT_PROJECT={
+    "targets": []
+}
 
 HEXCODE = re.compile(r"^#(?:[0-9a-fA-F]{3}){1,2}$")
 
@@ -73,7 +76,7 @@ class InputType(Enum):
     BLOCK_AND_SHADOW = 3 # do not use - because compiler does not have default values.
 
 
-class CompilerError(Exception):
+class CompilerError(BaseException):
     def __init__(self, message: str) -> None:
         super().__init__(message)
 
@@ -1273,7 +1276,14 @@ class Assembler:
         None for a normal top-level program.
         """
         
+        project_file = Path(project_file)
+        
         with zipfile.ZipFile(project_file, "a") as f:
+            if("project.json" not in f.namelist()):
+                with f.open("project.json", "w") as project_file:
+                    data=json.dumps(DEFAULT_PROJECT)
+                    project_file.write(data.encode("utf-8"))
+                    project_file.flush()
             project = json.loads(f.read("project.json").decode("utf-8"))
 
 
@@ -1288,13 +1298,14 @@ class Assembler:
                 break
 
         if sprite_target is None:
-            raise CompilerError(f"No sprite named {target!r} found in project file {project_file!r}")
+            sprite_target = {}
 
         sprite_target["variables"] = self._serialise_variables()
         sprite_target["lists"] = self._serialise_lists()
         sprite_target["broadcasts"] = self._serialise_broadcasts()
         sprite_target["blocks"] = self._serialise_blocks()
         sprite_target["comments"] = {}
+        project["targets"].append(sprite_target)
 
         # with open(project_file, "w", encoding="utf-8") as f:
         #     json.dump(project, f)

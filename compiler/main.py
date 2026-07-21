@@ -13,18 +13,20 @@ assembler = Assembler()
 print("Running")
 
 argparser = ArgumentParser(description="Compile Scratch code")
-argparser.add_argument("input", help="Input file to compile")
+
 argparser.add_argument("--output", help="Output file to compile", default="output/output.sb3")
+argparser.add_argument("inputs", help="Input file to compile",action="append")
+
 args = argparser.parse_args()
 
 
-
-with open(args.input) as f:
-    result = parser.read(f.read())
-    tree = build_ast(result.tree)
-    outputPath = Path(args.output)
-    outputPath.parent.mkdir(parents=True, exist_ok=True)
-    assembler.assemble(tree, outputPath, "Sprite1")
-
+for inp in args.inputs:
+    with open(inp) as f:
+        result = parser.read(f.read())
+        tree = build_ast(result.tree)
+        outputPath = Path(args.output)
+        outputPath.parent.mkdir(parents=True, exist_ok=True)
+        assembler.assemble(tree, outputPath, "Sprite1")
     
-    print_ast(tree)
+        
+        print_ast(tree)
