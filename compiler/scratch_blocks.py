@@ -74,9 +74,9 @@ SCRATCH_BLOCKS: dict[str, Block | Reporter | Event] = {
     "motion_ifonedgebounce": Block(()),
     "motion_setrotationstyle": Block(fields=("STYLE",)),
 
-    "motion_xposition": Reporter((),),
-    "motion_yposition": Reporter((),),
-    "motion_direction": Reporter((),),
+    "motion_xposition": Reporter(),
+    "motion_yposition": Reporter(),
+    "motion_direction": Reporter(),
 
     # --- looks ----------------------------------------------------------
     "looks_sayforsecs": Block((ReturnType("MESSAGE", DataType.STRING), ReturnType("SECS"))),
@@ -120,6 +120,7 @@ SCRATCH_BLOCKS: dict[str, Block | Reporter | Event] = {
     "sound_volume": Reporter(()),
 
     # --- operator ----------------------------------------------------------
+    "operator_random": Reporter((ReturnType("FROM"), ReturnType("TO"))),
     "operator_mod": Reporter((ReturnType("NUM1"), ReturnType("NUM2"))),
     "operator_round": Reporter((ReturnType("NUM"),)),
     "operator_mathop": Reporter(

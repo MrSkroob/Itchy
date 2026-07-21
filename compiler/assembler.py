@@ -400,7 +400,7 @@ class Assembler:
         if stmt.callee not in self.procedures:
             # is either a custom scratch block or a hallucination :v
             block_range = self.emit_scratch_block(stmt, parent, context)
-            assert block_range is not None, "bad bad this procedure doesn't exist"
+            assert block_range is not None, f"bad bad this procedure {stmt.callee} doesn't exist"
             return block_range
         
         info = self.procedures[stmt.callee]
@@ -1269,18 +1269,18 @@ class Assembler:
 
         return serialized
 
-    def _serialise_variables(self) -> dict[str, list[Any]]:
+    def _serialise_variables(self, is_stage: bool=False) -> dict[str, list[Any]]:
         return {
             var_id: [variable.name, variable.initial_value]
             for var_id, variable in self.variables.items()
-            if not variable.is_list
+            if not variable.is_list and variable.shared == is_stage
         }
 
-    def _serialise_lists(self) -> dict[str, list[Any]]:
+    def _serialise_lists(self, is_stage: bool=False) -> dict[str, list[Any]]:
         return {
             var_id: [variable.name, variable.initial_value]
             for var_id, variable in self.variables.items()
-            if variable.is_list
+            if variable.is_list and variable.shared == is_stage
         }
 
     def _serialise_broadcasts(self) -> dict[str, str]:
@@ -1307,20 +1307,29 @@ class Assembler:
 
         targets: list[dict[str, Any]] = project.get("targets", [])
 
+        stage_target = None
         sprite_target = None
+
         for candidate in targets:
             if not candidate.get("isStage", False) and candidate.get("name") == target:
                 sprite_target = candidate
-                break
+            if candidate.get("isStage", False):
+                stage_target = candidate
 
         if sprite_target is None:
             raise CompilerError(f"No sprite named {target!r} found in project file {project_file!r}")
+        
+        if stage_target is None:
+            raise CompilerError(f"WTF THERE'S NO STAGE????")
 
         sprite_target["variables"] = self._serialise_variables()
         sprite_target["lists"] = self._serialise_lists()
         sprite_target["broadcasts"] = self._serialise_broadcasts()
         sprite_target["blocks"] = self._serialise_blocks()
         sprite_target["comments"] = {}
+
+        stage_target["variables"] = self._serialise_variables(True)
+        stage_target["lists"] = self._serialise_lists(True)
 
         # with open(project_file, "w", encoding="utf-8") as f:
         #     json.dump(project, f)

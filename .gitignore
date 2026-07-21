@@ -2,3 +2,4 @@ compiler/__pycache__/*
 mypy.ini
 output/*
 __pycache__
+*.pyc

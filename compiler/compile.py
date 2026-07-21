@@ -2,7 +2,7 @@ from parser import Parser, ParseError, FailState
 from itch_ast import build_ast
 from tools.ast_printer import print_ast
 from assembler import Assembler
-import argparse
+# import argparse
 
 from pathlib import Path
 
@@ -10,8 +10,6 @@ ROOT = Path(__file__).parent.parent
 
 parser = Parser()
 assembler = Assembler()
-
-print("Running")
 
 
 def format_syntax_error(
@@ -66,5 +64,4 @@ if __name__ == "__main__":
     input_path = ROOT / "input"
     output_path = ROOT / "output"
 
-    compile(str((input_path / "code.txt").absolute()), str((output_path / "Scratch Project.sb3")), "Sprite1")
-    
+    compile(str((input_path / "Ball.txt").absolute()), str((output_path / "Scratch Project.sb3")), "Ball")

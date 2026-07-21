@@ -4,6 +4,11 @@ import zipfile
 from typing import Any
 
 
+from pathlib import Path
+
+ROOT = Path(__file__).parent.parent.parent
+
+
 def load_project(file_name: str) -> dict[str, Any]:
     """Returns the json data inside the scratch project with given file name"""
     with zipfile.ZipFile(file_name, "r") as f:
@@ -34,7 +39,7 @@ def print_out_stuff(json_dict: dict[str, Any]):
 parser = argparse.ArgumentParser()
 parser.add_argument("--dir", help="file directory to print out")
 args = parser.parse_args()
-project_json = load_project(args.dir)
+project_json = load_project(str((ROOT / "output/opcodes.sb3").absolute()))
 print_out_stuff(project_json)
 
 
