@@ -1,4 +1,14 @@
+list words
+
+
 event event_whenflagclicked() {
+    data_deletealloflist(words)
+    data_addtolist("you", words)
+    data_addtolist("are", words)
+    data_addtolist("stinky", words)
+
+    words[1] = "I"
+
     while true {
         if sensing_keypressed("W") {
             motion_changeyby(10)

@@ -311,6 +311,11 @@ def has_token(node: ParsedNode, name: str):
     return any(is_token(i, name) for i in flat_children(node))
 
 
+def parse_number(text: str):
+    value = float(text)
+    return int(value) if value.is_integer() else value
+
+
 def parse_string(text: str):
     try:
         value = ast.literal_eval(text)
@@ -432,7 +437,7 @@ def build_literals(node: ParsedNode) -> Expr:
 
         if is_token(child, name="Number"):
             assert isinstance(child, Token)
-            return NumberExpr(float(child.literal))
+            return NumberExpr(parse_number(child.literal))
 
         if is_token(child, name="String"):
             assert isinstance(child, Token)

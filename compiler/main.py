@@ -21,6 +21,5 @@ def compile(code: str, output: str, target: str):
 
 
 with open("input/code.txt") as f:
-
     compile(f.read(), "output/Scratch Project.sb3", "Sprite1")
     
