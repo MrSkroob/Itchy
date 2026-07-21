@@ -60,7 +60,13 @@ class DataType(Enum):
 # circular import (assembler -> scratch_blocks -> assembler) that fails
 # because VariableTypes doesn't exist on the partially-initialized module
 # yet.
-from scratch_blocks import SCRATCH_BLOCKS, Block, Reporter, Menu, ReturnType
+from scratch_blocks import SCRATCH_BLOCKS, Block, Reporter, Menu
+
+# serialisable json
+JSONValue = int | str | float | bool | None | list["JSONValue"] | dict[str, "JSONValue"]
+
+# stuff to be serialised
+Serialisable = Enum | tuple["Serialisable", ...] | list["Serialisable"] | dict[str, "Serialisable"] | JSONValue
 
 
 class InputType(Enum):
@@ -216,7 +222,31 @@ class Assembler:
         # variable_location[var_id] = [name, default_value]
         # self.var_types[var_id] = type_name
         return var_id
-        
+    
+    def emit_program(self, program: Program, context: StrOptional) -> None:
+        """
+        Emits every top-level statement in `program` as its own independent
+        script. Unlike emit_sequence, this does NOT chain the statements
+        together via next/parent -- each top-level hat (or orphan stack) is
+        its own script in Scratch, so they only need to be spaced apart on
+        the canvas, not linked to one another.
+        """
+        x, y = 100, 100
+
+        for stmt in program.body:
+            block_range = self.emit_stmt(stmt, None, context)
+
+            if block_range.first is None:
+                # e.g. a bare VarDefStmt, which doesn't emit a block
+                continue
+
+            first_block = self.blocks[block_range.first]
+            first_block["topLevel"] = True
+            first_block["parent"] = None
+            first_block["x"] = x
+            first_block["y"] = y
+
+            x += 200
     
     def emit_sequence(
             self,
@@ -1106,9 +1136,101 @@ class Assembler:
                 ),
                 var_type
             )
-    
+        
+
+    @staticmethod
+    def _serialise_value(value: Serialisable) -> JSONValue:
+        """
+        Recursively converts our internal placeholder representations
+        (Enum members, tuples) into the plain ints/lists that Scratch's
+        project.json actually expects, e.g.:
+            (InputType.SHADOW_ONLY, (DataType.NUMBER, "10"))
+            -> [1, [4, "10"]]
+        """
+        if isinstance(value, Enum):
+            return value.value
+
+        if isinstance(value, (tuple, list)):
+            return [Assembler._serialise_value(item) for item in value]
+
+        if isinstance(value, dict):
+            return {key: Assembler._serialise_value(item) for key, item in value.items()}
+
+        return value
+
+    def _serialize_blocks(self) -> dict[str, ScratchBlock]:
+        serialized: dict[str, ScratchBlock] = {}
+
+        for block_id, block in self.blocks.items():
+            new_block = dict(block)
+            new_block["inputs"] = {
+                name: self._serialise_value(value)
+                for name, value in block.get("inputs", {}).items()
+            }
+            new_block["fields"] = {
+                name: self._serialise_value(value)
+                for name, value in block.get("fields", {}).items()
+            }
+            serialized[block_id] = new_block
+
+        return serialized
+
+    def _serialize_variables(self) -> dict[str, list[Any]]:
+        return {
+            var_id: [variable.name, variable.initial_value]
+            for var_id, variable in self.variables.items()
+            if not variable.is_list
+        }
+
+    def _serialize_lists(self) -> dict[str, list[Any]]:
+        return {
+            var_id: [variable.name, variable.initial_value]
+            for var_id, variable in self.variables.items()
+            if variable.is_list
+        }
+
+    def _serialize_broadcasts(self) -> dict[str, str]:
+        return {broadcast_id: name for name, broadcast_id in self.messages.items()}
+
     def assemble(self, program: Program, target: str, context: StrOptional) -> None:
-        raise NotImplementedError("asse")
+        """
+        Compiles `program` and injects the result into an existing Scratch
+        project file.
+
+        `target` is the path to a project.json (or an already-unzipped
+        project.json from inside an .sb3) that already contains at least one
+        sprite target. `context` is forwarded to the emitter to establish
+        variable scoping and should be None for a normal top-level program.
+
+        NOTE: there's currently no separate "sprite name" argument, so this
+        injects into the first non-stage target found in the project file.
+        If you need to target a specific sprite by name, extend this
+        method's signature with an explicit sprite-name parameter.
+        """
+        self.emit_program(program, context)
+
+        with open(target, "r", encoding="utf-8") as f:
+            project = json.load(f)
+
+        targets: list[dict[str, Any]] = project.get("targets", [])
+
+        sprite_target = None
+        for candidate in targets:
+            if not candidate.get("isStage", False):
+                sprite_target = candidate
+                break
+
+        if sprite_target is None:
+            raise CompilerError(f"No sprite target found in project file {target!r}")
+
+        sprite_target["variables"] = self._serialize_variables()
+        sprite_target["lists"] = self._serialize_lists()
+        sprite_target["broadcasts"] = self._serialize_broadcasts()
+        sprite_target["blocks"] = self._serialize_blocks()
+        sprite_target["comments"] = {}
+
+        with open(target, "w", encoding="utf-8") as f:
+            json.dump(project, f)
 
         
     
