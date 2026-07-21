@@ -1,0 +1,29 @@
+number total
+list results
+
+define classify(value: number) {
+    if value < 0 {
+        data_addtolist("negative", results)
+    }
+    elseif value == 0 {
+        data_addtolist("zero", results)
+    }
+    elseif value < 10 {
+        data_addtolist("small", results)
+    }
+    else {
+        data_addtolist("large", results)
+    }
+}
+
+event event_whenflagclicked() {
+    total = 0
+    data_deletealloflist(results)
+
+    for i = 1, 20, 1 {
+        classify(i - 8)
+    }
+
+    looks_sayforsecs(operator_join("Final total: ", total), 2)
+    looks_sayforsecs(operator_join("First result: ", results[1]), 2)
+}
