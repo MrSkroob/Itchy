@@ -6,6 +6,11 @@ from typing import Any, Iterable
 from abstractclass import EmptyAbstractClass
 
 
+
+from pathlib import Path
+
+BNF_PATH = Path(__file__).parent / "bnf.txt"
+
 class GrammarNode(EmptyAbstractClass):
     pass
 
@@ -253,7 +258,7 @@ def link_node(node: GrammarNode, rule_map: dict[str, Rule]) -> None:
 
 def build_parse_tree():
     tokenizer = Tokenizer(BNFRules, {"Whitespace", "Comment"})
-    with open("compiler/bnf.txt") as f:
+    with BNF_PATH.open("r") as f:
         token_stream = tokenizer.read(f.read())
         rules = BNFTreeBuilder(list(token_stream)).parse_rules()
         link_grammar(rules)

@@ -2,8 +2,6 @@ from parser import Parser, ParseError, FailState
 from itch_ast import build_ast
 from tools.ast_printer import print_ast
 from assembler import Assembler
-from tree import Terminal, NonTerminal, Rule
-# from pathlib import Path
 
 parser = Parser()
 assembler = Assembler()

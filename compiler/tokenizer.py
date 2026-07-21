@@ -114,9 +114,7 @@ class Tokenizer(Generic[TokenRule]):
             match = self.regex.match(text, pos)
 
             if match is None:
-                # yield Token()
                 break
-                # raise ValueError(f"Invalid character {text[pos]!r} at line {line}, char {char}")
             
             group = match.lastgroup
             literal = match.group()
