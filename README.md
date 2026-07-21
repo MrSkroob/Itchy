@@ -16,8 +16,7 @@ https://github.com/scratchfoundation/scratch-vm
 https://github.com/scratchfoundation/scratch-editor 
 
 Notes:
-Error reporting is hit or miss (extremely vague - only tells you if something has gone wrong and nothing else), and you may need to edit file locations since I haven't used the `path` module to do relative pathing.
-
+Error reporting is hit or miss (extremely vague - only tells you if something has gone wrong and nothing else).
 # Examples
 ```
 string alphabet
