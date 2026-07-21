@@ -4,7 +4,7 @@ from tokenizer import Definitions, Tokenizer, Token
 from tree import Rule, Terminal, NonTerminal, Alternative, OptionalNode, Repeat, Sequence, GrammarNode, build_parse_tree, get_root_node
 
 
-DEBUG = False
+DEBUG = True
 
 
 @dataclass(frozen=True)

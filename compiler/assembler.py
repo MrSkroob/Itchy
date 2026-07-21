@@ -2,7 +2,10 @@ from __future__ import annotations
 import uuid
 import json
 import re
-# import zipfile
+import zipfile
+
+import tempfile
+import os
 
 from dataclasses import dataclass
 from enum import Enum, StrEnum
@@ -24,6 +27,7 @@ class VariableTypes(StrEnum):
     NUMBER = "number"
     STRING = "string"
     BOOLEAN = "boolean"
+    LIST = "list"
     UNKNOWN = "unknown"
 
 
@@ -60,7 +64,7 @@ class DataType(Enum):
 # circular import (assembler -> scratch_blocks -> assembler) that fails
 # because VariableTypes doesn't exist on the partially-initialized module
 # yet.
-from scratch_blocks import SCRATCH_BLOCKS, Block, Reporter, Menu
+from scratch_blocks import SCRATCH_BLOCKS, Block, Reporter, Event, Menu
 
 # serialisable json
 JSONValue = int | str | float | bool | None | list["JSONValue"] | dict[str, "JSONValue"]
@@ -207,23 +211,21 @@ class Assembler:
         var_id = self.new_id()
 
         variable = VariableData(
-            name, 
-            self.new_id(),
-            context,
-            VariableTypes(type_name),
-            is_list,
-            shared,
-            default_value
+            name=name, 
+            id=self.new_id(),
+            context=context,
+            var_type=VariableTypes(type_name),
+            is_list=is_list,
+            shared=shared,
+            initial_value=default_value
         )
 
         self.variables[var_id] = variable
         self.variable_map[key] = var_id
-        # self.variable_ids[name] = var_id
-        # variable_location[var_id] = [name, default_value]
-        # self.var_types[var_id] = type_name
+
         return var_id
     
-    def emit_program(self, program: Program, context: StrOptional) -> None:
+    def emit_program(self, program: Program) -> None:
         """
         Emits every top-level statement in `program` as its own independent
         script. Unlike emit_sequence, this does NOT chain the statements
@@ -234,7 +236,7 @@ class Assembler:
         x, y = 100, 100
 
         for stmt in program.body:
-            block_range = self.emit_stmt(stmt, None, context)
+            block_range = self.emit_stmt(stmt, None, None)
 
             if block_range.first is None:
                 # e.g. a bare VarDefStmt, which doesn't emit a block
@@ -419,70 +421,81 @@ class Assembler:
         return BlockRange(block_id, block_id)
     
     def emit_event_handler(self, stmt: EventHandlerStmt) -> BlockRange:
-        # TODO: finish this.
-        match stmt.name:
-            case "event_whengreaterthan":
-                event_id = self.make_block(
-                    stmt.name,
-                    top_level=True,
-                )
-                body = self.emit_sequence(stmt.body, event_id, None)
+        if stmt.name not in SCRATCH_BLOCKS:
+            raise CompilerError(f"{stmt.name!r} is not a known event")
 
-                return BlockRange(event_id, body.last or event_id)
+        block_data = SCRATCH_BLOCKS[stmt.name]
 
-            case "event_whenbackdropswitchesto":
-                event_id = self.make_block(
-                    stmt.name,
-                    fields={
+        if not isinstance(block_data, Event):
+            raise CompilerError(
+                f"{stmt.name!r} is should be a hat/event block"
+            )
 
-                    },
-                    top_level=True
-                )
-                body = self.emit_sequence(stmt.body, event_id, None)
+        # unlike Block/Reporter, an Event's `broadcasts` entries are not a
+        # subset of `inputs` -- they're their own trailing group of
+        # field-shaped arguments (see event_whenbroadcastreceived), so they
+        # get counted on top of inputs and fields rather than overlapping.
+        expected_args = len(block_data.inputs) + len(block_data.fields) + len(block_data.broadcasts)
 
-                return BlockRange(event_id, body.last or event_id)
+        if len(stmt.params) != expected_args:
+            raise CompilerError(
+                f"Event {stmt.name!r} expects {expected_args} argument(s), got {len(stmt.params)}"
+            )
 
-            case "event_whenflagclicked":
-                event_id = self.make_block(
-                    stmt.name,
-                    top_level=True
-                )
-                body = self.emit_sequence(stmt.body, event_id, None)
+        inputs: dict[str, ScratchInputRaw] = {}
+        fields: dict[str, ScratchFieldRaw] = {}
 
-                return BlockRange(event_id, body.last or event_id)
+        event_id = self.make_block(
+            opcode=stmt.name,
+            inputs=inputs,
+            fields=fields,
+            top_level=True,
+        )
 
-            case "event_whenbroadcastreceived":
-                expression = stmt.params[0]
-                # assert isinstance(expression, StringExpr)
+        # inputs come first, positionally, then fields, then broadcasts --
+        # matches how the expected_args check above adds them together.
+        for arg, arg_expr in zip(block_data.inputs, stmt.params):
+            if isinstance(arg_expr, StringExpr):
+                if isinstance(arg, Menu):
+                    menu_id = self.make_block(
+                        arg.opcode,
+                        event_id,
+                        fields={arg.name: (arg_expr.value, None)})
+                    inputs[arg.name] = (InputType.SHADOW_ONLY, menu_id)
+                else:
+                    inputs[arg.name] = (InputType.SHADOW_ONLY, (arg.return_type, arg_expr.value))
+            else:
+                inputs[arg.name] = self.emit_expr(arg_expr, None, event_id).value
 
-                if not isinstance(expression, StringExpr):
-                    raise CompilerError("bad, bad, bad. expressions can't be converted to fields in scratch.")
+        field_args = stmt.params[len(block_data.inputs):]
 
-                broadcast_name = expression.value
-                broadcast_id = self.messages[broadcast_name]
+        for field_name, arg_expr in zip(block_data.fields, field_args):
+            if not isinstance(arg_expr, StringExpr):
+                raise CompilerError(f"{stmt.name}: argument for {field_name!r} must be a string literal")
+            fields[field_name] = (arg_expr.value, None)
 
-                event_id = self.make_block(
-                    stmt.name,
-                    parent=None,
-                    fields={
-                        # default
-                        "BROADCAST_OPTION": (
-                            broadcast_name,
-                            broadcast_id
-                        )
-                    },
-                    top_level=True
-                )
-                body = self.emit_sequence(stmt.body, event_id, None)
+        broadcast_args = field_args[len(block_data.fields):]
 
-                return BlockRange(
-                    event_id,
-                    body.last or event_id,
-                )
-            case _:
-                raise CompilerError("uh oh")
-        # placeholder
-        raise NotImplementedError()
+        for field_name, arg_expr in zip(block_data.broadcasts, broadcast_args):
+            if not isinstance(arg_expr, StringExpr):
+                raise CompilerError(f"{stmt.name}: argument for {field_name!r} must be a string literal")
+            broadcast_name = arg_expr.value
+            broadcast_id = self.define_broadcast(broadcast_name)
+            fields[field_name] = (broadcast_name, broadcast_id)
+
+        # make_block does `inputs or {}` / `fields or {}`, so when they start
+        # out empty it silently swaps in a fresh dict instead of keeping our
+        # reference -- write back explicitly so anything filled in above
+        # actually lands on the block.
+        self.blocks[event_id]["inputs"] = inputs
+        self.blocks[event_id]["fields"] = fields
+
+        body = self.emit_sequence(stmt.body, event_id, None)
+
+        if body.first is not None:
+            self.blocks[event_id]["next"] = body.first
+
+        return BlockRange(event_id, body.last or event_id)
             
     def emit_function_def(self, stmt: FunctionDefStmt, parent: StrOptional) -> BlockRange:
         definition_id = self.make_block(
@@ -774,8 +787,10 @@ class Assembler:
         not_condition = UnaryOpExpr("not", stmt.condition)
 
         block_id = self.new_id()
+
         self.make_block(
-            "control_repeat_until",
+            opcode="control_repeat_until",
+            id=block_id,
             parent=parent,
             inputs={
                 "CONDITION": self.emit_expr(not_condition, context, block_id).value
@@ -1055,7 +1070,7 @@ class Assembler:
                 "-": ("operator_subtract", "NUM1", "NUM2"),
                 "*": ("operator_multiply", "NUM1", "NUM2"),
                 "/": ("operator_divide", "NUM1", "NUM2"),
-                "=": ("operator_equals", "OPERAND1", "OPERAND2"),
+                "==": ("operator_equals", "OPERAND1", "OPERAND2"),
                 ">": ("operator_gt", "OPERAND1", "OPERAND2"),
                 "<": ("operator_lt", "OPERAND1", "OPERAND2"),
                 "and": ("operator_and", "OPERAND1", "OPERAND2"),
@@ -1158,7 +1173,7 @@ class Assembler:
 
         return value
 
-    def _serialize_blocks(self) -> dict[str, ScratchBlock]:
+    def _serialise_blocks(self) -> dict[str, ScratchBlock]:
         serialized: dict[str, ScratchBlock] = {}
 
         for block_id, block in self.blocks.items():
@@ -1175,62 +1190,108 @@ class Assembler:
 
         return serialized
 
-    def _serialize_variables(self) -> dict[str, list[Any]]:
+    def _serialise_variables(self) -> dict[str, list[Any]]:
         return {
             var_id: [variable.name, variable.initial_value]
             for var_id, variable in self.variables.items()
             if not variable.is_list
         }
 
-    def _serialize_lists(self) -> dict[str, list[Any]]:
+    def _serialise_lists(self) -> dict[str, list[Any]]:
         return {
             var_id: [variable.name, variable.initial_value]
             for var_id, variable in self.variables.items()
             if variable.is_list
         }
 
-    def _serialize_broadcasts(self) -> dict[str, str]:
+    def _serialise_broadcasts(self) -> dict[str, str]:
         return {broadcast_id: name for name, broadcast_id in self.messages.items()}
 
-    def assemble(self, program: Program, target: str, context: StrOptional) -> None:
+    def assemble(self, program: Program, project_file: str, target: str) -> None:
         """
         Compiles `program` and injects the result into an existing Scratch
         project file.
 
-        `target` is the path to a project.json (or an already-unzipped
+        `project_file` is the path to a project.json (or an already-unzipped
         project.json from inside an .sb3) that already contains at least one
-        sprite target. `context` is forwarded to the emitter to establish
-        variable scoping and should be None for a normal top-level program.
-
-        NOTE: there's currently no separate "sprite name" argument, so this
-        injects into the first non-stage target found in the project file.
-        If you need to target a specific sprite by name, extend this
-        method's signature with an explicit sprite-name parameter.
+        sprite target. `target` is the name of the sprite to inject the
+        compiled blocks/variables/lists/broadcasts into. `context` is
+        forwarded to the emitter to establish variable scoping and should be
+        None for a normal top-level program.
         """
-        self.emit_program(program, context)
+        
+        with zipfile.ZipFile(project_file, "r") as f:
+            project = json.loads(f.read("project.json").decode("utf-8"))
 
-        with open(target, "r", encoding="utf-8") as f:
-            project = json.load(f)
+
+        self.emit_program(program)
 
         targets: list[dict[str, Any]] = project.get("targets", [])
 
         sprite_target = None
         for candidate in targets:
-            if not candidate.get("isStage", False):
+            if not candidate.get("isStage", False) and candidate.get("name") == target:
                 sprite_target = candidate
                 break
 
         if sprite_target is None:
-            raise CompilerError(f"No sprite target found in project file {target!r}")
+            raise CompilerError(f"No sprite named {target!r} found in project file {project_file!r}")
 
-        sprite_target["variables"] = self._serialize_variables()
-        sprite_target["lists"] = self._serialize_lists()
-        sprite_target["broadcasts"] = self._serialize_broadcasts()
-        sprite_target["blocks"] = self._serialize_blocks()
+        sprite_target["variables"] = self._serialise_variables()
+        sprite_target["lists"] = self._serialise_lists()
+        sprite_target["broadcasts"] = self._serialise_broadcasts()
+        sprite_target["blocks"] = self._serialise_blocks()
         sprite_target["comments"] = {}
 
-        with open(target, "w", encoding="utf-8") as f:
-            json.dump(project, f)
+        # with open(project_file, "w", encoding="utf-8") as f:
+        #     json.dump(project, f)
+
+        json_dumped = json.dumps(project, ensure_ascii=True)
+
+        project_directory = os.path.dirname(os.path.abspath(project_file))
+        temporary_fd, temporary_path = tempfile.mkstemp(
+            suffix=".sb3",
+            dir=project_directory,
+        )
+        os.close(temporary_fd)
+
+        try:
+            with zipfile.ZipFile(project_file, "r") as source:
+                with zipfile.ZipFile(
+                    temporary_path,
+                    mode="w",
+                    compression=zipfile.ZIP_DEFLATED,
+                    compresslevel=9,
+                ) as destination:
+                    destination.comment = source.comment
+
+                    for archive_entry in source.infolist():
+                        if archive_entry.filename == "project.json":
+                            continue
+
+                        destination.writestr(
+                            archive_entry,
+                            source.read(archive_entry.filename),
+                        )
+
+                    destination.writestr("project.json", json_dumped)
+
+            # Validate the completed archive before replacing the original.
+            with zipfile.ZipFile(temporary_path, "r") as completed_archive:
+                bad_file = completed_archive.testzip()
+                if bad_file is not None:
+                    raise CompilerError(
+                        f"Generated Scratch archive contains a corrupt file: {bad_file!r}"
+                    )
+
+            os.replace(temporary_path, project_file)
+        finally:
+            if os.path.exists(temporary_path):
+                os.remove(temporary_path)
+        # with zipfile.ZipFile(project_file, mode="w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as f:
+        #     json_dumped = json.dumps(project, ensure_ascii=True)
+        #     f.writestr("project.json", data=json_dumped)
+        #     f.testzip()
 
         
     
