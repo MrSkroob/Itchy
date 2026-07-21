@@ -739,7 +739,7 @@ def build_for_body(node: ParsedNode) -> ForBody:
     return ForRangeBody(
         build_equation(equations[0]),
         build_equation(equations[1]),
-        build_equation(equations[3])
+        build_equation(equations[2])
     )
 
 

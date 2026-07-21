@@ -30,6 +30,7 @@ class Block:
     """
     # but scratch also wants an ID. so what do you do? hardcode that shit.
     broadcasts: tuple[str, ...] = ()
+    variables: tuple[str, ...] = ()
 
 
 """
@@ -133,6 +134,9 @@ SCRATCH_BLOCKS: dict[str, Block | Reporter | Event] = {
         return_type=VariableTypes.STRING,
     ),
     "operator_length": Reporter((ReturnType("STRING", DataType.STRING),)),
+    "operator_contains": Reporter((ReturnType("STRING1", DataType.STRING), ReturnType("STRING2", DataType.STRING)), return_type=VariableTypes.BOOLEAN),
+    "operator_round": Reporter((ReturnType("NUM"),)),
+    "operator_mathop": Reporter((ReturnType("NUM", DataType.NUMBER),), (("OPERATOR",))),
 
     # --- control ----------------------------------------------------
     # note: control_wait_until takes a CONDITION input like control_repeat_until
@@ -142,7 +146,7 @@ SCRATCH_BLOCKS: dict[str, Block | Reporter | Event] = {
     "event_whenthisspriteclicked": Event(),
     "event_whenbackdropswitchesto": Event(fields=("BACKDROP",)),
     "event_whengreaterthan": Event((ReturnType("VALUE"),), ("WHENGREATERTHANMENU",)),
-    "event_whenbroadcastreceived": Event(broadcasts=("BROADCAST_OPTION",)),
+    "event_whenbroadcastreceived": Event(fields=("BROADCAST_OPTION",), broadcasts=("BROADCAST_OPTION",)),
 
     "control_wait": Block((ReturnType("DURATION", DataType.POSITIVE_NUMBER),)),
     "control_wait_until": Block((ReturnType("CONDITION"),)),
@@ -176,5 +180,18 @@ SCRATCH_BLOCKS: dict[str, Block | Reporter | Event] = {
     "sensing_dayssince2000": Reporter(),
 
     "sensing_username": Reporter(return_type=VariableTypes.STRING),
-    "sensing_online": Reporter(return_type=VariableTypes.BOOLEAN)
+    "sensing_online": Reporter(return_type=VariableTypes.BOOLEAN),
+    
+    # -- lists and variables
+    "data_addtolist": Block((ReturnType("ITEM", DataType.STRING),), ("LIST",), variables=("LIST",)),
+    "data_deleteoflist": Block((ReturnType("INDEX"),), ("LIST",), variables=("LIST",)),
+    "data_deletealloflist": Block(fields=("LIST",), variables=("LIST",)),
+    "data_insertatlist": Block((ReturnType("ITEM"), ReturnType("INDEX")), ("LIST",), variables=("LIST",)),
+    "data_itemnumoflist": Block((ReturnType("ITEM"),), ("LIST",), variables=("LIST",)),
+    "data_lengthoflist": Block(fields=("LIST",), variables=("LIST",)),
+    "data_showlist": Block(fields=("LIST",), variables=("LIST",)),
+    "data_hidelist": Block(fields=("LIST",), variables=("LIST",)),
+
+    "data_showvariable": Block(fields=("VARIABLE",), variables=("VARIABLE",)),
+    "data_hidevariable": Block(fields=("VARIABLE",), variables=("VARIABLE",)),
 }

@@ -16,14 +16,14 @@ def print_out_all(json_dict: dict[str, Any]):
 
 
 def print_out_stuff(json_dict: dict[str, Any]):
-    print("FULL: ", json.dumps(project_json, indent=4))
-    # for i in json_dict["targets"]:
-    #     print("\nTARGET:", i["name"])
-    #     print(i["variables"])
-    #     print(i["lists"])
-    #     blocks = i["blocks"]
-    #     for id in blocks:
-    #         print(id, json.dumps(blocks[id], indent=4, ensure_ascii=True))
+    # print("FULL: ", json.dumps(project_json, indent=4))
+    for i in json_dict["targets"]:
+        print("\nTARGET:", i["name"])
+        print(i["variables"])
+        print(i["lists"])
+        blocks = i["blocks"]
+        for id in blocks:
+            print(id, json.dumps(blocks[id], indent=4, ensure_ascii=True))
 
 
 # `project_json = load_project("scratch_project/Scratch Project.sb3")

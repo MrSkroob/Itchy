@@ -39,13 +39,7 @@ ScratchFieldRaw = tuple[str, None] | tuple[str, str]
 class ScratchInput:
     value: ScratchInputRaw
     return_type: VariableTypes = VariableTypes.UNKNOWN
-
-
-# @dataclass(frozen=True)
-# class ScratchInput:
-#     value: list[Any]
-#     return_type: VariableTypes = VariableTypes.UNKNOWN
-
+    
 
 class DataType(Enum):
     NUMBER = 4
@@ -347,6 +341,15 @@ class Assembler:
                     broadcast_id = self.define_broadcast(arg_expr.value)
                     inputs[arg.name] = (InputType.SHADOW_ONLY,
                                         (DataType.BROADCAST, arg_expr.value, broadcast_id))
+            elif arg in block_data.variables:
+                if not isinstance(arg_expr, StringExpr):
+                    inputs[arg.name] = (
+                        self.emit_expr(arg_expr, context, block_id).value
+                    )
+                else:
+                    var_id = self.get_variable(arg_expr.value)
+                    inputs[arg.name] = (InputType.SHADOW_ONLY,
+                                        (DataType.VARIABLE, arg_expr.value, var_id))
             else:
                 if isinstance(arg_expr, StringExpr):
                     if isinstance(arg, Menu):
@@ -373,8 +376,13 @@ class Assembler:
                 raise CompilerError(
                     f"{stmt.callee}: argument for {field_name!r} must be a string literal"
                 )
-
-            fields[field_name] = (arg_expr.value, None)
+            
+            if field_name in block_data.variables:
+                fields[field_name] = (arg_expr.value, self.get_variable(arg_expr.value))
+            elif field_name in block_data.broadcasts:
+                fields[field_name] = (arg_expr.value, self.define_broadcast(arg_expr.value))
+            else:
+                fields[field_name] = (arg_expr.value, None)
 
         self.blocks[block_id]["fields"] = fields
         self.blocks[block_id]["inputs"] = inputs
@@ -435,7 +443,7 @@ class Assembler:
         # subset of `inputs` -- they're their own trailing group of
         # field-shaped arguments (see event_whenbroadcastreceived), so they
         # get counted on top of inputs and fields rather than overlapping.
-        expected_args = len(block_data.inputs) + len(block_data.fields) + len(block_data.broadcasts)
+        expected_args = len(block_data.inputs) + len(block_data.fields)
 
         if len(stmt.params) != expected_args:
             raise CompilerError(
@@ -452,36 +460,82 @@ class Assembler:
             top_level=True,
         )
 
+        """
+        for arg, arg_expr in zip(block_data.inputs, stmt.args):
+            if arg in block_data.broadcasts:
+                if not isinstance(arg_expr, StringExpr):
+                    inputs[arg.name] = (
+                        self.emit_expr(arg_expr, context, block_id).value
+                    )
+                else:
+                    broadcast_id = self.define_broadcast(arg_expr.value)
+                    inputs[arg.name] = (InputType.SHADOW_ONLY,
+                                        (DataType.BROADCAST, arg_expr.value, broadcast_id))
+            else:
+                if isinstance(arg_expr, StringExpr):
+                    if isinstance(arg, Menu):
+                        # create the menu
+                        menu_id = self.make_block(
+                            opcode=arg.opcode, 
+                            id=block_id,
+                            fields={
+                                arg.name: (
+                                    arg_expr.value,
+                                    None
+                                )
+                            })
+
+                        inputs[arg.name] = (InputType.SHADOW_ONLY, menu_id)
+                    else:
+                        inputs[arg.name] = (InputType.SHADOW_ONLY, 
+                            (arg.return_type, arg_expr.value))
+                else:
+                    inputs[arg.name] = self.emit_expr(arg_expr, context, block_id).value
+
+        for field_name, arg_expr in zip(block_data.fields, stmt.args[len(block_data.inputs):]):
+            if not isinstance(arg_expr, StringExpr):
+                raise CompilerError(
+                    f"{stmt.callee}: argument for {field_name!r} must be a string literal"
+                )
+
+            fields[field_name] = (arg_expr.value, None)
+
+        """
+
         # inputs come first, positionally, then fields, then broadcasts --
         # matches how the expected_args check above adds them together.
         for arg, arg_expr in zip(block_data.inputs, stmt.params):
-            if isinstance(arg_expr, StringExpr):
-                if isinstance(arg, Menu):
-                    menu_id = self.make_block(
-                        arg.opcode,
-                        event_id,
-                        fields={arg.name: (arg_expr.value, None)})
-                    inputs[arg.name] = (InputType.SHADOW_ONLY, menu_id)
+            if arg in block_data.broadcasts:
+                if not isinstance(arg_expr, StringExpr):
+                    inputs[arg.name] = (
+                        self.emit_expr(arg_expr, None, event_id).value
+                    )
                 else:
-                    inputs[arg.name] = (InputType.SHADOW_ONLY, (arg.return_type, arg_expr.value))
+                    broadcast_id = self.define_broadcast(arg_expr.value)
+                    inputs[arg.name] = (InputType.SHADOW_ONLY,
+                                        (DataType.BROADCAST, arg_expr.value, broadcast_id))
             else:
-                inputs[arg.name] = self.emit_expr(arg_expr, None, event_id).value
+                if isinstance(arg_expr, StringExpr):
+                    if isinstance(arg, Menu):
+                        menu_id = self.make_block(
+                            arg.opcode,
+                            event_id,
+                            fields={arg.name: (arg_expr.value, None)})
+                        inputs[arg.name] = (InputType.SHADOW_ONLY, menu_id)
+                    else:
+                        inputs[arg.name] = (InputType.SHADOW_ONLY, (arg.return_type, arg_expr.value))
+                else:
+                    inputs[arg.name] = self.emit_expr(arg_expr, None, event_id).value
 
         field_args = stmt.params[len(block_data.inputs):]
 
         for field_name, arg_expr in zip(block_data.fields, field_args):
             if not isinstance(arg_expr, StringExpr):
                 raise CompilerError(f"{stmt.name}: argument for {field_name!r} must be a string literal")
-            fields[field_name] = (arg_expr.value, None)
-
-        broadcast_args = field_args[len(block_data.fields):]
-
-        for field_name, arg_expr in zip(block_data.broadcasts, broadcast_args):
-            if not isinstance(arg_expr, StringExpr):
-                raise CompilerError(f"{stmt.name}: argument for {field_name!r} must be a string literal")
-            broadcast_name = arg_expr.value
-            broadcast_id = self.define_broadcast(broadcast_name)
-            fields[field_name] = (broadcast_name, broadcast_id)
+            if field_name in block_data.broadcasts:
+                fields[field_name] = (arg_expr.value, self.define_broadcast(arg_expr.value))
+            else:
+                fields[field_name] = (arg_expr.value, None)
 
         # make_block does `inputs or {}` / `fields or {}`, so when they start
         # out empty it silently swaps in a fresh dict instead of keeping our
@@ -951,7 +1005,7 @@ class Assembler:
                     return ScratchInput((InputType.SHADOW_ONLY, (DataType.STRING, value)), VariableTypes.STRING)
             case BoolExpr(value=value):
                 # in scratch:
-                # if (0 == 0) == "true" is true, so we can just use strings without any fancy conversion :)
+                # if (0 == 0) == "true" is true, so we can just use strings without any fancy conversion
                 return ScratchInput((InputType.SHADOW_ONLY, (DataType.STRING, str(value).lower())), VariableTypes.BOOLEAN)
             case VarExpr(ref=ref):
                 return self.emit_var_ref(ref, context, parent)
@@ -1055,8 +1109,12 @@ class Assembler:
         raise NotImplementedError(f"Unsupported unary operator: {op}")
     
     def emit_binary_expr(self, left: Expr, op: str, right: Expr, context: StrOptional, parent: StrOptional) -> ScratchInput:
-        left_expr = self.emit_expr(left, context, parent)
-        right_expr = self.emit_expr(right, context, parent)
+        block_id = self.new_id()
+
+        left_expr = self.emit_expr(left, context, block_id)
+        right_expr = self.emit_expr(right, context, block_id)
+
+        print(left_expr.return_type, right_expr.return_type)
 
         if op == "+" and (
             left_expr.return_type != VariableTypes.NUMBER
@@ -1076,18 +1134,21 @@ class Assembler:
                 "and": ("operator_and", "OPERAND1", "OPERAND2"),
                 "or": ("operator_or", "OPERAND1", "OPERAND2"),
             }[op]
-
-            if op in {"=", ">", "<", "and", "or"}:
+            if op in {"==", ">", "<", "and", "or"}:
                 return_type = VariableTypes.BOOLEAN
             else:
                 return_type = VariableTypes.NUMBER
 
-        block_id = self.make_block(
+        left_input = left_expr.value
+        right_input = right_expr.value
+
+        self.make_block(
             opcode=opcode,
             parent=parent,
+            id=block_id,
             inputs={
-                left_name: left_expr.value,
-                right_name: right_expr.value
+                left_name: left_input,
+                right_name: right_input
             },
         )
 
@@ -1140,17 +1201,60 @@ class Assembler:
         else:
             var_id = self.get_variable(ref.root)
             var_type = self.variables[var_id].var_type
-            return ScratchInput(
-                (
-                    InputType.SHADOW_ONLY,
-                    (
-                        DataType.VARIABLE,
-                        ref.root,
-                        var_id
+            if ref.slice_expr is not None:
+                if var_type is VariableTypes.LIST:
+                    operator_id = self.make_block(
+                        opcode="data_itemoflist",
+                        parent=parent,
+                        inputs={
+                            "INDEX": self.emit_expr(ref.slice_expr, context, parent).value
+                        },
+                        fields={
+                            "LIST": (
+                                ref.root,
+                                var_id
+                            )
+                        }
                     )
-                ),
-                var_type
-            )
+                    return ScratchInput(
+                        (InputType.BLOCK_ONLY,
+                        operator_id)
+                    )
+                else:
+                    operator_id = self.make_block(
+                        opcode="operator_letter_of",
+                        parent=parent,
+                        inputs={
+                            "LETTER": self.emit_expr(ref.slice_expr, context, parent).value,
+                            "STRING": (
+                                InputType.BLOCK_ONLY,  (
+                                    DataType.VARIABLE,
+                                    ref.root,
+                                    var_id
+                                )
+                            )
+                        },
+                    )
+
+                    return ScratchInput(
+                        (
+                            InputType.BLOCK_ONLY,
+                            operator_id
+                        ), VariableTypes.STRING
+                    )
+
+            else:
+                return ScratchInput(
+                    (
+                        InputType.SHADOW_ONLY,
+                        (
+                            DataType.LIST if var_type == VariableTypes.LIST else DataType.VARIABLE,
+                            ref.root,
+                            var_id
+                        )
+                    ),
+                    var_type
+                )
         
 
     @staticmethod
