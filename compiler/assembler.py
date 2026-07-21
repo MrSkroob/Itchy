@@ -118,14 +118,15 @@ class Assembler:
     def new_id(self) -> str:
         return uuid.uuid4().hex[:20]
 
-    def add_block(self, block: ScratchBlock) -> str:
-        block_id = self.new_id()
+    def add_block(self, block: ScratchBlock, id: StrOptional) -> str:
+        block_id = id or self.new_id()
         self.blocks[block_id] = block
         return block_id
     
     def make_block(
             self,
             opcode: str,
+            id: str | None=None,
             parent: StrOptional=None,
             inputs: dict[str, ScratchInputRaw] | None=None,
             fields: dict[str, Any] | None=None,
@@ -154,7 +155,7 @@ class Assembler:
             block["x"] = x if x is not None else 100
             block["y"] = y if y is not None else 100
         
-        return self.add_block(block)
+        return self.add_block(block, id)
     
 
     def get_variable(self, name: str, context: StrOptional) -> str:
@@ -301,7 +302,7 @@ class Assembler:
             if arg in block_data.broadcasts:
                 if not isinstance(arg_expr, StringExpr):
                     inputs[arg.name] = (
-                        self.emit_expr(arg_expr, context)
+                        self.emit_expr(arg_expr, context, block_id)
                     )
                 else:
                     broadcast_id = self.define_broadcast(arg_expr.value)
@@ -332,7 +333,7 @@ class Assembler:
                             (arg.return_type, arg_expr.value))
                         )
                 else:
-                    inputs[arg.name] = self.emit_expr(arg_expr, context)
+                    inputs[arg.name] = self.emit_expr(arg_expr, context, block_id)
 
         for field_name, arg_expr in zip(block_data.fields, stmt.args[len(block_data.inputs):]):
             if not isinstance(arg_expr, StringExpr):
@@ -361,13 +362,15 @@ class Assembler:
             )
 
         inputs: dict[str, ScratchInputRaw] = {}
+        block_id = self.new_id()
 
         for arg_id, arg_expr in zip(info.argument_ids, stmt.args):
-            emitted_arg = self.emit_expr(arg_expr, context)
+            emitted_arg = self.emit_expr(arg_expr, context, block_id)
             inputs[arg_id] = emitted_arg.value
 
-        block_id = self.make_block(
+        self.make_block(
             opcode="procedures_call",
+            id=block_id,
             parent=parent,
             inputs=inputs,
         )
@@ -520,15 +523,16 @@ class Assembler:
     def emit_for_range(self, stmt: ForRangeStmt, parent: StrOptional, context: StrOptional):
         # variable
         var_id = self.define_variable(False, "number", stmt.variable, context)
-
-        set_id = self.make_block(
+        set_id = self.new_id()
+        self.make_block(
             "data_setvariableto",
+            id=set_id,
             parent=parent,
             fields={
                 "VARIABLE": [stmt.variable, var_id]
             },
             inputs={
-                "VALUE": self.emit_expr(stmt.start, context).value
+                "VALUE": self.emit_expr(stmt.start, context, set_id).value
             }
         )
 
@@ -539,24 +543,28 @@ class Assembler:
         )
 
         # repeat
-        repeat_id = self.make_block(
+        repeat_id = self.new_id()
+        self.make_block(
             "control_repeat_until",
+            id=repeat_id,
             parent=set_id,
             inputs={
-                "CONDITION": self.emit_expr(stop_condition, context).value
+                "CONDITION": self.emit_expr(stop_condition, context, repeat_id).value
             }
         )
         
         self.blocks[set_id]["next"] = repeat_id
 
-        change_id = self.make_block(
+        change_id = self.new_id()
+        self.make_block(
             opcode="data_changevariableby",
+            id=change_id,
             parent=repeat_id,
             fields={
                 "VARIABLE": [stmt.variable, var_id]
             },
             inputs={
-                "VALUE": self.emit_expr(stmt.step, context).value
+                "VALUE": self.emit_expr(stmt.step, context, change_id).value
             }
         )
 
@@ -600,14 +608,16 @@ class Assembler:
         """
 
         # iterator variable
-        set_id = self.make_block(
+        set_id = self.new_id()
+        self.make_block(
             "data_setvariableto",
+            id=set_id,
             parent=parent,
             fields={
                 "VARIABLE": [list_variable_name, var_id]
             },
             inputs={
-                "VALUE": self.emit_expr(NumberExpr(1), context).value
+                "VALUE": self.emit_expr(NumberExpr(1), context, set_id).value
             }
         )
 
@@ -657,11 +667,13 @@ class Assembler:
         )
 
         # repeat
-        repeat_id = self.make_block(
+        repeat_id = self.new_id()
+        self.make_block(
             "control_repeat_until",
             parent=set_id,
+            id=repeat_id,
             inputs={
-                "CONDITION": self.emit_expr(stop_condition, context).value
+                "CONDITION": self.emit_expr(stop_condition, context, repeat_id).value
             }
         )
 
@@ -681,14 +693,16 @@ class Assembler:
 
         self.blocks[itemoflist]["parent"] = list_set_id
 
-        change_id = self.make_block(
+        change_id = self.new_id()
+        self.make_block(
             opcode="data_changevariableby",
+            id=change_id,
             parent=list_set_id,
             fields={
                 "VARIABLE": [stmt.variable, var_id]
             },
             inputs={
-                "VALUE": self.emit_expr(NumberExpr(1), context).value
+                "VALUE": self.emit_expr(NumberExpr(1), context, change_id).value
             }
         )
 
@@ -714,11 +728,12 @@ class Assembler:
         """
         not_condition = UnaryOpExpr("not", stmt.condition)
 
-        block_id = self.make_block(
+        block_id = self.new_id()
+        self.make_block(
             "control_repeat_until",
             parent=parent,
             inputs={
-                "CONDITION": self.emit_expr(not_condition, context).value
+                "CONDITION": self.emit_expr(not_condition, context, block_id).value
             }
         )
 
@@ -746,11 +761,13 @@ class Assembler:
 
         opcode = "control_if_else" if has_else else "control_if"
 
-        block_id = self.make_block(
+        block_id = self.new_id()
+        self.make_block(
             opcode=opcode,
+            id=block_id,
             parent=parent,
             inputs={
-                "CONDITION": self.emit_expr(branch.condition, context).value
+                "CONDITION": self.emit_expr(branch.condition, context, block_id).value
             }
         )
 
@@ -786,12 +803,14 @@ class Assembler:
 
             if variable.is_list:
                 # is a list!
-                block_id = self.make_block(
+                block_id = self.new_id()
+                self.make_block(
                     "data_replaceitemoflist",
+                    id=block_id,
                     parent=parent,
                     inputs={
-                        "INDEX": self.emit_expr(target.slice_expr, context).value,
-                        "ITEM": self.emit_expr(value, context).value
+                        "INDEX": self.emit_expr(target.slice_expr, context, block_id).value,
+                        "ITEM": self.emit_expr(value, context, block_id).value
                     },
                     fields={
                         "LIST": [target.root, var_id]
@@ -837,15 +856,16 @@ class Assembler:
                 raise TypeError("Strings do not support item assignment")
         else:
             var_id = self.get_variable(target.root, context) 
-
-            block_id = self.make_block(
+            block_id = self.new_id()
+            self.make_block(
                 "data_setvariableto",
+                id=block_id,
                 parent=parent,
                 fields={
                     "VARIABLE": [target.root, var_id]
                 },
                 inputs={
-                    "VALUE": self.emit_expr(value, context).value
+                    "VALUE": self.emit_expr(value, context, block_id).value
                 }
             )
             
@@ -854,7 +874,7 @@ class Assembler:
                 block_id,
             )
     
-    def emit_expr(self, expr: Expr, context: StrOptional) -> ScratchInput:
+    def emit_expr(self, expr: Expr, context: StrOptional, parent: StrOptional) -> ScratchInput:
         # block_id = self.new_id()
         # expression: ScratchInput = [InputType.REPORTER, block_id]
         
@@ -873,12 +893,12 @@ class Assembler:
             case VarExpr(ref=ref):
                 return self.emit_var_ref(ref, context)
             case UnaryOpExpr(op=op, value=value):
-                return self.emit_unary_expr(op, value, context)
+                return self.emit_unary_expr(op, value, context, parent)
             case BinaryOpExpr(left=left, op=op, right=right):
-                return self.emit_binary_expr(left, op, right, context)
+                return self.emit_binary_expr(left, op, right, context, parent)
             case FunctionCallExpr():
                 # only available for scratch built-ins :v
-                return self.emit_function_expr(expr, context)
+                return self.emit_function_expr(expr, context, parent)
             case TableExpr():
                 raise NotImplementedError("out of scope for now :v")
             case _:
@@ -886,7 +906,7 @@ class Assembler:
 
         
         # return expression
-    def emit_function_expr(self, expr: FunctionCallExpr, context: StrOptional) -> ScratchInput:
+    def emit_function_expr(self, expr: FunctionCallExpr, context: StrOptional, parent: StrOptional) -> ScratchInput:
         block_data = SCRATCH_BLOCKS[expr.callee]
 
         if not isinstance(block_data, Reporter):
@@ -896,94 +916,99 @@ class Assembler:
     
         expected_args = len(block_data.inputs) + len(block_data.fields)
 
-        if len(stmt.args) != expected_args:
+        if len(expr.args) != expected_args:
             raise CompilerError(
-                f"Block {stmt.callee!r} expects {expected_args} argument(s), got {len(stmt.args)}"
+                f"Block {expr.callee!r} expects {expected_args} argument(s), got {len(expr.args)}"
             )
-        
-        block_id = self.make_block(
-            opcode=expr.callee,
-            parent=parent,
-        )
+        raise NotImplementedError()
+        # block_id = self.make_block(
+        #     opcode=expr.callee,
+        #     parent=parent,
+        # )
 
-        inputs: dict[str, ScratchInput] = {}
-        fields: dict[str, Any] = {}
+        # inputs: dict[str, ScratchInput] = {}
+        # fields: dict[str, Any] = {}
 
-        # inputs come first, positionally, then fields -- matches how the
-        # arity check above adds them together.
-        for arg, arg_expr in zip(block_data.inputs, stmt.args):
-            if arg in block_data.broadcasts:
-                if not isinstance(arg_expr, StringExpr):
-                    inputs[arg.name] = (
-                        self.emit_expr(arg_expr, context)
-                    )
-                else:
-                    broadcast_id = self.define_broadcast(arg_expr.value)
-                    inputs[arg.name] = ScratchInput(
-                        (InputType.LITERAL,
-                        (DataType.BROADCAST, arg_expr.value, broadcast_id))
-                    )
-            else:
-                if isinstance(arg_expr, StringExpr):
-                    if isinstance(arg, Menu):
-                        # create the menu
-                        menu_id = self.make_block(
-                            arg.opcode, 
-                            block_id,
-                            fields={
-                                arg.name: (
-                                    arg_expr.value,
-                                    None
-                                )
-                            })
+        # # inputs come first, positionally, then fields -- matches how the
+        # # arity check above adds them together.
+        # for arg, arg_expr in zip(block_data.inputs, stmt.args):
+        #     if arg in block_data.broadcasts:
+        #         if not isinstance(arg_expr, StringExpr):
+        #             inputs[arg.name] = (
+        #                 self.emit_expr(arg_expr, context)
+        #             )
+        #         else:
+        #             broadcast_id = self.define_broadcast(arg_expr.value)
+        #             inputs[arg.name] = ScratchInput(
+        #                 (InputType.LITERAL,
+        #                 (DataType.BROADCAST, arg_expr.value, broadcast_id))
+        #             )
+        #     else:
+        #         if isinstance(arg_expr, StringExpr):
+        #             if isinstance(arg, Menu):
+        #                 # create the menu
+        #                 menu_id = self.make_block(
+        #                     arg.opcode, 
+        #                     block_id,
+        #                     fields={
+        #                         arg.name: (
+        #                             arg_expr.value,
+        #                             None
+        #                         )
+        #                     })
 
-                        inputs[arg.name] = ScratchInput(
-                            (InputType.LITERAL, menu_id)
-                        )
-                    else:
-                        inputs[arg.name] = ScratchInput(
-                            (InputType.LITERAL, 
-                            (arg.return_type, arg_expr.value))
-                        )
-                else:
-                    inputs[arg.name] = self.emit_expr(arg_expr, context)
+        #                 inputs[arg.name] = ScratchInput(
+        #                     (InputType.LITERAL, menu_id)
+        #                 )
+        #             else:
+        #                 inputs[arg.name] = ScratchInput(
+        #                     (InputType.LITERAL, 
+        #                     (arg.return_type, arg_expr.value))
+        #                 )
+        #         else:
+        #             inputs[arg.name] = self.emit_expr(arg_expr, context)
 
-        for field_name, arg_expr in zip(block_data.fields, stmt.args[len(block_data.inputs):]):
-            if not isinstance(arg_expr, StringExpr):
-                raise CompilerError(
-                    f"{stmt.callee}: argument for {field_name!r} must be a string literal"
-                )
+        # for field_name, arg_expr in zip(block_data.fields, stmt.args[len(block_data.inputs):]):
+        #     if not isinstance(arg_expr, StringExpr):
+        #         raise CompilerError(
+        #             f"{stmt.callee}: argument for {field_name!r} must be a string literal"
+        #         )
 
-            fields[field_name] = [arg_expr.value, None]
+        #     fields[field_name] = [arg_expr.value, None]
 
 
-        return BlockRange(block_id, block_id)
+        # return BlockRange(block_id, block_id)
 
-    def emit_unary_expr(self, op: str, value: Expr, context: StrOptional) -> ScratchInput:
+    def emit_unary_expr(self, op: str, value: Expr, context: StrOptional, parent: StrOptional) -> ScratchInput:
+        block_id = self.new_id()
         if op in {"not", "!"}:
-            block_id = self.make_block(
+            self.make_block(
                 opcode="operator_not",
+                id=block_id,
+                parent=parent,
                 inputs={
-                    "OPERAND": self.emit_expr(value, context).value,
+                    "OPERAND": self.emit_expr(value, context, block_id).value,
                 },
             )
             return ScratchInput((InputType.SHADOWED, block_id), VariableTypes.BOOLEAN)
 
         if op == "-":
-            block_id = self.make_block(
+            self.make_block(
                 opcode="operator_subtract",
+                id=block_id,
+                parent=parent,
                 inputs={
                     "NUM1": (InputType.LITERAL, (DataType.NUMBER, "0")),
-                    "NUM2": self.emit_expr(value, context).value,
+                    "NUM2": self.emit_expr(value, context, block_id).value,
                 },
             )
             return ScratchInput((InputType.SHADOWED, block_id), VariableTypes.NUMBER)
 
         raise NotImplementedError(f"Unsupported unary operator: {op}")
     
-    def emit_binary_expr(self, left: Expr, op: str, right: Expr, context: StrOptional) -> ScratchInput:
-        left_expr = self.emit_expr(left, context)
-        right_expr = self.emit_expr(right, context)
+    def emit_binary_expr(self, left: Expr, op: str, right: Expr, context: StrOptional, parent: StrOptional) -> ScratchInput:
+        left_expr = self.emit_expr(left, context, parent)
+        right_expr = self.emit_expr(right, context, parent)
 
         if op == "+" and (
             left_expr.return_type != VariableTypes.NUMBER
@@ -1011,11 +1036,12 @@ class Assembler:
 
         block_id = self.make_block(
             opcode=opcode,
-            inputs={},
+            parent=parent,
+            inputs={
+                left_name: left_expr.value,
+                right_name: right_expr.value
+            },
         )
-
-        self.blocks[block_id]["inputs"][left_name] = left_expr.value
-        self.blocks[block_id]["inputs"][right_name] = right_expr.value
 
         return ScratchInput(
             (InputType.SHADOWED, block_id),
