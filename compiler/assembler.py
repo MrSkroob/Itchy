@@ -301,12 +301,10 @@ class Assembler:
         block_id = self.make_block(
             opcode=stmt.callee,
             parent=parent,
-            inputs=inputs,
-            fields=fields
         )
 
         # inputs come first, positionally, then fields -- matches how the
-        # arity check above adds them together.
+        # expected_args check above adds them together.
         for arg, arg_expr in zip(block_data.inputs, stmt.args):
             if arg in block_data.broadcasts:
                 if not isinstance(arg_expr, StringExpr):
@@ -322,8 +320,8 @@ class Assembler:
                     if isinstance(arg, Menu):
                         # create the menu
                         menu_id = self.make_block(
-                            arg.opcode, 
-                            block_id,
+                            opcode=arg.opcode, 
+                            id=block_id,
                             fields={
                                 arg.name: (
                                     arg_expr.value,
@@ -346,6 +344,8 @@ class Assembler:
 
             fields[field_name] = (arg_expr.value, None)
 
+        self.blocks[block_id]["fields"] = fields
+        self.blocks[block_id]["inputs"] = inputs
 
         return BlockRange(block_id, block_id)
             
@@ -396,6 +396,9 @@ class Assembler:
                     stmt.name,
                     top_level=True,
                 )
+                body = self.emit_sequence(stmt.body, event_id, None)
+
+                return BlockRange(event_id, body.last or event_id)
 
             case "event_whenbackdropswitchesto":
                 event_id = self.make_block(
@@ -405,13 +408,18 @@ class Assembler:
                     },
                     top_level=True
                 )
+                body = self.emit_sequence(stmt.body, event_id, None)
+
+                return BlockRange(event_id, body.last or event_id)
 
             case "event_whenflagclicked":
                 event_id = self.make_block(
                     stmt.name,
                     top_level=True
                 )
-                return BlockRange(event_id, event_id)
+                body = self.emit_sequence(stmt.body, event_id, None)
+
+                return BlockRange(event_id, body.last or event_id)
 
             case "event_whenbroadcastreceived":
                 expression = stmt.params[0]
@@ -931,66 +939,48 @@ class Assembler:
                 f"Block {expr.callee!r} expects {expected_args} argument(s), got {len(expr.args)}"
             )
         
+        block_id = self.make_block(
+            opcode=expr.callee,
+            parent=parent
+        )
 
+        inputs: dict[str, ScratchInputRaw] = {}
+        fields: dict[str, ScratchFieldRaw] = {}
+        
+        for arg, arg_expr in zip(block_data.inputs, expr.args):
+            if isinstance(arg_expr, StringExpr):
+                if isinstance(arg, Menu):
+                    # create the menu
+                    menu_id = self.make_block(
+                        arg.opcode, 
+                        block_id,
+                        fields={
+                            arg.name: (
+                                arg_expr.value,
+                                None
+                            )
+                        })
 
-        raise NotImplementedError()
-        # block_id = self.make_block(
-        #     opcode=expr.callee,
-        #     parent=parent,
-        # )
+                    inputs[arg.name] = (InputType.SHADOW_ONLY, menu_id)
+                else:
+                    inputs[arg.name] = (InputType.SHADOW_ONLY, (arg.return_type, arg_expr.value))
+            else:
+                inputs[arg.name] = self.emit_expr(arg_expr, context, parent).value
 
-        # inputs: dict[str, ScratchInput] = {}
-        # fields: dict[str, Any] = {}
+        for field_name, arg_expr in zip(block_data.fields, expr.args[len(block_data.inputs):]):
+            if not isinstance(arg_expr, StringExpr):
+                raise CompilerError(
+                    f"{expr.callee}: argument for {field_name!r} must be a string literal"
+                )
 
-        # # inputs come first, positionally, then fields -- matches how the
-        # # arity check above adds them together.
-        # for arg, arg_expr in zip(block_data.inputs, stmt.args):
-        #     if arg in block_data.broadcasts:
-        #         if not isinstance(arg_expr, StringExpr):
-        #             inputs[arg.name] = (
-        #                 self.emit_expr(arg_expr, context)
-        #             )
-        #         else:
-        #             broadcast_id = self.define_broadcast(arg_expr.value)
-        #             inputs[arg.name] = ScratchInput(
-        #                 (InputType.LITERAL,
-        #                 (DataType.BROADCAST, arg_expr.value, broadcast_id))
-        #             )
-        #     else:
-        #         if isinstance(arg_expr, StringExpr):
-        #             if isinstance(arg, Menu):
-        #                 # create the menu
-        #                 menu_id = self.make_block(
-        #                     arg.opcode, 
-        #                     block_id,
-        #                     fields={
-        #                         arg.name: (
-        #                             arg_expr.value,
-        #                             None
-        #                         )
-        #                     })
+            fields[field_name] = (arg_expr.value, None)
+        
+        self.blocks[block_id]["fields"] = fields
+        self.blocks[block_id]["inputs"] = inputs
 
-        #                 inputs[arg.name] = ScratchInput(
-        #                     (InputType.LITERAL, menu_id)
-        #                 )
-        #             else:
-        #                 inputs[arg.name] = ScratchInput(
-        #                     (InputType.LITERAL, 
-        #                     (arg.return_type, arg_expr.value))
-        #                 )
-        #         else:
-        #             inputs[arg.name] = self.emit_expr(arg_expr, context)
-
-        # for field_name, arg_expr in zip(block_data.fields, stmt.args[len(block_data.inputs):]):
-        #     if not isinstance(arg_expr, StringExpr):
-        #         raise CompilerError(
-        #             f"{stmt.callee}: argument for {field_name!r} must be a string literal"
-        #         )
-
-        #     fields[field_name] = [arg_expr.value, None]
-
-
-        # return BlockRange(block_id, block_id)
+        return ScratchInput(
+            (InputType.BLOCK_ONLY, block_id), block_data.return_type
+        )
 
     def emit_unary_expr(self, op: str, value: Expr, context: StrOptional, parent: StrOptional) -> ScratchInput:
         block_id = self.new_id()
