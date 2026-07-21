@@ -698,49 +698,30 @@ class Assembler:
         )
 
         # operator that gets n item of list
+        list_set_id = self.new_id()
 
         if self.variables[iterable_id].is_list:
-            itemoflist = self.make_block(
-                "data_itemoflist",
-                inputs={
-                    "INDEX": (
-                        InputType.BLOCK_AND_SHADOW,
-                        (
-                            DataType.VARIABLE,
-                            list_variable_name,
-                            var_id
-                        )
-                    )
-                },
-                fields={
-                    "LIST": (
-                        stmt.iterable.root,
-                        iterable_id
-                    )
-                }
+            itemoflist = self.emit_function_expr(FunctionCallExpr("data_itemoflist",
+                                                                  (VarExpr(VarRef(list_variable_name)), 
+                                                                   VarExpr(VarRef(stmt.iterable.root)))
+                                                                   ), context, list_set_id)
+            stop_condition = BinaryOpExpr(
+                left=VarExpr(VarRef(list_variable_name)),
+                op=">",
+                right=FunctionCallExpr("data_lengthoflist", (VarExpr(stmt.iterable),))
             )
         else:
-            itemoflist = self.make_block(
-                "operator_letter_of",
-                inputs={
-                    "LETTER": (InputType.BLOCK_AND_SHADOW, (
-                        DataType.VARIABLE,
-                        list_variable_name,
-                        var_id,
-                    )),
-                    "STRING": (InputType.BLOCK_AND_SHADOW, (
-                        DataType.VARIABLE,
-                        stmt.iterable.root,
-                        iterable_id
-                    ))
-                }
+            itemoflist = self.emit_function_expr(FunctionCallExpr("operator_letter_of", 
+                                                                  (VarExpr(VarRef(list_variable_name)), 
+                                                                   VarExpr(VarRef(stmt.iterable.root)))
+                                                                   ), context, list_set_id)
+            stop_condition = BinaryOpExpr(
+                left=VarExpr(VarRef(list_variable_name)),
+                op=">",
+                right=FunctionCallExpr("operator_length", (VarExpr(stmt.iterable),))
             )
 
-        stop_condition = BinaryOpExpr(
-            left=VarExpr(VarRef(list_variable_name)),
-            op=">",
-            right=FunctionCallExpr("data_lengthoflist", (VarExpr(stmt.iterable),))
-        )
+        
 
         # repeat
         repeat_id = self.new_id()
@@ -756,18 +737,17 @@ class Assembler:
         self.blocks[set_id]["next"] = repeat_id
 
         # utility variable that is set to the item# of the array
-        list_set_id = self.make_block(
+        self.make_block(
             "data_setvariableto",
+            id=list_set_id,
             parent=repeat_id,
             fields={
                 "VARIABLE": (stmt.variable, var_list_item_id)
             },
             inputs={
-                "VALUE": (InputType.BLOCK_AND_SHADOW, itemoflist)
+                "VALUE": itemoflist.value
             }
         )
-
-        self.blocks[itemoflist]["parent"] = list_set_id
 
         change_id = self.new_id()
         self.make_block(
