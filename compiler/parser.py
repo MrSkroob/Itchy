@@ -30,9 +30,18 @@ class ParseResult():
         return str(self.tree)
 
 
+@dataclass
+class FailState():
+    node: GrammarNode
+    tokens: list[Token[Definitions]]
+    pos: int
+
+
 class ParseError(Exception):
-    def __init__(self, token: Token[Definitions]) -> None:
-        self.token = token
+    def __init__(self, tokens: list[Token[Definitions]], pos: int, node: GrammarNode) -> None:
+        self.tokens = tokens
+        self.pos = pos
+        self.node = node
         super().__init__()
 
 
@@ -59,6 +68,25 @@ class Parser:
     def __init__(self) -> None:
         self.rules = build_parse_tree()
         self.tokenizer = Tokenizer(Definitions, {"Comment", "Whitespace", "Newline"})
+        self.furthest_error: ParseError | None = None
+
+    @property
+    def fail_state(self):
+        if self.furthest_error is None:
+            return None
+        return FailState(
+            self.furthest_error.node,
+            self.furthest_error.tokens,
+            self.furthest_error.pos - 1
+        )
+
+    def make_error(self, tokens: list[Token[Definitions]], pos: int, node: GrammarNode):
+        error = ParseError(tokens, pos, node)
+        
+        if self.furthest_error is None or pos > self.furthest_error.pos:
+            self.furthest_error = error
+        
+        return error
 
     def parse_rule(self, rule: Rule, tokens: list[Token[Definitions]], pos: int) -> ParseResult:
         result = self.parse_node(rule.body, tokens, pos)
@@ -72,7 +100,7 @@ class Parser:
                     debug_print(f"{print_token_safe(tokens, pos)}. Matched {value.name}")
                     return ParseResult(tokens[pos], pos + 1)
                 debug_print(f"{print_token_safe(tokens, pos)}. Terminal rule not matched {value.name}")
-                raise ParseError(tokens[pos])
+                raise self.make_error(tokens, pos, node)
             
             case NonTerminal(_, rule):
                 if rule is None:
@@ -90,10 +118,10 @@ class Parser:
                             
                         parsed_children.append(result.tree)
                         pos = result.pos
-                    except ParseError as e:
+                    except ParseError:
                         debug_print(f"{print_token_safe(tokens, pos)}. Sequence broken {node}.")
-                        # propogate the error upwards
-                        raise e
+                        # propagate the error upwards
+                        raise self.make_error(tokens, pos, node)
                     
                 
                 if result is None:
@@ -114,9 +142,10 @@ class Parser:
                             result.pos
                         )
                     except ParseError:
-                        pass
+                        self.make_error(tokens, pos, node)
                 debug_print(f"Nothing matched {node}. {print_token_safe(tokens, pos)}")
-                raise ParseError(tokens[pos])
+
+                raise self.make_error(tokens, pos, node)
         
             case OptionalNode(child):
                 try:
@@ -129,6 +158,7 @@ class Parser:
                         result.pos
                     )
                 except ParseError:
+                    self.make_error(tokens, pos, node)
                     debug_print(f"{print_token_safe(tokens, pos)}. Skipping {node}")
                     return ParseResult(
                         ParsedNode(
@@ -144,6 +174,7 @@ class Parser:
                     try:
                         result = self.parse_node(child, tokens, pos)
                     except ParseError:
+                        self.make_error(tokens, pos, node)
                         debug_print(f"{print_token_safe(tokens, pos)}. Skipping {node}")
                         break
 
