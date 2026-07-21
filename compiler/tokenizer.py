@@ -48,12 +48,11 @@ class Definitions(StrEnum):
     Number = r"[0-9][_0-9]*(\.[0-9][_0-9]*)?"
     Type = r"\b(number)|(string)|(list)|(bool)\b"
     Bool = r"\b(true)|(false)\b"
-    Binop = r"\.{2}|<=|>=|==|!=|\+|-|\*|/|\^|%|<|>|\b(and|or)\b"
+    Assign = r"\*=|\+=|-=|/=|=(?!=)"
+    Binop = r"\.\.|<=|>=|==|!=|\+|-|\*|/|<|>|\b(?:and|or)\b"
     String = r"[a-z0-9]*(\"(?:\\.|[^\\\"])*\"|\'(?:\\.|[^\\'])*\')"
     Symbol = r"([a-zA-Z_][a-zA-Z0-9_]*)|\$"
-    Assign = r"=|(\*=)|(\%=)|(\^=)|(\+=)|(-=)|(/=)"
     Unop = r"-|\b(not)\b"
-    SingleEqual = r"="
     Colon = r":"
     Dot = r"\."
     FieldSeperator = r","
@@ -128,7 +127,7 @@ class Tokenizer(Generic[TokenRule]):
             kind = self.rules[group]
 
             if kind.name not in self.blacklist:
-                yield Token(kind, literal, line, char)
+                yield Token(kind, literal.strip(), line, char)
 
             pos = match.end()
             char += len(literal)
