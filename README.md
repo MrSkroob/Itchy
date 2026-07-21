@@ -9,11 +9,14 @@ Repo features:
 - Language specific AST builder
 - Assembler where its output becomes valid Scratch 3.0 json.
 
- Information for things such as the opcode, json format and others was used from:
- https://en.scratch-wiki.info/wiki/Scratch_File_Format
- https://en.scratch-wiki.info/wiki/Blocks
- https://github.com/scratchfoundation/scratch-vm
- https://github.com/scratchfoundation/scratch-editor 
+Information for things such as the opcode, json format and others was used from:
+https://en.scratch-wiki.info/wiki/Scratch_File_Format
+https://en.scratch-wiki.info/wiki/Blocks
+https://github.com/scratchfoundation/scratch-vm
+https://github.com/scratchfoundation/scratch-editor 
+
+Notes:
+Error reporting is hit or miss (extremely vague - only tells you if something has gone wrong and nothing else), and you may need to edit file locations since I haven't used the `path` module to do relative pathing.
 
 # Examples
 ```
