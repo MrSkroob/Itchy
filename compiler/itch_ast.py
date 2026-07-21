@@ -536,21 +536,6 @@ def build_tableconstructor(node: ParsedNode) -> TableExpr:
     return TableExpr(())
 
 
-# def build_explist1(node: ParsedNode) -> tuple[Expr, ...]:
-#     values: list[Expr] = []
-
-#     print(flat_children(node))
-
-#     for child in flat_children(node):
-#         if isinstance(child, ParsedNode) and child.name == "equation":
-#             values.append(build_equation(child))
-
-#         elif isinstance(child, ParsedNode) and child.name == "explist1":
-#             values.extend(build_explist1(child))
-    
-#     return tuple(values)
-
-
 def build_varlist1(node: ParsedNode) -> tuple[Expr, ...]:
     values: list[Expr] = []
 
@@ -598,15 +583,31 @@ def build_functioncall(node: ParsedNode) -> Stmt:
 
 def build_varassignstat(node: ParsedNode) -> Stmt:
     var_node = find_first_node(node, "var")
+    operation = first_token(node, Definitions.Assign.name)
     action_node = find_first_node(node, "equation")
 
     target = build_var(var_node)
     action = build_equation(action_node)
 
-    return AssignStmt(
-        target,
-        action,
-    )
+    if operation.literal == "=":
+        return AssignStmt(
+            target,
+            action
+        )
+    else:
+        OPERATION_TO_BINOP = {
+            "*=": "*",
+            "%=": "%",
+            "^=": "^",
+            "+=": "+",
+            "-=": "-",
+            "/=": "/"
+        }
+
+        return AssignStmt(
+            target,
+            BinaryOpExpr(VarExpr(target), OPERATION_TO_BINOP[operation.literal], action),
+        )
 
 def build_vardefstat(node: ParsedNode) -> VarDefStmt:
     shared = has_token(node, "Shared")
@@ -901,9 +902,22 @@ def build_chunk(node: ParsedNode):
     return tuple(statements)
 
 
-def build_program(node: ParsedNode):
-    chunk = find_first_node(node, "chunk")
-    return Program(build_chunk(chunk))
+def build_program(node: ParsedNode) -> Program:
+    children = flat_children(node)
+
+    variable_definitions = tuple(
+        build_vardefstat(child)
+        for child in children
+        if isinstance(child, ParsedNode) and child.name == "vardefstat"
+    )
+
+    chunk = next(
+        child
+        for child in children
+        if isinstance(child, ParsedNode) and child.name == "chunk"
+    )
+
+    return Program(variable_definitions + build_chunk(chunk))
 
 
 def build_ast(tree: ParsedChild) -> Program:
