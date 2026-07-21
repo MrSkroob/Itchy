@@ -414,7 +414,6 @@ def build_primary(node: ParsedNode) -> Expr:
 
     for child in children:
         if isinstance(child, ParsedNode) and child.name == "literals":
-            print(child.children)
             return build_literals(child)
 
         if isinstance(child, ParsedNode) and child.name == "equation":

@@ -1,5 +1,5 @@
 event event_whenflagclicked() {
-    while true == true {
+    while true {
         if sensing_keypressed("W") {
             motion_changeyby(10)
         }

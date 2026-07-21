@@ -950,7 +950,27 @@ class Assembler:
             case BoolExpr(value=value):
                 # in scratch:
                 # if (0 == 0) == "true" is true, so we can just use strings without any fancy conversion
-                return ScratchInput((InputType.SHADOW_ONLY, (DataType.STRING, str(value).lower())), VariableTypes.BOOLEAN)
+
+                operator_id = self.make_block(
+                    opcode="operator_equals",
+                    parent=parent,
+                    inputs={
+                        "OPERAND1": (
+                            InputType.SHADOW_ONLY, (
+                                DataType.STRING,
+                                "true"
+                            )
+                        ),
+                        "OPERAND2": (
+                            InputType.SHADOW_ONLY, (
+                                DataType.STRING,
+                                str(value).lower()
+                            )
+                        )
+                    }
+                )
+
+                return ScratchInput((InputType.BLOCK_ONLY, operator_id), VariableTypes.BOOLEAN)
             case VarExpr(ref=ref):
                 return self.emit_var_ref(ref, context, parent)
             case UnaryOpExpr(op=op, value=value):
@@ -1004,9 +1024,6 @@ class Assembler:
                 if isinstance(arg_expr, StringExpr):
                     if isinstance(arg, Menu):
                         # create the menu
-
-                        print(arg.name, arg.opcode)
-
                         menu_id = self.make_block(
                             opcode=arg.opcode, 
                             parent=block_id,
@@ -1060,16 +1077,21 @@ class Assembler:
             return ScratchInput((InputType.BLOCK_ONLY, block_id), VariableTypes.BOOLEAN)
 
         if op == "-":
-            self.make_block(
-                opcode="operator_subtract",
-                id=block_id,
-                parent=parent,
-                inputs={
-                    "NUM1": (InputType.SHADOW_ONLY, (DataType.NUMBER, "0")),
-                    "NUM2": self.emit_expr(value, context, block_id).value,
-                },
-            )
-            return ScratchInput((InputType.BLOCK_ONLY, block_id), VariableTypes.NUMBER)
+            if isinstance(value, NumberExpr):
+                return self.emit_expr(
+                    NumberExpr(-1 * value.value), context, parent
+                )
+            else:
+                self.make_block(
+                    opcode="operator_multiply",
+                    id=block_id,
+                    parent=parent,
+                    inputs={
+                        "NUM1": (InputType.SHADOW_ONLY, (DataType.NUMBER, "-1")),
+                        "NUM2": self.emit_expr(value, context, block_id).value,
+                    },
+                )
+                return ScratchInput((InputType.BLOCK_ONLY, block_id), VariableTypes.NUMBER)
 
         raise NotImplementedError(f"Unsupported unary operator: {op}")
     
