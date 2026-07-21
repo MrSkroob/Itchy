@@ -1,4 +1,4 @@
-# import argparse
+import argparse
 import json
 import zipfile
 from typing import Any
@@ -16,30 +16,26 @@ def print_out_all(json_dict: dict[str, Any]):
 
 
 def print_out_stuff(json_dict: dict[str, Any]):
-    # print("FULL: ", json.dumps(project_json, indent=4))
-    for i in json_dict["targets"]:
-        print("\nTARGET:", i["name"])
-        print(i["variables"])
-        print(i["lists"])
-        blocks = i["blocks"]
-        for id in blocks:
-            print(id, json.dumps(blocks[id], indent=4, ensure_ascii=True))
+    print("FULL: ", json.dumps(project_json, indent=4))
+    # for i in json_dict["targets"]:
+    #     print("\nTARGET:", i["name"])
+    #     print(i["variables"])
+    #     print(i["lists"])
+    #     blocks = i["blocks"]
+    #     for id in blocks:
+    #         print(id, json.dumps(blocks[id], indent=4, ensure_ascii=True))
 
 
 # `project_json = load_project("scratch_project/Scratch Project.sb3")
 # print_out_stuff(project_json)
-
-project_json = load_project("output/Scratch Project.sb3")
-print_out_stuff(project_json)
-
 # print_out_all(load_project("scratch_project/Guinnea Pig.sb3"))
 
 
-# parser = argparse.ArgumentParser()
-# parser.add_argument("--dir", help="file directory to print out")
-# args = parser.parse_args()
-# project_json = load_project(args.dir)
-# print_out_stuff(project_json)
+parser = argparse.ArgumentParser()
+parser.add_argument("--dir", help="file directory to print out")
+args = parser.parse_args()
+project_json = load_project(args.dir)
+print_out_stuff(project_json)
 
 
 # example of block data:

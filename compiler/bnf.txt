@@ -13,7 +13,7 @@
 
 <forbody> ::= "=" <equation> <FieldSeperator> <equation> <FieldSeperator> <equation> | <In> <var>
 <namelist> ::= <Symbol> {<FieldSeperator> <Symbol>}
-<tableconstructor> ::= "[" [<explist1>] "]"
+<tableconstructor> ::= "[" [<varlist1>] "]"
 <wrap> ::= "{" [<chunk>] "}"
 <function> ::= <Symbol> <funcbody>
 // <event> ::= <Symbol> <eventbody>
@@ -21,15 +21,15 @@
 <funcbody> ::= "(" [<paramlist>] ")" <wrap>
 <slice> ::= "[" <equation> "]"
 <equation> ::= <comparison>
-<comparison> ::= <addition> { ("==" | ">" | "<" | <In>) <addition> }
+<comparison> ::= <addition> { ("==" | ">" | "<" | <In> ) <addition> }
 <addition> ::= <multiplication> { ("+" | "-") <multiplication> }
 <multiplication> ::= <unary> { ("*" | "/") <unary> }
 <unary> ::= [<Unop>] <primary>
 <primary> ::= <literals> | "(" <equation> ")"
 <var> ::= <Symbol> [<slice>]
 <literals> ::= <Bool> | <Number> | <String> | <functioncall> | <tableconstructor> | <var>
-<explist1> ::= <equation> {<FieldSeperator> <explist1>}
-<laststat> ::= <Break> | <Return> [<explist1>]
+// <explist1> ::= <equation> {<FieldSeperator> <explist1>}
+<laststat> ::= <Break> | <Return> [<varlist1>]
 <varlist1> ::= <equation> {<FieldSeperator> <equation>}
 <args> ::= "(" [<varlist1>] ")"
 <argtype> ::= <Symbol> <Colon> <Type>
