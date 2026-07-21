@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from tokenizer import BNFRules, Definitions, GenericRules, Token, Tokenizer, compile_rules
 from typing import Any, Iterable
 from abstractclass import EmptyAbstractClass
-
+from os.path import dirname
 
 class GrammarNode(EmptyAbstractClass):
     pass
@@ -253,7 +253,7 @@ def link_node(node: GrammarNode, rule_map: dict[str, Rule]) -> None:
 
 def build_parse_tree():
     tokenizer = Tokenizer(BNFRules, {"Whitespace", "Comment"})
-    with open("compiler/bnf.txt") as f:
+    with open(f"{dirname(__file__)}/bnf.txt") as f:
         token_stream = tokenizer.read(f.read())
         rules = BNFTreeBuilder(list(token_stream)).parse_rules()
         link_grammar(rules)

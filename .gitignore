@@ -2,3 +2,7 @@ compiler/__pycache__/*
 mypy.ini
 output/*
 __pycache__
+*.pyc
+*.zip
+*.sb3
+output/

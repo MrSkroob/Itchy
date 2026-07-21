@@ -1273,7 +1273,7 @@ class Assembler:
         None for a normal top-level program.
         """
         
-        with zipfile.ZipFile(project_file, "r") as f:
+        with zipfile.ZipFile(project_file, "a") as f:
             project = json.loads(f.read("project.json").decode("utf-8"))
 
 
