@@ -2,6 +2,11 @@ from parser import Parser, ParseError, FailState
 from itch_ast import build_ast
 from tools.ast_printer import print_ast
 from assembler import Assembler
+import argparse
+
+from pathlib import Path
+
+ROOT = Path(__file__).parent.parent
 
 parser = Parser()
 assembler = Assembler()
@@ -56,8 +61,10 @@ def compile(file: str, output: str, target: str):
                 # describe failure
                 print(format_syntax_error(fail_state, source, file))
     
+    
+if __name__ == "__main__":
+    input_path = ROOT / "input"
+    output_path = ROOT / "output"
 
-
-with open("input/code.txt") as f:
-    compile("input/code.txt", "output/Scratch Project.sb3", "Sprite1")
+    compile(str((input_path / "code.txt").absolute()), str((output_path / "Scratch Project.sb3")), "Sprite1")
     
