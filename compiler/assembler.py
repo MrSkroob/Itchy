@@ -29,6 +29,7 @@ class VariableTypes(StrEnum):
 
 # return types as tuples are OKAY, because serialisation converts them all to lists anyway.
 ScratchInputRaw = tuple["InputType", tuple["DataType", str] | tuple["DataType", str, str]] | tuple["InputType", str]
+ScratchFieldRaw = tuple[str, None] | tuple[str, str]
 
 @dataclass(frozen=True)
 class ScratchInput:
@@ -63,9 +64,9 @@ from scratch_blocks import SCRATCH_BLOCKS, Block, Reporter, Menu, ReturnType
 
 
 class InputType(Enum):
-    LITERAL = 1
-    SHADOWED = 2
-    REPORTER = 3
+    SHADOW_ONLY = 1
+    BLOCK_ONLY = 2
+    BLOCK_AND_SHADOW = 3 # do not use - because compiler does not have default values.
 
 
 class CompilerError(Exception):
@@ -106,12 +107,9 @@ class Assembler:
         self.blocks: dict[str, ScratchBlock] = {}
         self.procedures: dict[str, ProcedureInfo] = {}
 
-        # scope is:
-        # variable name, parent block (if applicable)
-        # in scratch, we don't need stacks for variable scopes. 
-        # a variable can either be owned by a function, or not. so, the StrOptional is typically 
-        # the function id.
-        self.variable_map: dict[tuple[str, StrOptional], str] = {}
+        # we don't need to worry about function "variables" since they are arguments.
+        # i.e. they are not treated as variables and are treated as read-only.
+        self.variable_map: dict[str, str] = {}
 
         self.messages: dict[str, str] = {}
 
@@ -129,7 +127,7 @@ class Assembler:
             id: str | None=None,
             parent: StrOptional=None,
             inputs: dict[str, ScratchInputRaw] | None=None,
-            fields: dict[str, Any] | None=None,
+            fields: dict[str, ScratchFieldRaw] | None=None,
             mutation: dict[str, Any] | None=None,
             top_level: bool=False,
             shadow: bool=False,
@@ -158,12 +156,12 @@ class Assembler:
         return self.add_block(block, id)
     
 
-    def get_variable(self, name: str, context: StrOptional) -> str:
+    def get_variable(self, name: str) -> str:
         """
         Returns a variable ID without any extra functionality.
         Do this when you strictly expect the variable to exist, and want to error if it wasn't implicitly/explicitly defined previously.
         """
-        key = (name, context)
+        key = name
         assert key in self.variable_map, "variable not defined!"
         return self.variable_map[key]
 
@@ -174,6 +172,14 @@ class Assembler:
         broadcast_id = self.new_id()
         self.messages[name] = broadcast_id
         return broadcast_id
+    
+    def assert_writable_name(self, var_name: str, context: StrOptional) -> None:
+        if context is None:
+            return
+        
+        procedure = self.procedures[context]
+        if var_name in procedure.argument_names:
+            raise AssertionError(f"{var_name} IS READ ONLY!!!")
 
     def define_variable(self, shared: bool, type_name: str, name: str, context: StrOptional) -> str:
         """
@@ -187,10 +193,10 @@ class Assembler:
         else:
             default_value = 0
 
-        key = (name, context)
+        key = name
 
         if key in self.variable_map:
-            return self.variable_map[(name, context)]
+            return self.variable_map[name]
 
         var_id = self.new_id()
 
@@ -258,9 +264,9 @@ class Assembler:
             case ForInStmt():
                 return self.emit_for_in(stmt, parent, context)
             case EventHandlerStmt():
-                return self.emit_event_handler(stmt, context)
+                return self.emit_event_handler(stmt)
             case FunctionDefStmt():
-                return self.emit_function_def(stmt, parent, context)
+                return self.emit_function_def(stmt, parent)
             case FunctionCallStmt():
                 return self.emit_function_call(stmt, parent, context)
             case BreakStmt():
@@ -287,14 +293,17 @@ class Assembler:
             raise CompilerError(
                 f"Block {stmt.callee!r} expects {expected_args} argument(s), got {len(stmt.args)}"
             )
-        
+
+        inputs: dict[str, ScratchInputRaw] = {}
+        fields: dict[str, ScratchFieldRaw] = {}
+
+
         block_id = self.make_block(
             opcode=stmt.callee,
             parent=parent,
+            inputs=inputs,
+            fields=fields
         )
-
-        inputs: dict[str, ScratchInput] = {}
-        fields: dict[str, Any] = {}
 
         # inputs come first, positionally, then fields -- matches how the
         # arity check above adds them together.
@@ -302,14 +311,12 @@ class Assembler:
             if arg in block_data.broadcasts:
                 if not isinstance(arg_expr, StringExpr):
                     inputs[arg.name] = (
-                        self.emit_expr(arg_expr, context, block_id)
+                        self.emit_expr(arg_expr, context, block_id).value
                     )
                 else:
                     broadcast_id = self.define_broadcast(arg_expr.value)
-                    inputs[arg.name] = ScratchInput(
-                        (InputType.LITERAL,
-                        (DataType.BROADCAST, arg_expr.value, broadcast_id))
-                    )
+                    inputs[arg.name] = (InputType.SHADOW_ONLY,
+                                        (DataType.BROADCAST, arg_expr.value, broadcast_id))
             else:
                 if isinstance(arg_expr, StringExpr):
                     if isinstance(arg, Menu):
@@ -324,16 +331,12 @@ class Assembler:
                                 )
                             })
 
-                        inputs[arg.name] = ScratchInput(
-                            (InputType.LITERAL, menu_id)
-                        )
+                        inputs[arg.name] = (InputType.SHADOW_ONLY, menu_id)
                     else:
-                        inputs[arg.name] = ScratchInput(
-                            (InputType.LITERAL, 
+                        inputs[arg.name] = (InputType.SHADOW_ONLY, 
                             (arg.return_type, arg_expr.value))
-                        )
                 else:
-                    inputs[arg.name] = self.emit_expr(arg_expr, context, block_id)
+                    inputs[arg.name] = self.emit_expr(arg_expr, context, block_id).value
 
         for field_name, arg_expr in zip(block_data.fields, stmt.args[len(block_data.inputs):]):
             if not isinstance(arg_expr, StringExpr):
@@ -341,7 +344,7 @@ class Assembler:
                     f"{stmt.callee}: argument for {field_name!r} must be a string literal"
                 )
 
-            fields[field_name] = [arg_expr.value, None]
+            fields[field_name] = (arg_expr.value, None)
 
 
         return BlockRange(block_id, block_id)
@@ -385,7 +388,7 @@ class Assembler:
 
         return BlockRange(block_id, block_id)
     
-    def emit_event_handler(self, stmt: EventHandlerStmt, context: StrOptional) -> BlockRange:
+    def emit_event_handler(self, stmt: EventHandlerStmt) -> BlockRange:
         # TODO: finish this.
         match stmt.name:
             case "event_whengreaterthan":
@@ -425,14 +428,14 @@ class Assembler:
                     parent=None,
                     fields={
                         # default
-                        "BROADCAST_OPTION": [
+                        "BROADCAST_OPTION": (
                             broadcast_name,
                             broadcast_id
-                        ]
+                        )
                     },
                     top_level=True
                 )
-                body = self.emit_sequence(stmt.body, event_id, context)
+                body = self.emit_sequence(stmt.body, event_id, None)
 
                 return BlockRange(
                     event_id,
@@ -443,7 +446,7 @@ class Assembler:
         # placeholder
         raise NotImplementedError()
             
-    def emit_function_def(self, stmt: FunctionDefStmt, parent: StrOptional, context: StrOptional) -> BlockRange:
+    def emit_function_def(self, stmt: FunctionDefStmt, parent: StrOptional) -> BlockRange:
         definition_id = self.make_block(
             opcode="procedures_definition",
             parent=parent,
@@ -490,7 +493,7 @@ class Assembler:
         }
 
         self.blocks[definition_id]["inputs"]["custom_block"] = [
-            InputType.SHADOWED,
+            InputType.BLOCK_ONLY,
             prototype_id,
         ]
 
@@ -521,7 +524,10 @@ class Assembler:
         )
     
     def emit_for_range(self, stmt: ForRangeStmt, parent: StrOptional, context: StrOptional):
-        # variable
+        # iterable variable
+
+        self.assert_writable_name(stmt.variable, context)
+
         var_id = self.define_variable(False, "number", stmt.variable, context)
         set_id = self.new_id()
         self.make_block(
@@ -529,7 +535,7 @@ class Assembler:
             id=set_id,
             parent=parent,
             fields={
-                "VARIABLE": [stmt.variable, var_id]
+                "VARIABLE": (stmt.variable, var_id)
             },
             inputs={
                 "VALUE": self.emit_expr(stmt.start, context, set_id).value
@@ -561,7 +567,7 @@ class Assembler:
             id=change_id,
             parent=repeat_id,
             fields={
-                "VARIABLE": [stmt.variable, var_id]
+                "VARIABLE": (stmt.variable, var_id)
             },
             inputs={
                 "VALUE": self.emit_expr(stmt.step, context, change_id).value
@@ -571,9 +577,9 @@ class Assembler:
         body = self.emit_sequence(stmt.body, change_id, context)
 
         if body.first is None:
-            self.blocks[repeat_id]["inputs"]["SUBSTACK"] = [InputType.SHADOWED, change_id]
+            self.blocks[repeat_id]["inputs"]["SUBSTACK"] = [InputType.BLOCK_ONLY, change_id]
         else:
-            self.blocks[repeat_id]["inputs"]["SUBSTACK"] = [InputType.SHADOWED, body.first]
+            self.blocks[repeat_id]["inputs"]["SUBSTACK"] = [InputType.BLOCK_ONLY, body.first]
             assert body.last is not None, "body.first isn't None, but body.last is?"
             self.blocks[body.last]["next"] = change_id
             self.blocks[change_id]["parent"] = body.last
@@ -582,8 +588,9 @@ class Assembler:
     
     def emit_for_in(self, stmt: ForInStmt, parent: StrOptional, context: StrOptional):
         list_variable_name = "list_getter" + self.new_id()
-        iterable_id = self.get_variable(stmt.iterable.root, context)
+        iterable_id = self.get_variable(stmt.iterable.root)
 
+        self.assert_writable_name(stmt.variable, context)
         # we *still* need this id to be unique, because even if it's in a for loop, scratch considers it global.
         # so we need a variable with a unique name to avoid amiguity.
         var_id = self.define_variable(False, "number", list_variable_name, context) # not to be used by the programmer, so is given garbage name.
@@ -614,7 +621,7 @@ class Assembler:
             id=set_id,
             parent=parent,
             fields={
-                "VARIABLE": [list_variable_name, var_id]
+                "VARIABLE": (list_variable_name, var_id)
             },
             inputs={
                 "VALUE": self.emit_expr(NumberExpr(1), context, set_id).value
@@ -628,7 +635,7 @@ class Assembler:
                 "data_itemoflist",
                 inputs={
                     "INDEX": (
-                        InputType.REPORTER,
+                        InputType.BLOCK_ONLY,
                         (
                             DataType.VARIABLE,
                             list_variable_name,
@@ -637,22 +644,22 @@ class Assembler:
                     )
                 },
                 fields={
-                    "LIST": [
+                    "LIST": (
                         stmt.iterable.root,
                         iterable_id
-                    ]
+                    )
                 }
             )
         else:
             itemoflist = self.make_block(
                 "operator_letter_of",
                 inputs={
-                    "LETTER": (InputType.REPORTER, (
+                    "LETTER": (InputType.BLOCK_ONLY, (
                         DataType.VARIABLE,
                         list_variable_name,
                         var_id,
                     )),
-                    "STRING": (InputType.REPORTER, (
+                    "STRING": (InputType.BLOCK_ONLY, (
                         DataType.VARIABLE,
                         stmt.iterable.root,
                         iterable_id
@@ -684,10 +691,10 @@ class Assembler:
             "data_setvariableto",
             parent=repeat_id,
             fields={
-                "VARIABLE": [stmt.variable, var_list_item_id]
+                "VARIABLE": (stmt.variable, var_list_item_id)
             },
             inputs={
-                "VALUE": (InputType.REPORTER, itemoflist)
+                "VALUE": (InputType.BLOCK_ONLY, itemoflist)
             }
         )
 
@@ -699,7 +706,7 @@ class Assembler:
             id=change_id,
             parent=list_set_id,
             fields={
-                "VARIABLE": [stmt.variable, var_id]
+                "VARIABLE": (stmt.variable, var_id)
             },
             inputs={
                 "VALUE": self.emit_expr(NumberExpr(1), context, change_id).value
@@ -713,7 +720,7 @@ class Assembler:
         if body.first is not None:
             self.blocks[change_id]["next"] = body.first
 
-        self.blocks[repeat_id]["inputs"]["SUBSTACK"] = [InputType.SHADOWED, list_set_id]
+        self.blocks[repeat_id]["inputs"]["SUBSTACK"] = [InputType.BLOCK_ONLY, list_set_id]
 
         return BlockRange(set_id, repeat_id)
     
@@ -740,7 +747,7 @@ class Assembler:
         body = self.emit_sequence(stmt.body, block_id, context)
 
         if body.first is not None:
-            self.blocks[block_id]["inputs"]["SUBSTACK"] = [InputType.SHADOWED, body.first]
+            self.blocks[block_id]["inputs"]["SUBSTACK"] = [InputType.BLOCK_ONLY, body.first]
         
         return BlockRange(block_id, block_id)
             
@@ -774,7 +781,7 @@ class Assembler:
         then_blocks = self.emit_sequence(branch.body, block_id, context)
 
         if then_blocks.first is not None:
-            self.blocks[block_id]["inputs"]["SUBSTACK"] = [InputType.SHADOWED, then_blocks.first]
+            self.blocks[block_id]["inputs"]["SUBSTACK"] = [InputType.BLOCK_ONLY, then_blocks.first]
 
         if has_else:
             if index + 1 < len(branches):
@@ -786,19 +793,22 @@ class Assembler:
                     block_id,
                     context
                 )
-                self.blocks[block_id]["inputs"]["SUBSTACK2"] = [InputType.SHADOWED, nested_if]
+                self.blocks[block_id]["inputs"]["SUBSTACK2"] = [InputType.BLOCK_ONLY, nested_if]
             else:
                 # no more if statements. rest of the code is not part of this if branch
                 else_blocks = self.emit_sequence(else_body, block_id, context)
                 if else_blocks.first is not None:
-                    self.blocks[block_id]["inputs"]["SUBSTACK2"] = [InputType.SHADOWED, else_blocks.first]
+                    self.blocks[block_id]["inputs"]["SUBSTACK2"] = [InputType.BLOCK_ONLY, else_blocks.first]
         
         return block_id
     
     
     def emit_assignment(self, target: VarRef, value: Expr, parent: StrOptional, context: StrOptional) -> BlockRange:
+        if context is not None and target.root in self.procedures[context].argument_names:
+            raise AssertionError("do not assign read-only arguments!!")
+        
         if target.slice_expr is not None:
-            var_id = self.get_variable(target.root, context)
+            var_id = self.get_variable(target.root)
             variable = self.variables[var_id]
 
             if variable.is_list:
@@ -813,7 +823,7 @@ class Assembler:
                         "ITEM": self.emit_expr(value, context, block_id).value
                     },
                     fields={
-                        "LIST": [target.root, var_id]
+                        "LIST": (target.root, var_id)
                     }
                 )
 
@@ -855,14 +865,14 @@ class Assembler:
 
                 raise TypeError("Strings do not support item assignment")
         else:
-            var_id = self.get_variable(target.root, context) 
+            var_id = self.get_variable(target.root) 
             block_id = self.new_id()
             self.make_block(
                 "data_setvariableto",
                 id=block_id,
                 parent=parent,
                 fields={
-                    "VARIABLE": [target.root, var_id]
+                    "VARIABLE": (target.root, var_id)
                 },
                 inputs={
                     "VALUE": self.emit_expr(value, context, block_id).value
@@ -880,18 +890,18 @@ class Assembler:
         
         match expr:
             case NumberExpr(value=value):
-                return ScratchInput((InputType.LITERAL, (DataType.NUMBER, str(value))), VariableTypes.NUMBER)
+                return ScratchInput((InputType.SHADOW_ONLY, (DataType.NUMBER, str(value))), VariableTypes.NUMBER)
             case StringExpr(value=value):
                 if re.match(HEXCODE, value) is not None:
-                    return ScratchInput((InputType.LITERAL, (DataType.COLOR, value)), VariableTypes.STRING)
+                    return ScratchInput((InputType.SHADOW_ONLY, (DataType.COLOR, value)), VariableTypes.STRING)
                 else:
-                    return ScratchInput((InputType.LITERAL, (DataType.STRING, value)), VariableTypes.STRING)
+                    return ScratchInput((InputType.SHADOW_ONLY, (DataType.STRING, value)), VariableTypes.STRING)
             case BoolExpr(value=value):
                 # in scratch:
                 # if (0 == 0) == "true" is true, so we can just use strings without any fancy conversion :)
-                return ScratchInput((InputType.LITERAL, (DataType.STRING, str(value).lower())), VariableTypes.BOOLEAN)
+                return ScratchInput((InputType.SHADOW_ONLY, (DataType.STRING, str(value).lower())), VariableTypes.BOOLEAN)
             case VarExpr(ref=ref):
-                return self.emit_var_ref(ref, context)
+                return self.emit_var_ref(ref, context, parent)
             case UnaryOpExpr(op=op, value=value):
                 return self.emit_unary_expr(op, value, context, parent)
             case BinaryOpExpr(left=left, op=op, right=right):
@@ -920,6 +930,9 @@ class Assembler:
             raise CompilerError(
                 f"Block {expr.callee!r} expects {expected_args} argument(s), got {len(expr.args)}"
             )
+        
+
+
         raise NotImplementedError()
         # block_id = self.make_block(
         #     opcode=expr.callee,
@@ -990,7 +1003,7 @@ class Assembler:
                     "OPERAND": self.emit_expr(value, context, block_id).value,
                 },
             )
-            return ScratchInput((InputType.SHADOWED, block_id), VariableTypes.BOOLEAN)
+            return ScratchInput((InputType.BLOCK_ONLY, block_id), VariableTypes.BOOLEAN)
 
         if op == "-":
             self.make_block(
@@ -998,11 +1011,11 @@ class Assembler:
                 id=block_id,
                 parent=parent,
                 inputs={
-                    "NUM1": (InputType.LITERAL, (DataType.NUMBER, "0")),
+                    "NUM1": (InputType.SHADOW_ONLY, (DataType.NUMBER, "0")),
                     "NUM2": self.emit_expr(value, context, block_id).value,
                 },
             )
-            return ScratchInput((InputType.SHADOWED, block_id), VariableTypes.NUMBER)
+            return ScratchInput((InputType.BLOCK_ONLY, block_id), VariableTypes.NUMBER)
 
         raise NotImplementedError(f"Unsupported unary operator: {op}")
     
@@ -1044,25 +1057,65 @@ class Assembler:
         )
 
         return ScratchInput(
-            (InputType.SHADOWED, block_id),
+            (InputType.BLOCK_ONLY, block_id),
             return_type,
         )
 
-    def emit_var_ref(self, ref: VarRef, context: StrOptional) -> ScratchInput:
-        var_id = self.get_variable(ref.root, context)
-        var_type = self.variables[var_id].var_type
+    def emit_var_ref(self, ref: VarRef, context: StrOptional, parent: StrOptional) -> ScratchInput:
+        if context is not None:
+            pass
 
-        return ScratchInput(
-            (
-                InputType.LITERAL,
+        if context in self.procedures:
+            procedure_info = self.procedures[context]
+
+            try:
+                arg_index = procedure_info.argument_names.index(ref.root)
+            except ValueError:
+                raise AssertionError("bad bad bad! this argument doesn't exist!")
+            
+            _, *arg_types = procedure_info.proccode.split(" %")
+            arg_type = arg_types[arg_index]
+            arg_name = procedure_info.argument_names[arg_index]
+
+            ARGS_TO_OPCODE = {
+                "b": "argument_reporter_boolean",
+                "s": "argument_reporter_string_number"
+            }
+
+            opcode = ARGS_TO_OPCODE[arg_type]
+            # argument_opcode = procedure_info.argument_names[arg_index]
+
+            reporter_id = self.make_block(
+                opcode=opcode,
+                parent=parent,
+                fields={
+                    "VALUE": (
+                        arg_name,
+                        None
+                    )
+                }
+            )
+
+            return ScratchInput(
                 (
-                    DataType.VARIABLE,
-                    ref.root,
-                    var_id
+                    InputType.BLOCK_ONLY,
+                    reporter_id
                 )
-            ),
-            var_type
-        )
+            )
+        else:
+            var_id = self.get_variable(ref.root)
+            var_type = self.variables[var_id].var_type
+            return ScratchInput(
+                (
+                    InputType.SHADOW_ONLY,
+                    (
+                        DataType.VARIABLE,
+                        ref.root,
+                        var_id
+                    )
+                ),
+                var_type
+            )
     
     def assemble(self, program: Program, target: str, context: StrOptional) -> None:
         raise NotImplementedError("asse")
