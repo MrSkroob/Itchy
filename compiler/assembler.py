@@ -39,7 +39,7 @@ ScratchFieldRaw = tuple[str, None] | tuple[str, str]
 class ScratchInput:
     value: ScratchInputRaw
     return_type: VariableTypes = VariableTypes.UNKNOWN
-    
+
 
 class DataType(Enum):
     NUMBER = 4
@@ -342,14 +342,14 @@ class Assembler:
                     inputs[arg.name] = (InputType.SHADOW_ONLY,
                                         (DataType.BROADCAST, arg_expr.value, broadcast_id))
             elif arg in block_data.variables:
-                if not isinstance(arg_expr, StringExpr):
+                if not isinstance(arg_expr, VarExpr):
                     inputs[arg.name] = (
                         self.emit_expr(arg_expr, context, block_id).value
                     )
                 else:
-                    var_id = self.get_variable(arg_expr.value)
+                    var_id = self.get_variable(arg_expr.ref.root)
                     inputs[arg.name] = (InputType.SHADOW_ONLY,
-                                        (DataType.VARIABLE, arg_expr.value, var_id))
+                                        (DataType.VARIABLE, arg_expr.ref.root, var_id))
             else:
                 if isinstance(arg_expr, StringExpr):
                     if isinstance(arg, Menu):
@@ -372,16 +372,23 @@ class Assembler:
                     inputs[arg.name] = self.emit_expr(arg_expr, context, block_id).value
 
         for field_name, arg_expr in zip(block_data.fields, stmt.args[len(block_data.inputs):]):
-            if not isinstance(arg_expr, StringExpr):
-                raise CompilerError(
-                    f"{stmt.callee}: argument for {field_name!r} must be a string literal"
-                )
-            
             if field_name in block_data.variables:
-                fields[field_name] = (arg_expr.value, self.get_variable(arg_expr.value))
+                if not isinstance(arg_expr, VarExpr):
+                    raise CompilerError(
+                        f"{stmt.callee}: argument for {field_name!r} must be a variable"
+                    )
+                fields[field_name] = (arg_expr.ref.root, self.get_variable(arg_expr.ref.root))
             elif field_name in block_data.broadcasts:
+                if not isinstance(arg_expr, StringExpr):
+                    raise CompilerError(
+                        f"{stmt.callee}: argument for {field_name!r} must be a string literal"
+                    )
                 fields[field_name] = (arg_expr.value, self.define_broadcast(arg_expr.value))
             else:
+                if not isinstance(arg_expr, StringExpr):
+                    raise CompilerError(
+                        f"{stmt.callee}: argument for {field_name!r} must be a string literal"
+                    )
                 fields[field_name] = (arg_expr.value, None)
 
         self.blocks[block_id]["fields"] = fields
@@ -459,48 +466,6 @@ class Assembler:
             fields=fields,
             top_level=True,
         )
-
-        """
-        for arg, arg_expr in zip(block_data.inputs, stmt.args):
-            if arg in block_data.broadcasts:
-                if not isinstance(arg_expr, StringExpr):
-                    inputs[arg.name] = (
-                        self.emit_expr(arg_expr, context, block_id).value
-                    )
-                else:
-                    broadcast_id = self.define_broadcast(arg_expr.value)
-                    inputs[arg.name] = (InputType.SHADOW_ONLY,
-                                        (DataType.BROADCAST, arg_expr.value, broadcast_id))
-            else:
-                if isinstance(arg_expr, StringExpr):
-                    if isinstance(arg, Menu):
-                        # create the menu
-                        menu_id = self.make_block(
-                            opcode=arg.opcode, 
-                            id=block_id,
-                            fields={
-                                arg.name: (
-                                    arg_expr.value,
-                                    None
-                                )
-                            })
-
-                        inputs[arg.name] = (InputType.SHADOW_ONLY, menu_id)
-                    else:
-                        inputs[arg.name] = (InputType.SHADOW_ONLY, 
-                            (arg.return_type, arg_expr.value))
-                else:
-                    inputs[arg.name] = self.emit_expr(arg_expr, context, block_id).value
-
-        for field_name, arg_expr in zip(block_data.fields, stmt.args[len(block_data.inputs):]):
-            if not isinstance(arg_expr, StringExpr):
-                raise CompilerError(
-                    f"{stmt.callee}: argument for {field_name!r} must be a string literal"
-                )
-
-            fields[field_name] = (arg_expr.value, None)
-
-        """
 
         # inputs come first, positionally, then fields, then broadcasts --
         # matches how the expected_args check above adds them together.
@@ -597,17 +562,10 @@ class Assembler:
             "warp": str(stmt.warp).lower(),
         }
 
-        self.blocks[definition_id]["inputs"]["custom_block"] = [
+        self.blocks[definition_id]["inputs"]["custom_block"] = (
             InputType.BLOCK_ONLY,
             prototype_id,
-        ]
-
-        body_range = self.emit_sequence(stmt.body, definition_id, definition_id)
-
-        if body_range.first is not None:
-            self.blocks[definition_id]["next"] = body_range.first
-            self.blocks[body_range.first]["parent"] = definition_id
-        
+        )
 
         argument_ids_tuple = tuple(argument_ids)
         argument_names_tuple = tuple(argument_names)
@@ -622,6 +580,12 @@ class Assembler:
             argument_names=argument_names_tuple,
             argument_defaults=argument_defaults_tuple,
         )
+
+        body_range = self.emit_sequence(stmt.body, definition_id, stmt.name)
+
+        if body_range.first is not None:
+            self.blocks[definition_id]["next"] = body_range.first
+            self.blocks[body_range.first]["parent"] = definition_id
 
         return BlockRange(
             first=definition_id,
@@ -682,9 +646,9 @@ class Assembler:
         body = self.emit_sequence(stmt.body, change_id, context)
 
         if body.first is None:
-            self.blocks[repeat_id]["inputs"]["SUBSTACK"] = [InputType.BLOCK_ONLY, change_id]
+            self.blocks[repeat_id]["inputs"]["SUBSTACK"] = (InputType.BLOCK_ONLY, change_id)
         else:
-            self.blocks[repeat_id]["inputs"]["SUBSTACK"] = [InputType.BLOCK_ONLY, body.first]
+            self.blocks[repeat_id]["inputs"]["SUBSTACK"] = (InputType.BLOCK_ONLY, body.first)
             assert body.last is not None, "body.first isn't None, but body.last is?"
             self.blocks[body.last]["next"] = change_id
             self.blocks[change_id]["parent"] = body.last
@@ -740,7 +704,7 @@ class Assembler:
                 "data_itemoflist",
                 inputs={
                     "INDEX": (
-                        InputType.BLOCK_ONLY,
+                        InputType.BLOCK_AND_SHADOW,
                         (
                             DataType.VARIABLE,
                             list_variable_name,
@@ -759,12 +723,12 @@ class Assembler:
             itemoflist = self.make_block(
                 "operator_letter_of",
                 inputs={
-                    "LETTER": (InputType.BLOCK_ONLY, (
+                    "LETTER": (InputType.BLOCK_AND_SHADOW, (
                         DataType.VARIABLE,
                         list_variable_name,
                         var_id,
                     )),
-                    "STRING": (InputType.BLOCK_ONLY, (
+                    "STRING": (InputType.BLOCK_AND_SHADOW, (
                         DataType.VARIABLE,
                         stmt.iterable.root,
                         iterable_id
@@ -799,7 +763,7 @@ class Assembler:
                 "VARIABLE": (stmt.variable, var_list_item_id)
             },
             inputs={
-                "VALUE": (InputType.BLOCK_ONLY, itemoflist)
+                "VALUE": (InputType.BLOCK_AND_SHADOW, itemoflist)
             }
         )
 
@@ -825,7 +789,7 @@ class Assembler:
         if body.first is not None:
             self.blocks[change_id]["next"] = body.first
 
-        self.blocks[repeat_id]["inputs"]["SUBSTACK"] = [InputType.BLOCK_ONLY, list_set_id]
+        self.blocks[repeat_id]["inputs"]["SUBSTACK"] = (InputType.BLOCK_ONLY, list_set_id)
 
         return BlockRange(set_id, repeat_id)
     
@@ -854,7 +818,7 @@ class Assembler:
         body = self.emit_sequence(stmt.body, block_id, context)
 
         if body.first is not None:
-            self.blocks[block_id]["inputs"]["SUBSTACK"] = [InputType.BLOCK_ONLY, body.first]
+            self.blocks[block_id]["inputs"]["SUBSTACK"] = (InputType.BLOCK_ONLY, body.first)
         
         return BlockRange(block_id, block_id)
             
@@ -888,7 +852,7 @@ class Assembler:
         then_blocks = self.emit_sequence(branch.body, block_id, context)
 
         if then_blocks.first is not None:
-            self.blocks[block_id]["inputs"]["SUBSTACK"] = [InputType.BLOCK_ONLY, then_blocks.first]
+            self.blocks[block_id]["inputs"]["SUBSTACK"] = (InputType.BLOCK_ONLY, then_blocks.first)
 
         if has_else:
             if index + 1 < len(branches):
@@ -900,12 +864,12 @@ class Assembler:
                     block_id,
                     context
                 )
-                self.blocks[block_id]["inputs"]["SUBSTACK2"] = [InputType.BLOCK_ONLY, nested_if]
+                self.blocks[block_id]["inputs"]["SUBSTACK2"] = (InputType.BLOCK_ONLY, nested_if)
             else:
                 # no more if statements. rest of the code is not part of this if branch
                 else_blocks = self.emit_sequence(else_body, block_id, context)
                 if else_blocks.first is not None:
-                    self.blocks[block_id]["inputs"]["SUBSTACK2"] = [InputType.BLOCK_ONLY, else_blocks.first]
+                    self.blocks[block_id]["inputs"]["SUBSTACK2"] = (InputType.BLOCK_ONLY, else_blocks.first)
         
         return block_id
     
@@ -1078,7 +1042,7 @@ class Assembler:
         self.blocks[block_id]["inputs"] = inputs
 
         return ScratchInput(
-            (InputType.BLOCK_ONLY, block_id), block_data.return_type
+            (InputType.BLOCK_ONLY if block_data.return_type == VariableTypes.BOOLEAN else InputType.BLOCK_AND_SHADOW, block_id), block_data.return_type
         )
 
     def emit_unary_expr(self, op: str, value: Expr, context: StrOptional, parent: StrOptional) -> ScratchInput:
@@ -1104,7 +1068,7 @@ class Assembler:
                     "NUM2": self.emit_expr(value, context, block_id).value,
                 },
             )
-            return ScratchInput((InputType.BLOCK_ONLY, block_id), VariableTypes.NUMBER)
+            return ScratchInput((InputType.BLOCK_AND_SHADOW, block_id), VariableTypes.NUMBER)
 
         raise NotImplementedError(f"Unsupported unary operator: {op}")
     
@@ -1113,8 +1077,6 @@ class Assembler:
 
         left_expr = self.emit_expr(left, context, block_id)
         right_expr = self.emit_expr(right, context, block_id)
-
-        print(left_expr.return_type, right_expr.return_type)
 
         if op == "+" and (
             left_expr.return_type != VariableTypes.NUMBER
@@ -1153,14 +1115,11 @@ class Assembler:
         )
 
         return ScratchInput(
-            (InputType.BLOCK_ONLY, block_id),
+            (InputType.BLOCK_ONLY if return_type == VariableTypes.BOOLEAN else InputType.BLOCK_AND_SHADOW, block_id),
             return_type,
         )
 
     def emit_var_ref(self, ref: VarRef, context: StrOptional, parent: StrOptional) -> ScratchInput:
-        if context is not None:
-            pass
-
         if context in self.procedures:
             procedure_info = self.procedures[context]
 
@@ -1227,7 +1186,7 @@ class Assembler:
                         inputs={
                             "LETTER": self.emit_expr(ref.slice_expr, context, parent).value,
                             "STRING": (
-                                InputType.BLOCK_ONLY,  (
+                                InputType.BLOCK_AND_SHADOW,  (
                                     DataType.VARIABLE,
                                     ref.root,
                                     var_id
@@ -1238,7 +1197,7 @@ class Assembler:
 
                     return ScratchInput(
                         (
-                            InputType.BLOCK_ONLY,
+                            InputType.BLOCK_AND_SHADOW,
                             operator_id
                         ), VariableTypes.STRING
                     )
