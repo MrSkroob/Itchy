@@ -1004,15 +1004,19 @@ class Assembler:
                 if isinstance(arg_expr, StringExpr):
                     if isinstance(arg, Menu):
                         # create the menu
+
+                        print(arg.name, arg.opcode)
+
                         menu_id = self.make_block(
-                            arg.opcode, 
-                            block_id,
+                            opcode=arg.opcode, 
+                            parent=block_id,
                             fields={
                                 arg.name: (
                                     arg_expr.value,
                                     None
                                 )
-                            })
+                            }, 
+                            shadow=True)
 
                         inputs[arg.name] = (InputType.SHADOW_ONLY, menu_id)
                     else:
@@ -1065,7 +1069,7 @@ class Assembler:
                     "NUM2": self.emit_expr(value, context, block_id).value,
                 },
             )
-            return ScratchInput((InputType.BLOCK_AND_SHADOW, block_id), VariableTypes.NUMBER)
+            return ScratchInput((InputType.BLOCK_ONLY, block_id), VariableTypes.NUMBER)
 
         raise NotImplementedError(f"Unsupported unary operator: {op}")
     
@@ -1176,7 +1180,7 @@ class Assembler:
                         inputs={
                             "LETTER": self.emit_expr(ref.slice_expr, context, parent).value,
                             "STRING": (
-                                InputType.BLOCK_AND_SHADOW,  (
+                                InputType.BLOCK_ONLY,  (
                                     DataType.VARIABLE,
                                     ref.root,
                                     var_id
@@ -1187,7 +1191,7 @@ class Assembler:
 
                     return ScratchInput(
                         (
-                            InputType.BLOCK_AND_SHADOW,
+                            InputType.BLOCK_ONLY,
                             operator_id
                         ), VariableTypes.STRING
                     )

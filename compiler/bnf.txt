@@ -23,11 +23,11 @@
 <equation> ::= <comparison>
 <comparison> ::= <addition> { ("==" | ">" | "<" | <In> ) <addition> }
 <addition> ::= <multiplication> { ("+" | "-") <multiplication> }
-<multiplication> ::= <unary> { ("*" | "/") <unary> }
-<unary> ::= [<Unop>] <primary>
+<multiplication> ::= <unary> { ("*" | "/" | "and" | "or") <unary> }
+<unary> ::= ["-" | "not"] <primary>
 <primary> ::= <literals> | "(" <equation> ")"
 <var> ::= <Symbol> [<slice>]
-<literals> ::= <Bool> | <Number> | <String> | <functioncall> | <tableconstructor> | <var>
+<literals> ::= <functioncall> | <tableconstructor> | <var> | <Bool> | <Number> | <String> 
 // <explist1> ::= <equation> {<FieldSeperator> <explist1>}
 <laststat> ::= <Break> | <Return> [<varlist1>]
 <varlist1> ::= <equation> {<FieldSeperator> <equation>}

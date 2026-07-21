@@ -37,7 +37,7 @@ def debug_print(message: str):
 
 
 def print_token_safe(tokens: list[Token[Definitions]], pos: int):
-    return tokens[min(pos, len(tokens) - 1)].kind.name
+    return tokens[min(pos, len(tokens) - 1)].literal
 
 
 class ASTNode():

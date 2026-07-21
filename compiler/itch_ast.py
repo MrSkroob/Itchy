@@ -393,10 +393,8 @@ def build_unary(node: ParsedNode) -> Expr:
     primary: ParsedNode | None = None
 
     for child in children:
-        if is_token(child, name="Unop"):
-            assert isinstance(child, Token)
+        if (isinstance(child, Token) and child.literal == "-") and child.kind == Definitions.Binop:
             op = child.literal
-
         elif isinstance(child, ParsedNode) and child.name == "primary":
             primary = child
 
@@ -416,6 +414,7 @@ def build_primary(node: ParsedNode) -> Expr:
 
     for child in children:
         if isinstance(child, ParsedNode) and child.name == "literals":
+            print(child.children)
             return build_literals(child)
 
         if isinstance(child, ParsedNode) and child.name == "equation":
@@ -540,8 +539,6 @@ def build_varlist1(node: ParsedNode) -> tuple[Expr, ...]:
     values: list[Expr] = []
 
     for child in flat_children(node):
-        # if isinstance(child, ParsedNode) and child.name == "literals":
-        #     values.append(build_literals(child))
         if isinstance(child, ParsedNode) and child.name == "equation":
             values.append(build_equation(child))
         elif isinstance(child, ParsedNode) and child.name == "varlist1":
