@@ -737,9 +737,9 @@ class Assembler:
             )
 
         stop_condition = BinaryOpExpr(
-            left=VarExpr(VarRef(stmt.variable)),
+            left=VarExpr(VarRef(list_variable_name)),
             op=">",
-            right=FunctionCallExpr("length", (VarExpr(stmt.iterable),))
+            right=FunctionCallExpr("data_lengthoflist", (VarExpr(stmt.iterable),))
         )
 
         # repeat
@@ -992,7 +992,7 @@ class Assembler:
 
         if not isinstance(block_data, Reporter):
             raise CompilerError(
-                f"{expr.callee!r} is a reporter block, not a command -- it can't be called as a statement"
+                f"{expr.callee!r} is a block, not a reporter -- it can't be called in a statement"
             )
     
         expected_args = len(block_data.inputs) + len(block_data.fields)
@@ -1011,33 +1011,50 @@ class Assembler:
         fields: dict[str, ScratchFieldRaw] = {}
         
         for arg, arg_expr in zip(block_data.inputs, expr.args):
-            if isinstance(arg_expr, StringExpr):
-                if isinstance(arg, Menu):
-                    # create the menu
-                    menu_id = self.make_block(
-                        arg.opcode, 
-                        block_id,
-                        fields={
-                            arg.name: (
-                                arg_expr.value,
-                                None
-                            )
-                        })
-
-                    inputs[arg.name] = (InputType.SHADOW_ONLY, menu_id)
+            if arg.name in block_data.variables:
+                if not isinstance(arg_expr, VarExpr):
+                    inputs[arg.name] = (
+                        self.emit_expr(arg_expr, context, block_id).value
+                    )
                 else:
-                    inputs[arg.name] = (InputType.SHADOW_ONLY, (arg.return_type, arg_expr.value))
+                    var_id = self.get_variable(arg_expr.ref.root)
+                    inputs[arg.name] = (InputType.SHADOW_ONLY,
+                                        (DataType.VARIABLE, arg_expr.ref.root, var_id))
             else:
-                inputs[arg.name] = self.emit_expr(arg_expr, context, parent).value
+                if isinstance(arg_expr, StringExpr):
+                    if isinstance(arg, Menu):
+                        # create the menu
+                        menu_id = self.make_block(
+                            arg.opcode, 
+                            block_id,
+                            fields={
+                                arg.name: (
+                                    arg_expr.value,
+                                    None
+                                )
+                            })
+
+                        inputs[arg.name] = (InputType.SHADOW_ONLY, menu_id)
+                    else:
+                        inputs[arg.name] = (InputType.SHADOW_ONLY, (arg.return_type, arg_expr.value))
+                else:
+                    inputs[arg.name] = self.emit_expr(arg_expr, context, parent).value
 
         for field_name, arg_expr in zip(block_data.fields, expr.args[len(block_data.inputs):]):
-            if not isinstance(arg_expr, StringExpr):
-                raise CompilerError(
-                    f"{expr.callee}: argument for {field_name!r} must be a string literal"
-                )
+            if field_name in block_data.variables:
+                if not isinstance(arg_expr, VarExpr):
+                    raise CompilerError(
+                        f"{expr.callee}: argument for {field_name!r} must be a variable"
+                    )
+                fields[field_name] = (arg_expr.ref.root, self.get_variable(arg_expr.ref.root))
+            else:
+                if not isinstance(arg_expr, StringExpr):
+                    raise CompilerError(
+                        f"{expr.callee}: argument for {field_name!r} must be a string literal"
+                    )
 
-            fields[field_name] = (arg_expr.value, None)
-        
+                fields[field_name] = (arg_expr.value, None)
+            
         self.blocks[block_id]["fields"] = fields
         self.blocks[block_id]["inputs"] = inputs
 
@@ -1078,28 +1095,21 @@ class Assembler:
         left_expr = self.emit_expr(left, context, block_id)
         right_expr = self.emit_expr(right, context, block_id)
 
-        if op == "+" and (
-            left_expr.return_type != VariableTypes.NUMBER
-            or right_expr.return_type != VariableTypes.NUMBER
-        ):
-            opcode, left_name, right_name = "operator_join", "STRING1", "STRING2"
-            return_type = VariableTypes.STRING
+        opcode, left_name, right_name = {
+            "+": ("operator_add", "NUM1", "NUM2"),
+            "-": ("operator_subtract", "NUM1", "NUM2"),
+            "*": ("operator_multiply", "NUM1", "NUM2"),
+            "/": ("operator_divide", "NUM1", "NUM2"),
+            "==": ("operator_equals", "OPERAND1", "OPERAND2"),
+            ">": ("operator_gt", "OPERAND1", "OPERAND2"),
+            "<": ("operator_lt", "OPERAND1", "OPERAND2"),
+            "and": ("operator_and", "OPERAND1", "OPERAND2"),
+            "or": ("operator_or", "OPERAND1", "OPERAND2"),
+        }[op]
+        if op in {"==", ">", "<", "and", "or"}:
+            return_type = VariableTypes.BOOLEAN
         else:
-            opcode, left_name, right_name = {
-                "+": ("operator_add", "NUM1", "NUM2"),
-                "-": ("operator_subtract", "NUM1", "NUM2"),
-                "*": ("operator_multiply", "NUM1", "NUM2"),
-                "/": ("operator_divide", "NUM1", "NUM2"),
-                "==": ("operator_equals", "OPERAND1", "OPERAND2"),
-                ">": ("operator_gt", "OPERAND1", "OPERAND2"),
-                "<": ("operator_lt", "OPERAND1", "OPERAND2"),
-                "and": ("operator_and", "OPERAND1", "OPERAND2"),
-                "or": ("operator_or", "OPERAND1", "OPERAND2"),
-            }[op]
-            if op in {"==", ">", "<", "and", "or"}:
-                return_type = VariableTypes.BOOLEAN
-            else:
-                return_type = VariableTypes.NUMBER
+            return_type = VariableTypes.NUMBER
 
         left_input = left_expr.value
         right_input = right_expr.value

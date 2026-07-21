@@ -44,6 +44,7 @@ class Reporter:
     inputs: tuple[ReturnType | Menu, ...] = ()
     fields: tuple[str, ...] = ()
     return_type: VariableTypes = VariableTypes.NUMBER
+    variables: tuple[str, ...] = ()
  
 @dataclass(frozen=True)
 class Event:
@@ -187,8 +188,10 @@ SCRATCH_BLOCKS: dict[str, Block | Reporter | Event] = {
     "data_deleteoflist": Block((ReturnType("INDEX"),), ("LIST",), variables=("LIST",)),
     "data_deletealloflist": Block(fields=("LIST",), variables=("LIST",)),
     "data_insertatlist": Block((ReturnType("ITEM", DataType.STRING), ReturnType("INDEX")), ("LIST",), variables=("LIST",)),
-    "data_itemnumoflist": Block((ReturnType("ITEM"),), ("LIST",), variables=("LIST",)),
-    "data_lengthoflist": Block(fields=("LIST",), variables=("LIST",)),
+    "data_itemnumoflist": Reporter((ReturnType("ITEM"),), ("LIST",), variables=("LIST",)),
+    "data_lengthoflist": Reporter(fields=("LIST",), variables=("LIST",)),
+    "data_listcontainsitem": Reporter((ReturnType("ITEM"),), ("LIST",), variables=("LIST",)),
+
     "data_showlist": Block(fields=("LIST",), variables=("LIST",)),
     "data_hidelist": Block(fields=("LIST",), variables=("LIST",)),
 
