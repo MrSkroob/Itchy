@@ -16,6 +16,7 @@ class Menu:
     """
     opcode: str
     name: str
+    field_name: str | None=None
 
 
 @dataclass(frozen=True)
@@ -200,4 +201,15 @@ SCRATCH_BLOCKS: dict[str, Block | Reporter | Event] = {
 
     "data_showvariable": Block(fields=("VARIABLE",), variables=("VARIABLE",)),
     "data_hidevariable": Block(fields=("VARIABLE",), variables=("VARIABLE",)),
+
+    # -- pen tool
+    "pen_clear": Block(),
+    "pen_stamp": Block(),
+    "pen_penDown": Block(),
+    "pen_penUp": Block(),
+    "pen_setPenColorToColor": Block((ReturnType("COLOR", DataType.COLOR),)),
+    "pen_changePenColorParamBy": Block((Menu("COLOR_PARAM", "pen_menu_colorParam", "colorParam"), ReturnType("VALUE"))),
+    "pen_setPenColorParamTo": Block((Menu("COLOR_PARAM", "pen_menu_colorParam", "colorParam"), ReturnType("VALUE"))),
+    "pen_changePenSizeBy": Block((ReturnType("SIZE"),)),
+    "pen_setPenSizeTo": Block((ReturnType("SIZE"),))
 }

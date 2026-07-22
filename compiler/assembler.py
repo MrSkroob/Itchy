@@ -351,7 +351,7 @@ class Assembler:
                             opcode=arg.opcode, 
                             id=block_id,
                             fields={
-                                arg.name: (
+                                (arg.field_name or arg.name): (
                                     arg_expr.value,
                                     None
                                 )
@@ -478,7 +478,7 @@ class Assembler:
                         menu_id = self.make_block(
                             arg.opcode,
                             event_id,
-                            fields={arg.name: (arg_expr.value, None)})
+                            fields={(arg.field_name or arg.name): (arg_expr.value, None)})
                         inputs[arg.name] = (InputType.SHADOW_ONLY, menu_id)
                     else:
                         inputs[arg.name] = (InputType.SHADOW_ONLY, (arg.return_type, arg_expr.value))
@@ -1028,7 +1028,7 @@ class Assembler:
                             }, 
                             shadow=True)
 
-                        inputs[arg.name] = (InputType.SHADOW_ONLY, menu_id)
+                        inputs[(arg.field_name or arg.name)] = (InputType.SHADOW_ONLY, menu_id)
                     else:
                         inputs[arg.name] = (InputType.SHADOW_ONLY, (arg.return_type, arg_expr.value))
                 else:
