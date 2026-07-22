@@ -1,6 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass
-from assembler import VariableTypes, DataType
+from compiler_shared import VariableTypes, DataType
 
 
 @dataclass(frozen=True)

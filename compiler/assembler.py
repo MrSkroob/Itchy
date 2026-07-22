@@ -8,9 +8,14 @@ import tempfile
 import os
 
 from dataclasses import dataclass
-from enum import Enum, StrEnum
+from enum import Enum
 
+from copy import deepcopy
+from pathlib import Path
 from typing import Any
+from tokenizer import Token, Definitions
+from compiler_shared import VariableTypes, DataType, SPRITE_TEMPLATE, COSTUME_TEMPLATE
+from scratch_blocks import SCRATCH_BLOCKS, Block, Reporter, Event, Menu
 from itch_ast import \
     Stmt, VarRef, BlockStmt, IfStmt, BreakStmt, ForInStmt, WhileStmt, AssignStmt, ReturnStmt, VarDefStmt, ForRangeStmt, FunctionCallStmt, FunctionDefStmt, EventHandlerStmt, \
     IfBranch, Expr, NumberExpr, BoolExpr, StringExpr, VarExpr, UnaryOpExpr, BinaryOpExpr, TableExpr, FunctionCallExpr, Program
@@ -21,15 +26,8 @@ StrOptional = str | None
 
 
 HEXCODE = re.compile(r"^#(?:[0-9a-fA-F]{3}){1,2}$")
-
-
-class VariableTypes(StrEnum):
-    NUMBER = "number"
-    STRING = "string"
-    BOOLEAN = "boolean"
-    LIST = "list"
-    UNKNOWN = "unknown"
-
+ROOT = Path(__file__).parent.parent
+TEMP_FILE_SRC = ROOT / "assets" / "empty.svg"
 
 # return types as tuples are OKAY, because serialisation converts them all to lists anyway.
 ScratchInputRaw = tuple["InputType", tuple["DataType", str] | tuple["DataType", str, str]] | tuple["InputType", str]
@@ -40,25 +38,6 @@ class ScratchInput:
     value: ScratchInputRaw
     return_type: VariableTypes = VariableTypes.UNKNOWN
 
-
-class DataType(Enum):
-    NUMBER = 4
-    POSITIVE_NUMBER = 5
-    POSITIVE_INTEGER = 6
-    INTEGER = 7
-    ANGLE = 8
-    COLOR = 9 # using american spelling because Scratch is american
-    STRING = 10
-    BROADCAST = 11
-    VARIABLE = 12
-    LIST = 13
-
-# scratch_blocks.py imports VariableTypes from this module, so this import
-# has to come after VariableTypes is defined above -- otherwise it's a
-# circular import (assembler -> scratch_blocks -> assembler) that fails
-# because VariableTypes doesn't exist on the partially-initialized module
-# yet.
-from scratch_blocks import SCRATCH_BLOCKS, Block, Reporter, Event, Menu
 
 # serialisable json
 JSONValue = int | str | float | bool | None | list["JSONValue"] | dict[str, "JSONValue"]
@@ -105,6 +84,11 @@ class ProcedureInfo:
     argument_defaults: tuple[str, ...]
 
 
+@dataclass
+class AssemblerStatus:
+    current_token: Token[Definitions] | None
+
+
 class Assembler:
     def __init__(self) -> None:
         self.variables: dict[str, VariableData] = {} # includes lists.
@@ -113,9 +97,18 @@ class Assembler:
 
         # we don't need to worry about function "variables" since they are arguments.
         # i.e. they are not treated as variables and are treated as read-only.
+        # variable name -> id
         self.variable_map: dict[str, str] = {}
 
         self.messages: dict[str, str] = {}
+
+        # for debugging/error messages
+        self.current_token = None
+    
+    def compiler_state(self) -> AssemblerStatus:
+        return AssemblerStatus(
+            current_token=self.current_token
+        )
 
     def new_id(self) -> str:
         return uuid.uuid4().hex[:20]
@@ -1286,6 +1279,38 @@ class Assembler:
     def _serialise_broadcasts(self) -> dict[str, str]:
         return {broadcast_id: name for name, broadcast_id in self.messages.items()}
 
+
+    def prepare_assemble(self) -> None:
+        """
+        Prepares the assembler to assemble the next file. It does the following:
+        1. Clears blocks, variables, lists, etc. that are local to the sprite
+        2. *Keeps* stage/global data
+        """
+
+        # we do not clear shared variables/lists, 
+        for variable_id in list(self.variables):
+            variable_data = self.variables[variable_id]
+            
+            if variable_data.shared:
+                continue
+
+            del self.variable_map[variable_data.name]
+            del self.variables[variable_id]
+
+        self.blocks.clear()
+        self.procedures.clear()
+        self.current_token = None
+
+    
+    # def clone_asset(self, file_name: str):
+    #     asset_id = self.new_id()
+
+    #     directory = ROOT / "assets" / file_name
+
+    #     # src = Path(s(directory.absolute()))
+    #     dst = Path()
+
+
     def assemble(self, program: Program, project_file: str, target: str) -> None:
         """
         Compiles `program` and injects the result into an existing Scratch
@@ -1311,16 +1336,37 @@ class Assembler:
         sprite_target = None
 
         for candidate in targets:
-            if not candidate.get("isStage", False) and candidate.get("name") == target:
+            if candidate.get("name") == target:
                 sprite_target = candidate
             if candidate.get("isStage", False):
                 stage_target = candidate
 
+        assets_to_move: list[str] = []
+
         if sprite_target is None:
-            raise CompilerError(f"No sprite named {target!r} found in project file {project_file!r}")
+            next_layer_order = max((candidate.get("layerOrder", 0) for candidate in targets), default=0)
+            sprite_target = deepcopy(SPRITE_TEMPLATE)
+            sprite_target["name"] = target
+            sprite_target["layerOrder"] = next_layer_order
+
+            costume = COSTUME_TEMPLATE.copy()
+            # clone the empty svg
+
+            # we don't use the self.new_id() because we want 36 characters
+            asset_id = uuid.uuid4().hex
+            costume["assetId"] = asset_id
+            costume["md5ext"] = asset_id + ".svg"
+
+            sprite_target["costumes"].append(costume)
+
+            assets_to_move.append(asset_id + ".svg")
+
+            targets.append(sprite_target)
+            print(f"Sprite {target} not found. Creating a new one.")
         
+        # shouldn't be possible if provided an .sb3 file, but here for sanity's sake. 
         if stage_target is None:
-            raise CompilerError(f"WTF THERE'S NO STAGE????")
+            raise CompilerError(f"Target project does not have stage.")
 
         sprite_target["variables"] = self._serialise_variables()
         sprite_target["lists"] = self._serialise_lists()
@@ -1330,9 +1376,6 @@ class Assembler:
 
         stage_target["variables"] = self._serialise_variables(True)
         stage_target["lists"] = self._serialise_lists(True)
-
-        # with open(project_file, "w", encoding="utf-8") as f:
-        #     json.dump(project, f)
 
         json_dumped = json.dumps(project, ensure_ascii=True)
 
@@ -1344,7 +1387,11 @@ class Assembler:
         os.close(temporary_fd)
 
         try:
+            # create a temporary file that contains the archive of existing assets so we don't override them when writing
+            # to the file. 
             with zipfile.ZipFile(project_file, "r") as source:
+                
+                # open the temporary file and copy the contents over.
                 with zipfile.ZipFile(
                     temporary_path,
                     mode="w",
@@ -1362,6 +1409,10 @@ class Assembler:
                             source.read(archive_entry.filename),
                         )
 
+                    # move over the created temporary assets
+                    for asset_name in assets_to_move:
+                        destination.write(str(TEMP_FILE_SRC.absolute()), arcname=asset_name)
+
                     destination.writestr("project.json", json_dumped)
 
             # Validate the completed archive before replacing the original.
@@ -1376,24 +1427,7 @@ class Assembler:
         finally:
             if os.path.exists(temporary_path):
                 os.remove(temporary_path)
-        # with zipfile.ZipFile(project_file, mode="w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as f:
-        #     json_dumped = json.dumps(project, ensure_ascii=True)
-        #     f.writestr("project.json", data=json_dumped)
-        #     f.testzip()
 
-        
-    
-# def augment_program(project_name: str, target_name: str, code: dict[str, Any]):
-#     with open(project_name, "w", encoding="utf-8") as f:
-#         project = json.load(f)
-#         targets: list[dict[str, Any]] = project["targets"]
-#         for target in targets:
-#             if target["name"] == target_name:
-                
-#                 break
-
-            
-        
     
 """
 "targets": [

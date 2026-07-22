@@ -1,7 +1,10 @@
 from parser import Parser, ParseError, FailState
 from itch_ast import build_ast
-from tools.ast_printer import print_ast
+# from tools.ast_printer import print_ast
 from assembler import Assembler
+
+import os
+# from os.path import isfile
 # import argparse
 
 from pathlib import Path
@@ -48,10 +51,11 @@ def compile(file: str, output: str, target: str):
     with open(file) as f:
         source = f.read()
         try:
+            assembler.prepare_assemble()
             parsed = parser.read(source)
             tree = build_ast(parsed.tree)
             assembler.assemble(tree, output, target)
-            print_ast(tree)
+            # print_ast(tree)
         except ParseError:
             fail_state = parser.fail_state
             if fail_state is not None:
@@ -60,8 +64,31 @@ def compile(file: str, output: str, target: str):
                 print(format_syntax_error(fail_state, source, file))
     
     
-if __name__ == "__main__":
+def main():
     input_path = ROOT / "input"
     output_path = ROOT / "output"
+    
+    stage = None
+    paths: list[Path] = []
 
-    compile(str((input_path / "Ball.txt").absolute()), str((output_path / "Scratch Project.sb3")), "Ball")
+    for path in os.listdir(str(input_path.absolute())):
+        file_name = os.path.basename(path)
+
+        abs_path = input_path / file_name
+
+        if file_name == "stage.txt":
+            stage = abs_path
+        else:
+            paths.append(abs_path)
+    
+    if stage is not None:
+        paths.insert(0, stage)
+
+    for file_name in paths:
+        compile(str(file_name), str((output_path / "Scratch Project.sb3")), os.path.basename(str(file_name.with_suffix(''))))
+
+
+if __name__ == "__main__":
+    print("Running...")
+    main()
+    print("OKAY!")
