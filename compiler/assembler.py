@@ -13,10 +13,10 @@ from enum import Enum
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
-from tokenizer import Token, Definitions
 from shared_templates import VariableTypes, DataType, SPRITE_TEMPLATE, COSTUME_TEMPLATE
 from scratch_blocks import SCRATCH_BLOCKS, Block, Reporter, Event, Menu
 from itch_ast import \
+    ASTNode, \
     Stmt, VarRef, BlockStmt, IfStmt, BreakStmt, ForInStmt, WhileStmt, AssignStmt, ReturnStmt, VarDefStmt, ForRangeStmt, FunctionCallStmt, FunctionDefStmt, EventHandlerStmt, \
     IfBranch, Expr, NumberExpr, BoolExpr, StringExpr, VarExpr, UnaryOpExpr, BinaryOpExpr, TableExpr, FunctionCallExpr, Program
 
@@ -53,8 +53,21 @@ class InputType(Enum):
 
 
 class CompilerError(Exception):
-    def __init__(self, message: str) -> None:
+    def __init__(self, message: str, error_node: ASTNode | None) -> None:
+        self.error_node = error_node
         super().__init__(message)
+
+
+class NotDefinedError(CompilerError):
+    pass
+
+
+class InvalidTypeError(CompilerError):
+    pass
+
+
+class ArgumentError(CompilerError):
+    pass
 
 
 @dataclass(frozen=True)
@@ -84,11 +97,6 @@ class ProcedureInfo:
     argument_defaults: tuple[str, ...]
 
 
-@dataclass
-class AssemblerStatus:
-    current_token: Token[Definitions] | None
-
-
 class Assembler:
     def __init__(self) -> None:
         self.variables: dict[str, VariableData] = {} # includes lists.
@@ -105,11 +113,6 @@ class Assembler:
         # for debugging/error messages
         self.current_token = None
     
-    def compiler_state(self) -> AssemblerStatus:
-        return AssemblerStatus(
-            current_token=self.current_token
-        )
-
     def new_id(self) -> str:
         return uuid.uuid4().hex[:20]
 
@@ -159,7 +162,8 @@ class Assembler:
         Do this when you strictly expect the variable to exist, and want to error if it wasn't implicitly/explicitly defined previously.
         """
         key = name
-        assert key in self.variable_map, f"variable {name} not defined!"
+        if key not in self.variable_map:
+            raise NameError(f"variable {name} not defined!")
         return self.variable_map[key]
 
     def define_broadcast(self, name: str) -> str:
@@ -176,7 +180,7 @@ class Assembler:
         
         procedure = self.procedures[context]
         if var_name in procedure.argument_names:
-            raise AssertionError(f"{var_name} IS READ ONLY!!!")
+            raise ValueError(f"{var_name} IS READ ONLY!!!")
 
     def define_variable(self, shared: bool, type_name: str, name: str, context: StrOptional) -> str:
         """
@@ -302,15 +306,17 @@ class Assembler:
         block_data = SCRATCH_BLOCKS[stmt.callee]
 
         if not isinstance(block_data, Block):
-            raise CompilerError(
-                f"{stmt.callee!r} is should be a stack block"
+            raise InvalidTypeError(
+                f"{stmt.callee} should be a stack block",
+                stmt
             )
 
         expected_args = len(block_data.inputs) + len(block_data.fields)
 
         if len(stmt.args) != expected_args:
-            raise CompilerError(
-                f"Block {stmt.callee!r} expects {expected_args} argument(s), got {len(stmt.args)}"
+            raise ArgumentError(
+                f"Block {stmt.callee} expects {expected_args} argument(s), got {len(stmt.args)}",
+                stmt
             )
 
         inputs: dict[str, ScratchInputRaw] = {}
@@ -340,9 +346,12 @@ class Assembler:
                         self.emit_expr(arg_expr, context, block_id).value
                     )
                 else:
-                    var_id = self.get_variable(arg_expr.ref.root)
-                    inputs[arg.name] = (InputType.SHADOW_ONLY,
-                                        (DataType.VARIABLE, arg_expr.ref.root, var_id))
+                    try:
+                        var_id = self.get_variable(arg_expr.ref.root)
+                        inputs[arg.name] = (InputType.SHADOW_ONLY,
+                                            (DataType.VARIABLE, arg_expr.ref.root, var_id))
+                    except NameError:
+                        raise NotDefinedError(f"{arg_expr.ref.root} not defined.", arg_expr)
             else:
                 if isinstance(arg_expr, StringExpr):
                     if isinstance(arg, Menu):
@@ -364,25 +373,31 @@ class Assembler:
                 else:
                     inputs[arg.name] = self.emit_expr(arg_expr, context, block_id).value
 
+        index = 0
+
         for field_name, arg_expr in zip(block_data.fields, stmt.args[len(block_data.inputs):]):
             if field_name in block_data.variables:
                 if not isinstance(arg_expr, VarExpr):
-                    raise CompilerError(
-                        f"{stmt.callee}: argument for {field_name!r} must be a variable"
+                    raise InvalidTypeError(
+                        f"{stmt.callee}: argument for {field_name} must be a variable", stmt.args[index]
                     )
-                fields[field_name] = (arg_expr.ref.root, self.get_variable(arg_expr.ref.root))
+                try:
+                    fields[field_name] = (arg_expr.ref.root, self.get_variable(arg_expr.ref.root))
+                except ValueError:
+                    raise NotDefinedError(f"{arg_expr.ref.root} not defined.", arg_expr)
             elif field_name in block_data.broadcasts:
                 if not isinstance(arg_expr, StringExpr):
-                    raise CompilerError(
-                        f"{stmt.callee}: argument for {field_name!r} must be a string literal"
+                    raise InvalidTypeError(
+                        f"{stmt.callee}: argument for {field_name} must be a string literal", stmt.args[index]
                     )
                 fields[field_name] = (arg_expr.value, self.define_broadcast(arg_expr.value))
             else:
                 if not isinstance(arg_expr, StringExpr):
-                    raise CompilerError(
-                        f"{stmt.callee}: argument for {field_name!r} must be a string literal"
+                    raise InvalidTypeError(
+                        f"{stmt.callee}: argument for {field_name} must be a string literal", stmt.args[index]
                     )
                 fields[field_name] = (arg_expr.value, None)
+            index += 1
 
         self.blocks[block_id]["fields"] = fields
         self.blocks[block_id]["inputs"] = inputs
@@ -393,15 +408,17 @@ class Assembler:
         if stmt.callee not in self.procedures:
             # is either a custom scratch block or a hallucination :v
             block_range = self.emit_scratch_block(stmt, parent, context)
-            assert block_range is not None, f"bad bad this procedure {stmt.callee} doesn't exist"
+            if block_range is None:
+                raise NotDefinedError(f"Procedure {stmt.callee} is not defined and is not a valid scratch block.", stmt)
             return block_range
         
         info = self.procedures[stmt.callee]
 
         if len(stmt.args) != len(info.argument_ids):
-            raise ValueError(
-                f"Function {stmt.callee!r} expects {len(info.argument_ids)} arguments, "
-                f"got {len(stmt.args)}"
+            raise ArgumentError(
+                f"Function {stmt.callee} expects {len(info.argument_ids)} arguments, "
+                f"got {len(stmt.args)}",
+                stmt
             )
 
         inputs: dict[str, ScratchInputRaw] = {}
@@ -430,13 +447,13 @@ class Assembler:
     
     def emit_event_handler(self, stmt: EventHandlerStmt) -> BlockRange:
         if stmt.name not in SCRATCH_BLOCKS:
-            raise CompilerError(f"{stmt.name!r} is not a known event")
+            raise NotDefinedError(f"{stmt.name} is not a known event", stmt)
 
         block_data = SCRATCH_BLOCKS[stmt.name]
 
         if not isinstance(block_data, Event):
             raise CompilerError(
-                f"{stmt.name!r} is should be a hat/event block"
+                f"{stmt.name} should be a hat/event block", stmt
             )
 
         # unlike Block/Reporter, an Event's `broadcasts` entries are not a
@@ -446,8 +463,9 @@ class Assembler:
         expected_args = len(block_data.inputs) + len(block_data.fields)
 
         if len(stmt.params) != expected_args:
-            raise CompilerError(
-                f"Event {stmt.name!r} expects {expected_args} argument(s), got {len(stmt.params)}"
+            raise ArgumentError(
+                f"Event {stmt.name} expects {expected_args} argument(s), got {len(stmt.params)}",
+                stmt
             )
 
         inputs: dict[str, ScratchInputRaw] = {}
@@ -487,13 +505,17 @@ class Assembler:
 
         field_args = stmt.params[len(block_data.inputs):]
 
+        index = 0
+
         for field_name, arg_expr in zip(block_data.fields, field_args):
             if not isinstance(arg_expr, StringExpr):
-                raise CompilerError(f"{stmt.name}: argument for {field_name!r} must be a string literal")
+                raise InvalidTypeError(f"{stmt.name}: argument for {field_name} must be a string literal", field_args[index])
             if field_name in block_data.broadcasts:
                 fields[field_name] = (arg_expr.value, self.define_broadcast(arg_expr.value))
             else:
                 fields[field_name] = (arg_expr.value, None)
+
+            index += 1
 
         # make_block does `inputs or {}` / `fields or {}`, so when they start
         # out empty it silently swaps in a fresh dict instead of keeping our
@@ -588,7 +610,10 @@ class Assembler:
     def emit_for_range(self, stmt: ForRangeStmt, parent: StrOptional, context: StrOptional):
         # iterable variable
 
-        self.assert_writable_name(stmt.variable, context)
+        try:
+            self.assert_writable_name(stmt.variable, context)
+        except ValueError:
+            raise CompilerError(f"Cannot override read only argument {stmt.variable}", stmt.start)
 
         var_id = self.define_variable(False, "number", stmt.variable, context)
         set_id = self.new_id()
@@ -850,7 +875,7 @@ class Assembler:
     
     def emit_assignment(self, target: VarRef, value: Expr, parent: StrOptional, context: StrOptional) -> BlockRange:
         if context is not None and target.root in self.procedures[context].argument_names:
-            raise AssertionError("do not assign read-only arguments!!")
+            raise CompilerError(f"Cannot assign read only argument {target.root}", target)
         
         if target.slice_expr is not None:
             var_id = self.get_variable(target.root)
@@ -977,14 +1002,16 @@ class Assembler:
 
         if not isinstance(block_data, Reporter):
             raise CompilerError(
-                f"{expr.callee!r} is a block, not a reporter -- it can't be called in a statement"
+                f"{expr.callee} does not return anything.",
+                expr
             )
     
         expected_args = len(block_data.inputs) + len(block_data.fields)
 
         if len(expr.args) != expected_args:
-            raise CompilerError(
-                f"Block {expr.callee!r} expects {expected_args} argument(s), got {len(expr.args)}"
+            raise ArgumentError(
+                f"Block {expr.callee} expects {expected_args} argument(s), got {len(expr.args)}",
+                expr
             )
         
         block_id = self.make_block(
@@ -1026,20 +1053,26 @@ class Assembler:
                 else:
                     inputs[arg.name] = self.emit_expr(arg_expr, context, parent).value
 
+        index = 0
+
         for field_name, arg_expr in zip(block_data.fields, expr.args[len(block_data.inputs):]):
             if field_name in block_data.variables:
                 if not isinstance(arg_expr, VarExpr):
-                    raise CompilerError(
-                        f"{expr.callee}: argument for {field_name!r} must be a variable"
+                    raise InvalidTypeError(
+                        f"{expr.callee}: argument for {field_name} must be a variable",
+                        expr.args[index]
                     )
                 fields[field_name] = (arg_expr.ref.root, self.get_variable(arg_expr.ref.root))
             else:
                 if not isinstance(arg_expr, StringExpr):
-                    raise CompilerError(
-                        f"{expr.callee}: argument for {field_name!r} must be a string literal"
+                    raise InvalidTypeError(
+                        f"{expr.callee}: argument for {field_name} must be a string literal",
+                        expr.args[index]
                     )
 
                 fields[field_name] = (arg_expr.value, None)
+
+            index += 1
             
         self.blocks[block_id]["fields"] = fields
         self.blocks[block_id]["inputs"] = inputs
@@ -1127,7 +1160,7 @@ class Assembler:
             try:
                 arg_index = procedure_info.argument_names.index(ref.root)
             except ValueError:
-                raise AssertionError("bad bad bad! this argument doesn't exist!")
+                raise ArgumentError(f"Argument {ref.root} doesn't exist.", ref)
             
             _, *arg_types = procedure_info.proccode.split(" %")
             arg_type = arg_types[arg_index]
@@ -1358,7 +1391,7 @@ class Assembler:
         
         # shouldn't be possible if provided an .sb3 file, but here for sanity's sake. 
         if stage_target is None:
-            raise CompilerError(f"Target project does not have stage.")
+            raise CompilerError(f"Target project does not have stage.", None)
 
         sprite_target["variables"] = self._serialise_variables()
         sprite_target["lists"] = self._serialise_lists()
@@ -1412,7 +1445,8 @@ class Assembler:
                 bad_file = completed_archive.testzip()
                 if bad_file is not None:
                     raise CompilerError(
-                        f"Generated Scratch archive contains a corrupt file: {bad_file!r}"
+                        f"Generated Scratch archive contains a corrupt file: {bad_file}",
+                        None
                     )
 
             os.replace(temporary_path, project_file)
