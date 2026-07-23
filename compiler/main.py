@@ -1,7 +1,7 @@
 from parser import Parser, ParseError, FailState
 from itch_ast import build_ast
 # from tools.ast_printer import print_ast
-from assembler import Assembler
+from assembler import Assembler, CompilerError
 
 import os
 # from os.path import isfile
@@ -13,6 +13,42 @@ ROOT = Path(__file__).parent.parent
 
 parser = Parser()
 assembler = Assembler()
+
+
+def format_compiler_error(
+    error: CompilerError,
+    source: str,
+    filename: str = "<source>",
+) -> str:
+    lines = source.splitlines()
+    span = error.error_node.span if error.error_node is not None else None
+
+    if span is None:
+        # no span info available - fall back to a bare message
+        return f'  File "{filename}"\nCompilerError: {error}'
+
+    start = span.start
+    end = span.end
+
+    line_number = start.line
+    if 1 <= line_number <= len(lines):
+        source_line = lines[line_number - 1]
+    else:
+        source_line = ""
+
+    if end.line == start.line:
+        pointer_width = max(1, end.character - start.character)
+    else:
+        # span crosses multiple lines - just underline to the end of the first line
+        pointer_width = max(1, len(source_line) - start.character + 1)
+
+    return (
+        f'  File "{filename}", line {line_number}\n'
+        f"    {source_line}\n"
+        f"    {' ' * (start.character - 1)}{'^' * pointer_width}\n"
+        f"{error.__class__.__name__}: {error}"
+    )
+
 
 
 def format_syntax_error(
@@ -56,13 +92,17 @@ def compile(file: str, output: str, target: str):
             tree = build_ast(parsed.tree)
             assembler.assemble(tree, output, target)
             # print_ast(tree)
-        except ParseError:
-            fail_state = parser.fail_state
-            if fail_state is not None:
-                
-                # describe failure
-                print(format_syntax_error(fail_state, source, file))
-    
+        except (ParseError, CompilerError) as e:
+            if isinstance(e, ParseError):
+                fail_state = parser.fail_state
+                if fail_state is not None:
+                    print(format_syntax_error(fail_state, source, file))
+            else:
+                print(format_compiler_error(e, source, file))
+
+            return False
+    return True
+
     
 def main():
     input_path = ROOT / "input"
@@ -90,6 +130,4 @@ def main():
 
 
 if __name__ == "__main__":
-    print("Running...")
     main()
-    print("OKAY!")

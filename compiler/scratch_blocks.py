@@ -8,6 +8,11 @@ class ReturnType:
     name: str
     return_type: DataType = DataType.NUMBER
 
+@dataclass
+class Field:
+    name: str
+    expected: tuple[str, ...]
+
 
 @dataclass(frozen=True)
 class Menu:
@@ -22,7 +27,7 @@ class Menu:
 @dataclass(frozen=True)
 class Block:
     inputs: tuple[ReturnType | Menu, ...] = ()
-    fields: tuple[str, ...] = ()
+    fields: tuple[Field, ...] = ()
     # note that some blocks (like video sensing) *do* have multiple menus. 
 
     # special case for broadcasts. while on the programmer's side they'd just use a bare string:
@@ -43,7 +48,7 @@ class Reporter:
     Describes how to assemble a floating (reporter-shaped) scratch block.
     """
     inputs: tuple[ReturnType | Menu, ...] = ()
-    fields: tuple[str, ...] = ()
+    fields: tuple[Field, ...] = ()
     return_type: VariableTypes = VariableTypes.NUMBER
     variables: tuple[str, ...] = ()
  
@@ -53,8 +58,19 @@ class Event:
     Describes how to assemble event (hat) blocks.
     """
     inputs: tuple[ReturnType | Menu, ...] = ()
-    fields: tuple[str, ...] = ()
+    fields: tuple[Field, ...] = ()
     broadcasts: tuple[str, ...] = ()
+
+
+VALID_KEYS: tuple[str, ...] = tuple([i for i in "abcdefghijklmnopqrstuvwxyz"] + ["space", "up arrow", "down arrow", "right arrow", "left arrow", "any"])
+
+
+LIST_FIELD = Field("LIST", ())
+VARIABLE_FIELD = Field("VARIABLE", ())
+EFFECT_FIELD = Field("EFFECT", (
+    "color", "fisheye", "whirl", "pixelate", "mosaic", "brightness", "ghost"
+))
+SOUND_EFFECT_FIELD = Field("EFFECT", ("PITCH", "PAN LEFT/RIGHT"))
 
 # opcode -> ordered slots.
 SCRATCH_BLOCKS: dict[str, Block | Reporter | Event] = {
@@ -73,7 +89,7 @@ SCRATCH_BLOCKS: dict[str, Block | Reporter | Event] = {
     "motion_changeyby": Block((ReturnType("DY"),)),
     "motion_sety": Block((ReturnType("Y"),)),
     "motion_ifonedgebounce": Block(()),
-    "motion_setrotationstyle": Block(fields=("STYLE",)),
+    "motion_setrotationstyle": Block(fields=(Field("STYLE", ("left-right", "don't rotate", "all around")),)),
 
     "motion_xposition": Reporter(),
     "motion_yposition": Reporter(),
@@ -92,27 +108,27 @@ SCRATCH_BLOCKS: dict[str, Block | Reporter | Event] = {
     "looks_hide": Block(()),
     "looks_changesizeby": Block((ReturnType("CHANGE"),)),
     "looks_setsizeto": Block((ReturnType("SIZE"),)),
-    "looks_changeeffectby": Block((ReturnType("CHANGE"),), ("EFFECT",)),
-    "looks_seteffectto":  Block((ReturnType("VALUE"),), ("EFFECT",)),
+    "looks_changeeffectby": Block((ReturnType("CHANGE"),), (EFFECT_FIELD,)),
+    "looks_seteffectto":  Block((ReturnType("VALUE"),), (EFFECT_FIELD,)),
     "looks_cleargraphiceffects": Block(()),
-    "looks_gotofrontback": Block(fields=("FRONT_BACK",)),
-    "looks_goforwardbackwardlayers": Block((ReturnType("NUM"),), ("FORWARD_BACKWARD",)),
+    "looks_gotofrontback": Block(fields=(Field("FRONT_BACK", ("front", "back")),)),
+    "looks_goforwardbackwardlayers": Block((ReturnType("NUM"),), (Field("FORWARD_BACKWARD", ("forward", "backward")),)),
     
 
     "looks_size": Reporter((),),
     "looks_costumenumbername": Reporter(
-        fields=("NUMBER_NAME",), return_type=VariableTypes.STRING,
+        fields=(Field("NUMBER_NAME", ("name", "number")),), return_type=VariableTypes.STRING,
     ),
     "looks_backdropnumbername": Reporter(
-        (), fields=("NUMBER_NAME",), return_type=VariableTypes.STRING,
+        (), fields=(Field("NUMBER_NAME", ("name", "number")),), return_type=VariableTypes.STRING,
     ),
 
     # --- sound ----------------------------------------------------------
     "sound_playuntildone": Block((Menu("sound_sounds_menu", "SOUND_MENU"),)),
     "sound_play": Block((Menu("sound_sounds_menu", "SOUND_MENU"),)),
     "sound_stopallsounds": Block(()),
-    "sound_changeeffectby": Block((ReturnType("CHANGE"),), ("EFFECT",)),
-    "sound_seteffectto": Block((ReturnType("VALUE"),), ("EFFECT",)),
+    "sound_changeeffectby": Block((ReturnType("CHANGE"),), (SOUND_EFFECT_FIELD,)),
+    "sound_seteffectto": Block((ReturnType("VALUE"),), (SOUND_EFFECT_FIELD,)),
     "sound_cleareffects": Block(()),
 
     "sound_changevolumeby": Block((ReturnType("VOLUME"),)),
@@ -124,9 +140,6 @@ SCRATCH_BLOCKS: dict[str, Block | Reporter | Event] = {
     "operator_random": Reporter((ReturnType("FROM"), ReturnType("TO"))),
     "operator_mod": Reporter((ReturnType("NUM1"), ReturnType("NUM2"))),
     "operator_round": Reporter((ReturnType("NUM"),)),
-    "operator_mathop": Reporter(
-        (ReturnType("NUM"),), ("OPERATOR",)
-    ),
     "operator_random": Reporter((ReturnType("FROM"), ReturnType("TO"))),
     "operator_join": Reporter(
         (ReturnType("STRING1", DataType.STRING), ReturnType("STRING2", DataType.STRING)),
@@ -139,21 +152,38 @@ SCRATCH_BLOCKS: dict[str, Block | Reporter | Event] = {
     "operator_length": Reporter((ReturnType("STRING", DataType.STRING),)),
     "operator_contains": Reporter((ReturnType("STRING1", DataType.STRING), ReturnType("STRING2", DataType.STRING)), return_type=VariableTypes.BOOLEAN),
     "operator_round": Reporter((ReturnType("NUM"),)),
-    "operator_mathop": Reporter((ReturnType("NUM", DataType.NUMBER),), (("OPERATOR",))),
+    "operator_mathop": Reporter(
+        (ReturnType("NUM"),), (Field("OPERATOR", (
+            "abs",
+            "floor",
+            "ceiling",
+            "sqrt",
+            "sin",
+            "cos",
+            "tan",
+            "asin",
+            "acos",
+            "atan",
+            "ln",
+            "log",
+            "e ^",
+            "10 ^"
+        )),)
+    ),
 
     # --- control ----------------------------------------------------
     # note: control_wait_until takes a CONDITION input like control_repeat_until
     # does elsewhere in the assembler -- it's still just a plain command block.
     "event_whenflagclicked": Event(),
-    "event_whenkeypressed": Event(fields=("KEY_OPTION",)),
+    "event_whenkeypressed": Event(fields=(Field("KEY_OPTION", VALID_KEYS),)),
     "event_whenthisspriteclicked": Event(),
-    "event_whenbackdropswitchesto": Event(fields=("BACKDROP",)),
-    "event_whengreaterthan": Event((ReturnType("VALUE"),), ("WHENGREATERTHANMENU",)),
-    "event_whenbroadcastreceived": Event(fields=("BROADCAST_OPTION",), broadcasts=("BROADCAST_OPTION",)),
+    "event_whenbackdropswitchesto": Event(fields=(Field("BACKDROP", ()),)),
+    "event_whengreaterthan": Event((ReturnType("VALUE"),), (Field("WHENGREATERTHANMENU", ("LOUDNESS", "TIMER")),)),
+    "event_whenbroadcastreceived": Event(fields=(Field("BROADCAST_OPTION", ()),), broadcasts=("BROADCAST_OPTION",)),
 
     "control_wait": Block((ReturnType("DURATION", DataType.POSITIVE_NUMBER),)),
     "control_wait_until": Block((ReturnType("CONDITION"),)),
-    "control_stop": Block(fields=("STOP_OPTION",)), # this is basically the return block. though we'll need to figure out how to return variables.
+    "control_stop": Block(fields=(Field("STOP_OPTION", ("this script", "all", "other scripts in sprite")),)), # this is basically the return block. though we'll need to figure out how to return variables.
     "control_delete_this_clone": Block(()),
 
     "event_broadcast": Block((ReturnType("BROADCAST_INPUT", DataType.STRING),), broadcasts=("BROADCAST_INPUT",)),
@@ -173,34 +203,42 @@ SCRATCH_BLOCKS: dict[str, Block | Reporter | Event] = {
     "sensing_mousex": Reporter(),
     "sensing_mousey": Reporter(),
 
-    "sensing_setdragmode": Block(fields=("DRAG_MODE",)),
+    "sensing_setdragmode": Block(fields=(Field("DRAG_MODE", ("draggable", "not draggable")),)),
     "sensing_loudness": Reporter(),
     "sensing_timer": Reporter(),
     "sensing_resettimer": Block(),
 
-    "sensing_of": Reporter((Menu("sensing_of_object_menu", "OBJECT"),), ("PROPERTY",)),
-    "sensing_current": Reporter(fields=("CURRENTMENU",),),
+    "sensing_of": Reporter((Menu("sensing_of_object_menu", "OBJECT"),), (Field("PROPERTY", ()),)),
+    "sensing_current": Reporter(fields=(Field("CURRENTMENU", (
+        "year",
+        "month",
+        "date",
+        "dayofweek",
+        "hour",
+        "minute",
+        "second"
+    )),),),
     "sensing_dayssince2000": Reporter(),
 
     "sensing_username": Reporter(return_type=VariableTypes.STRING),
     "sensing_online": Reporter(return_type=VariableTypes.BOOLEAN),
     
     # -- lists and variables
-    "data_addtolist": Block((ReturnType("ITEM", DataType.STRING),), ("LIST",), variables=("LIST",)),
-    "data_deleteoflist": Block((ReturnType("INDEX"),), ("LIST",), variables=("LIST",)),
-    "data_deletealloflist": Block(fields=("LIST",), variables=("LIST",)),
-    "data_insertatlist": Block((ReturnType("ITEM", DataType.STRING), ReturnType("INDEX")), ("LIST",), variables=("LIST",)),
+    "data_addtolist": Block((ReturnType("ITEM", DataType.STRING),), (LIST_FIELD,), variables=("LIST",)),
+    "data_deleteoflist": Block((ReturnType("INDEX"),), (LIST_FIELD,), variables=("LIST",)),
+    "data_deletealloflist": Block(fields=(LIST_FIELD,), variables=("LIST",)),
+    "data_insertatlist": Block((ReturnType("ITEM", DataType.STRING), ReturnType("INDEX")), (LIST_FIELD,), variables=("LIST",)),
     
-    "data_itemoflist": Reporter((ReturnType("INDEX"),), ("LIST",), variables=("LIST",)),
-    "data_itemnumoflist": Reporter((ReturnType("ITEM", DataType.STRING),), ("LIST",), variables=("LIST",)),
-    "data_lengthoflist": Reporter(fields=("LIST",), variables=("LIST",)),
-    "data_listcontainsitem": Reporter((ReturnType("ITEM"),), ("LIST",), variables=("LIST",)),
+    "data_itemoflist": Reporter((ReturnType("INDEX"),), (LIST_FIELD,), variables=("LIST",)),
+    "data_itemnumoflist": Reporter((ReturnType("ITEM", DataType.STRING),), (LIST_FIELD,), variables=("LIST",)),
+    "data_lengthoflist": Reporter(fields=(LIST_FIELD,), variables=("LIST",)),
+    "data_listcontainsitem": Reporter((ReturnType("ITEM"),), (LIST_FIELD,), variables=("LIST",)),
 
-    "data_showlist": Block(fields=("LIST",), variables=("LIST",)),
-    "data_hidelist": Block(fields=("LIST",), variables=("LIST",)),
+    "data_showlist": Block(fields=(LIST_FIELD,), variables=("LIST",)),
+    "data_hidelist": Block(fields=(LIST_FIELD,), variables=("LIST",)),
 
-    "data_showvariable": Block(fields=("VARIABLE",), variables=("VARIABLE",)),
-    "data_hidevariable": Block(fields=("VARIABLE",), variables=("VARIABLE",)),
+    "data_showvariable": Block(fields=(VARIABLE_FIELD,), variables=("VARIABLE",)),
+    "data_hidevariable": Block(fields=(VARIABLE_FIELD,), variables=("VARIABLE",)),
 
     # -- pen tool
     "pen_clear": Block(),

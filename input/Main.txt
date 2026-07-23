@@ -1,3 +1,5 @@
+number e
+
 define draw_square() {
     pen_penUp()
     motion_gotoxy(-40, 40)
@@ -7,6 +9,11 @@ define draw_square() {
     motion_gotoxy(-40, -40)
     motion_gotoxy(-40, 40)
     pen_penDown()
+}
+
+
+event event_whenbroadcastreceived("lmao") {
+    
 }
 
 

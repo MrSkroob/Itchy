@@ -110,6 +110,8 @@ class Assembler:
 
         self.messages: dict[str, str] = {}
 
+        self.costumes: set[str] = set()
+
         # for debugging/error messages
         self.current_token = None
     
@@ -373,31 +375,32 @@ class Assembler:
                 else:
                     inputs[arg.name] = self.emit_expr(arg_expr, context, block_id).value
 
-        index = 0
-
-        for field_name, arg_expr in zip(block_data.fields, stmt.args[len(block_data.inputs):]):
-            if field_name in block_data.variables:
+        for field, arg_expr in zip(block_data.fields, stmt.args[len(block_data.inputs):]):
+            if field.name in block_data.variables:
                 if not isinstance(arg_expr, VarExpr):
                     raise InvalidTypeError(
-                        f"{stmt.callee}: argument for {field_name} must be a variable", stmt.args[index]
+                        f"{stmt.callee}: argument for {field.name} must be a variable", arg_expr
                     )
                 try:
-                    fields[field_name] = (arg_expr.ref.root, self.get_variable(arg_expr.ref.root))
+                    fields[field.name] = (arg_expr.ref.root, self.get_variable(arg_expr.ref.root))
                 except ValueError:
                     raise NotDefinedError(f"{arg_expr.ref.root} not defined.", arg_expr)
-            elif field_name in block_data.broadcasts:
+            elif field.name in block_data.broadcasts:
                 if not isinstance(arg_expr, StringExpr):
                     raise InvalidTypeError(
-                        f"{stmt.callee}: argument for {field_name} must be a string literal", stmt.args[index]
+                        f"{stmt.callee}: argument for {field.name} must be a string literal", arg_expr
                     )
-                fields[field_name] = (arg_expr.value, self.define_broadcast(arg_expr.value))
+                fields[field.name] = (arg_expr.value, self.define_broadcast(arg_expr.value))
             else:
                 if not isinstance(arg_expr, StringExpr):
                     raise InvalidTypeError(
-                        f"{stmt.callee}: argument for {field_name} must be a string literal", stmt.args[index]
+                        f"{stmt.callee}: argument for {field.name} must be a string literal", arg_expr
                     )
-                fields[field_name] = (arg_expr.value, None)
-            index += 1
+                
+                if arg_expr.value not in field.expected and len(field.expected) > 0:
+                    raise ArgumentError(f"{arg_expr.value} is not one of {field.expected}", arg_expr)
+
+                fields[field.name] = (arg_expr.value, None)
 
         self.blocks[block_id]["fields"] = fields
         self.blocks[block_id]["inputs"] = inputs
@@ -505,17 +508,17 @@ class Assembler:
 
         field_args = stmt.params[len(block_data.inputs):]
 
-        index = 0
-
-        for field_name, arg_expr in zip(block_data.fields, field_args):
+        for field, arg_expr in zip(block_data.fields, field_args):
             if not isinstance(arg_expr, StringExpr):
-                raise InvalidTypeError(f"{stmt.name}: argument for {field_name} must be a string literal", field_args[index])
-            if field_name in block_data.broadcasts:
-                fields[field_name] = (arg_expr.value, self.define_broadcast(arg_expr.value))
+                raise InvalidTypeError(f"{stmt.name}: argument for {field.name} must be a string literal", arg_expr)
+            
+            if field.name in block_data.broadcasts:
+                fields[field.name] = (arg_expr.value, self.define_broadcast(arg_expr.value))
             else:
-                fields[field_name] = (arg_expr.value, None)
+                if arg_expr.value not in field.expected and len(field.expected) > 0:
+                    raise ArgumentError(f"{arg_expr.value} is not one of {field.expected}", arg_expr)
+                fields[field.name] = (arg_expr.value, None)
 
-            index += 1
 
         # make_block does `inputs or {}` / `fields or {}`, so when they start
         # out empty it silently swaps in a fresh dict instead of keeping our
@@ -676,7 +679,10 @@ class Assembler:
     
     def emit_for_in(self, stmt: ForInStmt, parent: StrOptional, context: StrOptional):
         list_variable_name = "list_getter" + self.new_id()
-        iterable_id = self.get_variable(stmt.iterable.root)
+        try:
+            iterable_id = self.get_variable(stmt.iterable.root)
+        except NameError:
+            raise NotDefinedError(f"{stmt.iterable.root} not defined.", stmt.iterable)
 
         self.assert_writable_name(stmt.variable, context)
         # we *still* need this id to be unique, because even if it's in a for loop, scratch considers it global.
@@ -878,7 +884,11 @@ class Assembler:
             raise CompilerError(f"Cannot assign read only argument {target.root}", target)
         
         if target.slice_expr is not None:
-            var_id = self.get_variable(target.root)
+            try:
+                var_id = self.get_variable(target.root)
+            except NameError:
+                raise NotDefinedError(f"{target.root} not defined.", target)
+            
             variable = self.variables[var_id]
 
             if variable.is_list:
@@ -902,8 +912,11 @@ class Assembler:
                 raise TypeError("Strings do not support item assignment")
         else:
             # if 
-
-            var_id = self.get_variable(target.root) 
+            try:
+                var_id = self.get_variable(target.root) 
+            except NameError:
+                raise NotDefinedError(f"{target.root} not defined.", target)
+            
             block_id = self.new_id()
             self.make_block(
                 "data_setvariableto",
@@ -1029,7 +1042,10 @@ class Assembler:
                         self.emit_expr(arg_expr, context, block_id).value
                     )
                 else:
-                    var_id = self.get_variable(arg_expr.ref.root)
+                    try:
+                        var_id = self.get_variable(arg_expr.ref.root)
+                    except NameError:
+                        raise NotDefinedError(f"{arg_expr.ref.root} not defined.", arg_expr)
                     inputs[arg.name] = (InputType.SHADOW_ONLY,
                                         (DataType.VARIABLE, arg_expr.ref.root, var_id))
             else:
@@ -1053,26 +1069,29 @@ class Assembler:
                 else:
                     inputs[arg.name] = self.emit_expr(arg_expr, context, parent).value
 
-        index = 0
-
-        for field_name, arg_expr in zip(block_data.fields, expr.args[len(block_data.inputs):]):
-            if field_name in block_data.variables:
+        for field, arg_expr in zip(block_data.fields, expr.args[len(block_data.inputs):]):
+            if field.name in block_data.variables:
                 if not isinstance(arg_expr, VarExpr):
                     raise InvalidTypeError(
-                        f"{expr.callee}: argument for {field_name} must be a variable",
-                        expr.args[index]
+                        f"{expr.callee}: argument for {field.name} must be a variable",
+                        arg_expr
                     )
-                fields[field_name] = (arg_expr.ref.root, self.get_variable(arg_expr.ref.root))
+                try:
+                    fields[field.name] = (arg_expr.ref.root, self.get_variable(arg_expr.ref.root))
+                except NameError:
+                    raise NotDefinedError(f"{arg_expr.ref.root} not defined.", arg_expr)
             else:
                 if not isinstance(arg_expr, StringExpr):
                     raise InvalidTypeError(
-                        f"{expr.callee}: argument for {field_name} must be a string literal",
-                        expr.args[index]
+                        f"{expr.callee}: argument for {field.name} must be a string literal",
+                        arg_expr
                     )
 
-                fields[field_name] = (arg_expr.value, None)
+                if arg_expr.value not in field.expected and len(field.expected) > 0:
+                    raise ArgumentError(f"{arg_expr.value} is not one of {field.expected}", arg_expr)
 
-            index += 1
+                fields[field.name] = (arg_expr.value, None)
+
             
         self.blocks[block_id]["fields"] = fields
         self.blocks[block_id]["inputs"] = inputs
@@ -1192,7 +1211,11 @@ class Assembler:
                 )
             )
         else:
-            var_id = self.get_variable(ref.root)
+            try:
+                var_id = self.get_variable(ref.root)
+            except NameError:
+                raise NotDefinedError(f"{ref.root} not defined.", ref)
+            
             var_type = self.variables[var_id].var_type
             if ref.slice_expr is not None:
                 if var_type is VariableTypes.LIST:
@@ -1352,9 +1375,6 @@ class Assembler:
         with zipfile.ZipFile(project_file, "r") as f:
             project = json.loads(f.read("project.json").decode("utf-8"))
 
-
-        self.emit_program(program)
-
         targets: list[dict[str, Any]] = project.get("targets", [])
 
         stage_target = None
@@ -1392,6 +1412,8 @@ class Assembler:
         # shouldn't be possible if provided an .sb3 file, but here for sanity's sake. 
         if stage_target is None:
             raise CompilerError(f"Target project does not have stage.", None)
+
+        self.emit_program(program)
 
         sprite_target["variables"] = self._serialise_variables()
         sprite_target["lists"] = self._serialise_lists()
