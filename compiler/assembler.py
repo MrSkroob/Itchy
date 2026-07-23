@@ -383,7 +383,7 @@ class Assembler:
                     )
                 try:
                     fields[field.name] = (arg_expr.ref.root, self.get_variable(arg_expr.ref.root))
-                except ValueError:
+                except NameError:
                     raise NotDefinedError(f"{arg_expr.ref.root} not defined.", arg_expr)
             elif field.name in block_data.broadcasts:
                 if not isinstance(arg_expr, StringExpr):
@@ -615,7 +615,7 @@ class Assembler:
 
         try:
             self.assert_writable_name(stmt.variable, context)
-        except ValueError:
+        except NameError:
             raise CompilerError(f"Cannot override read only argument {stmt.variable}", stmt.start)
 
         var_id = self.define_variable(False, "number", stmt.variable, context)

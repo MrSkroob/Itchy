@@ -1,23 +1,38 @@
-number e
+list return_values
+list return_flags
+number one
+number add_one_return
 
-define draw_square() {
-    pen_penUp()
-    motion_gotoxy(-40, 40)
-    pen_penDown()
-    motion_gotoxy(40, 40)
-    motion_gotoxy(40, -40)
-    motion_gotoxy(-40, -40)
-    motion_gotoxy(-40, 40)
-    pen_penDown()
+
+define push_return_frame() {
+    data_addtolist("", return_values)
+    data_addtolist("false", return_flags)
 }
 
 
-event event_whenbroadcastreceived("lmao") {
-    
+define set_return_value(value: string) {
+    data_replaceitemoflist(data_lengthoflist(return_values), value, return_values)
+    data_replaceitemoflist(data_lengthoflist(return_flags), "true", return_flags)
+}
+
+
+define pop_return_frame() {
+    data_deleteoflist(data_lengthoflist(return_values), return_values)
+    data_deleteoflist(data_lengthoflist(return_flags), return_flags)
+}
+
+
+define add_one(value: number)  {
+    push_return_frame()
+    set_return_value(value + 1)
+    add_one_return = data_itemoflist(data_lengthoflist(return_values), return_values)
+    pop_return_frame()
+    control_stop("this script")
 }
 
 
 event event_whenflagclicked() {
-    pen_clear()
-    draw_square()
+    one = 1
+    add_one(one)
+    one = add_one_return
 }

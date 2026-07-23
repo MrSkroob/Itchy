@@ -228,6 +228,7 @@ SCRATCH_BLOCKS: dict[str, Block | Reporter | Event] = {
     "data_deleteoflist": Block((ReturnType("INDEX"),), (LIST_FIELD,), variables=("LIST",)),
     "data_deletealloflist": Block(fields=(LIST_FIELD,), variables=("LIST",)),
     "data_insertatlist": Block((ReturnType("ITEM", DataType.STRING), ReturnType("INDEX")), (LIST_FIELD,), variables=("LIST",)),
+    "data_replaceitemoflist": Block((ReturnType("INDEX"), ReturnType("ITEM", DataType.STRING)), (LIST_FIELD,), variables=("LIST",)),
     
     "data_itemoflist": Reporter((ReturnType("INDEX"),), (LIST_FIELD,), variables=("LIST",)),
     "data_itemnumoflist": Reporter((ReturnType("ITEM", DataType.STRING),), (LIST_FIELD,), variables=("LIST",)),
