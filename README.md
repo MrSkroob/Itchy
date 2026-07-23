@@ -15,8 +15,8 @@ https://en.scratch-wiki.info/wiki/Blocks
 https://github.com/scratchfoundation/scratch-vm
 https://github.com/scratchfoundation/scratch-editor 
 
-Notes:
-Error reporting is hit or miss (extremely vague - only tells you if something has gone wrong and nothing else).
+There's *some* abstractions like for loops, while loops, for *in* loops. 
+
 # Examples
 ```
 string alphabet
@@ -64,6 +64,3 @@ event event_whenflagclicked() {
 }
 ```
 <img width="765" height="505" alt="image" src="https://github.com/user-attachments/assets/ef6963df-8d11-45d7-917e-6c16e356aa55" />
-
-# 
-
