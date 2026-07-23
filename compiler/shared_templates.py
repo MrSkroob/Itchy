@@ -1,5 +1,18 @@
 from typing import Any
+from dataclasses import dataclass
 from enum import StrEnum, Enum
+
+
+@dataclass(frozen=True)
+class SourcePosition:
+    line: int
+    character: int
+
+
+@dataclass(frozen=True)
+class SourceSpan:
+    start: SourcePosition
+    end: SourcePosition
 
 
 SPRITE_TEMPLATE: dict[str, Any] = {

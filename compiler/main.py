@@ -76,7 +76,7 @@ def main():
 
         abs_path = input_path / file_name
 
-        if file_name == "stage.txt":
+        if file_name == "Stage.txt":
             stage = abs_path
         else:
             paths.append(abs_path)
@@ -85,6 +85,7 @@ def main():
         paths.insert(0, stage)
 
     for file_name in paths:
+        print("compiling: ", file_name)
         compile(str(file_name), str((output_path / "Scratch Project.sb3")), os.path.basename(str(file_name.with_suffix(''))))
 
 

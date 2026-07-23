@@ -1,6 +1,7 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from parser import ParsedNode, Token, Sequence, Repeat, OptionalNode, Alternative
 from tokenizer import GenericRules, Definitions
+from shared_templates import SourceSpan, SourcePosition
 from typing import Callable
 import ast
 
@@ -8,9 +9,9 @@ import ast
 ParsedChild = ParsedNode | Token[Definitions]
 
 
+@dataclass(frozen=True, kw_only=True)
 class ASTNode:
-    pass
-
+    span: SourceSpan = field(default=SourceSpan(SourcePosition(0, 0), SourcePosition(0, 0)), kw_only=True, repr=False)
 
 class Stmt(ASTNode):
     pass
@@ -173,11 +174,13 @@ class ForRangeBody:
     start: Expr
     stop: Expr
     step: Expr
+    span: SourceSpan
 
 
 @dataclass(frozen=True)
 class ForInBody:
     iterable: VarRef
+    span: SourceSpan
 
 
 @dataclass(frozen=True)
@@ -192,6 +195,7 @@ class FunctionParts:
     name: str
     params: tuple[Param, ...]
     body: tuple[Stmt, ...]
+    span: SourceSpan
 
 
 @dataclass(frozen=True)
@@ -272,11 +276,11 @@ def flat_children(node: ParsedNode):
     return output
 
 
-def find_first_node(node: ParsedNode, name: str):
+def find_first_node(node: ParsedNode, name: str, children: list[ParsedChild] | None=None):
     """
     Strictly finds the first occuring node with said name
     """
-    for child in flat_children(node):
+    for child in children or flat_children(node):
         if is_node(child, name):
             assert isinstance(child, ParsedNode)
             return child
@@ -297,9 +301,8 @@ def has_node(node: ParsedNode, name: str) -> bool:
     return any(is_node(i, name) for i in flat_children(node))
 
 
-def first_token(node: ParsedNode, name: str):
-    children = flat_children(node)
-    for child in children:
+def find_first_token(node: ParsedNode, name: str, children: list[ParsedChild] | None=None):
+    for child in children or flat_children(node):
         if is_token(child, name):
             assert isinstance(child, Token)
             return child
@@ -307,8 +310,8 @@ def first_token(node: ParsedNode, name: str):
     raise ValueError(f"No token found with name {name}")
 
 
-def has_token(node: ParsedNode, name: str):
-    return any(is_token(i, name) for i in flat_children(node))
+def has_token(node: ParsedNode, name: str, children: list[ParsedChild] | None=None):
+    return any(is_token(i, name) for i in children or flat_children(node))
 
 
 def parse_number(text: str):
@@ -382,10 +385,15 @@ def build_left_associative(
     expr = operand_builder(operands[0])
 
     for op, operand in zip(operators, operands[1:]):
+        right = operand_builder(operand)
         expr = BinaryOpExpr(
             left=expr,
             op=op,
-            right=operand_builder(operand),
+            right=right,
+            span=SourceSpan(
+                start=expr.span.start,
+                end=right.span.end
+            )
         )
 
     return expr
@@ -394,12 +402,12 @@ def build_left_associative(
 def build_unary(node: ParsedNode) -> Expr:
     children = flat_children(node)
 
-    op: str | None = None
+    op: Token[Definitions] | None = None
     primary: ParsedNode | None = None
 
     for child in children:
         if (isinstance(child, Token) and child.literal == "-") and child.kind == Definitions.Binop:
-            op = child.literal
+            op = child
         elif isinstance(child, ParsedNode) and child.name == "primary":
             primary = child
 
@@ -411,7 +419,11 @@ def build_unary(node: ParsedNode) -> Expr:
     if op is None:
         return expr
 
-    return UnaryOpExpr(op, expr)
+    return UnaryOpExpr(op.literal, expr, 
+                       span=SourceSpan(
+                           start=SourcePosition(op.line, op.char),
+                           end=expr.span.end
+                       ))
 
 
 def build_primary(node: ParsedNode) -> Expr:
@@ -433,64 +445,54 @@ def build_literals(node: ParsedNode) -> Expr:
     for child in children:
         if is_token(child, name="Bool"):
             assert isinstance(child, Token)
-            return BoolExpr(child.literal.lower() == "true")
+            return BoolExpr(child.literal.lower() == "true", span=child.span)
 
         if is_token(child, name="Number"):
             assert isinstance(child, Token)
-            return NumberExpr(parse_number(child.literal))
+            return NumberExpr(parse_number(child.literal), span=child.span)
 
         if is_token(child, name="String"):
             assert isinstance(child, Token)
-            return StringExpr(parse_string(child.literal))
+            return StringExpr(parse_string(child.literal), span=child.span)
 
         if isinstance(child, ParsedNode) and child.name == "tableconstructor":
             return build_tableconstructor(child)
         
         if isinstance(child, ParsedNode) and child.name == "var":
             has_slice = has_node(child, "slice")
+            var_name = find_first_token(child, Definitions.Symbol.name)
 
             if has_slice:
+                slice_expr = build_slice(find_first_node(child, "slice"))
+
+                span = SourceSpan(
+                    var_name.span.start,
+                    slice_expr.span.end
+                )
+
                 return VarExpr(VarRef(
-                    first_token(child, Definitions.Symbol.name).literal,
-                    build_slice(find_first_node(child, "slice"))
-                ))
+                    var_name.literal,
+                    slice_expr,
+                    span=span
+                ), span=span)
             else:
                 return VarExpr(VarRef(
-                    first_token(child, Definitions.Symbol.name).literal
-                ))
+                    var_name.literal,
+                    span = var_name.span
+                ), span=var_name.span)
         
         if isinstance(child, ParsedNode) and child.name == "functioncall":
+            func_name = find_first_token(child, Definitions.Symbol.name)
+            arg_list = build_varlist1(find_first_node(child, "args"))
+
             return FunctionCallExpr(
-                first_token(child, Definitions.Symbol.name).literal,
-                build_varlist1(find_first_node(child, "args"))
+                func_name.literal,
+                arg_list,
+                span=SourceSpan(
+                    func_name.span.start,
+                    arg_list[-1].span.end if len(arg_list) > 0 else func_name.span.end
+                )
             )
-        
-        # if isinstance(child, ParsedNode) and child.name == "var":
-        #     return VarExpr(
-        #         VarRef(child.name)
-        #     )
-
-        # if isinstance(child, ParsedNode) and child.name == "functioncall":
-        #     pass
-
-    # var_node: ParsedNode | None = None
-    # functioncall_node: ParsedNode | None = None
-
-    # for child in children:
-    #     if isinstance(child, ParsedNode) and child.name == "functioncall":
-    #         functioncall_node = child
-
-    # if var_node is not None:
-    #     # assert isinstance(var_node)
-    #     func_name = first_token(node, Definitions.Symbol.name).literal
-
-    #     if functioncall_node is not None:
-    #         return FunctionCallExpr(
-    #             callee=var_expr,
-    #             arg_groups=build_functioncall(functioncall_node),
-    #         )
-
-    #     return var_expr
 
     raise ValueError(f"this ain't a literal g: {node.children}")
 
@@ -498,32 +500,22 @@ def build_literals(node: ParsedNode) -> Expr:
 def build_var(node: ParsedNode) -> VarRef:
     # children = flat_children(node)
 
-    symbol: str = first_token(node, Definitions.Symbol.name).literal
+    symbol: Token[Definitions] = find_first_token(node, Definitions.Symbol.name)
     slice_expr: Expr | None = None
     has_slice = has_node(node, "slice")
     if has_slice:
         slice_expr = build_slice(find_first_node(node, "slice"))
-    # slice_expr: Expr | None = None
-
-    # for child in children:
-    #     # this represents the dot operator
-    #     # i.e. var1.var2.var3
-    #     # thing is, scratch doesn't really support this stuff, 
-    #     # so i have no idea why the language supports this. 
-    #     # i might just remove this functionality outright?
-    #     if is_token(child, Definitions.Symbol.name):
-    #         assert isinstance(child, Token)
-    #         symbols.append(child.literal)
-
-    #     elif isinstance(child, ParsedNode) and child.name == "slice":
-    #         slice_expr = build_slice(child)
 
     if not symbol:
         raise ValueError(f"how u gonna want a variable with no name: {node!r}")
 
     return VarRef(
-        root=symbol,
+        root=symbol.literal,
         slice_expr=slice_expr,
+        span=SourceSpan(
+            symbol.span.start,
+            slice_expr.span.end if slice_expr is not None else symbol.span.end
+        )
     )
 
 
@@ -532,11 +524,30 @@ def build_slice(node: ParsedNode) -> Expr:
 
 
 def build_tableconstructor(node: ParsedNode) -> TableExpr:
-    for child in flat_children(node):
-        if isinstance(child, ParsedNode) and child.name == "varlist1":
-            return TableExpr(build_varlist1(child))
+    children = flat_children(node)
 
-    return TableExpr(())
+    bracket_tokens = [
+        child
+        for child in children
+        if isinstance(child, Token)
+        and child.kind in {
+            Definitions.OpenSquareBracket,
+            Definitions.CloseSquareBracket,
+        }
+    ]
+
+    # guaranteed to have at least two members (assuming is valid syntax)
+    span = SourceSpan(bracket_tokens[0].span.start, bracket_tokens[-1].span.end)
+
+    for child in children:
+        if isinstance(child, ParsedNode) and child.name == "varlist1":
+            args = build_varlist1(child)
+            if len(args) > 0:
+                return TableExpr(args, span=span)
+            else:
+                return TableExpr(args, span=span)
+
+    return TableExpr((), span=span)
 
 
 def build_varlist1(node: ParsedNode) -> tuple[Expr, ...]:
@@ -557,34 +568,22 @@ def build_namelist(node: ParsedNode) -> tuple[str, ...]:
     )
 
 
-# def build_assignorcall(node: ParsedNode) -> AssignOrCall:
-#     children = flat_children(node)
-
-#     if any(is_token(i, name="Assign") for i in children):
-#         equation = find_first_node(node, "equation")
-#         return AssignAction(build_equation(equation))
-
-#     functioncall = find_first_node(node, "functioncall")
-#     return CallAction(build_varlist1(functioncall))
-
-
-# def build_functioncall(node: ParsedNode) -> tuple[Expr, ...]:
-#     return tuple(
-#         build_varlist1(node)
-#         for child in flat_children(node)
-#         if isinstance(child, ParsedNode) and child.name == "args"
-#     )
-
 def build_functioncall(node: ParsedNode) -> Stmt:
+    function_name = find_first_token(node, Definitions.Symbol.name)
+    args = build_varlist1(find_first_node(node, "args"))
     return FunctionCallStmt(
-        first_token(node, Definitions.Symbol.name).literal,
-        build_varlist1(find_first_node(node, "args"))
+        function_name.literal,
+        args,
+        span=SourceSpan(
+            function_name.span.start,
+            args[-1].span.end if len(args) > 0 else function_name.span.end
+        )
     )
 
 
 def build_varassignstat(node: ParsedNode) -> Stmt:
     var_node = find_first_node(node, "var")
-    operation = first_token(node, Definitions.Assign.name)
+    operation = find_first_token(node, Definitions.Assign.name)
     action_node = find_first_node(node, "equation")
 
     target = build_var(var_node)
@@ -593,7 +592,11 @@ def build_varassignstat(node: ParsedNode) -> Stmt:
     if operation.literal == "=":
         return AssignStmt(
             target,
-            action
+            action,
+            span=SourceSpan(
+                target.span.start,
+                action.span.end
+            )
         )
     else:
         OPERATION_TO_BINOP = {
@@ -607,19 +610,35 @@ def build_varassignstat(node: ParsedNode) -> Stmt:
 
         return AssignStmt(
             target,
-            BinaryOpExpr(VarExpr(target), OPERATION_TO_BINOP[operation.literal], action),
+            BinaryOpExpr(VarExpr(target, span=target.span), 
+                         OPERATION_TO_BINOP[operation.literal], action, 
+                         span=SourceSpan(target.span.start, SourcePosition(target.span.end.line, target.span.end.character + 2))),
+            span=SourceSpan(
+                target.span.start,
+                action.span.end
+            )
         )
 
 def build_vardefstat(node: ParsedNode) -> VarDefStmt:
     shared = has_token(node, "Shared")
 
-    type_token = first_token(node, "Type")
-    symbol_token = first_token(node, "Symbol")
+
+    type_token = find_first_token(node, "Type")
+    symbol_token = find_first_token(node, "Symbol")
+
+    start = type_token.span.start
+
+    if shared:
+        start = find_first_token(node, "Shared").span.start
 
     return VarDefStmt(
         type_token.literal,
         symbol_token.literal,
         shared,
+        span=SourceSpan(
+            start=start,
+            end=symbol_token.span.end
+        )
     )
 
 
@@ -634,23 +653,10 @@ def build_paramlist(node: ParsedNode) -> tuple[Param, ...]:
 def build_argtype(node: ParsedNode) -> Param:
     children = flat_children(node)
 
-    name = expect_token(children[0], name="Symbol").literal
-    type_name = expect_token(children[2], name="Type").literal
+    name = expect_token(children[0], name="Symbol")
+    type_name = expect_token(children[2], name="Type")
 
-    return Param(name, type_name)
-
-
-# def build_eventbody(node: ParsedNode) -> tuple[tuple[Expr, ...], tuple[Stmt, ...]]:
-#     params: tuple[Expr, ...] = ()
-#     body: tuple[Stmt, ...] = ()
-
-#     for child in flat_children(node):
-#         if isinstance(child, ParsedNode) and child.name == "args":
-#             params = build_explist1(child)
-#         elif isinstance(child, ParsedNode) and child.name == "wrap":
-#             body = build_wrap(child)
-    
-#     return params, body
+    return Param(name.literal, type_name.literal, span=SourceSpan(name.span.start, type_name.span.end))
 
 
 def build_funcbody(node: ParsedNode) -> tuple[tuple[Param, ...], tuple[Stmt, ...]]:
@@ -667,30 +673,28 @@ def build_funcbody(node: ParsedNode) -> tuple[tuple[Param, ...], tuple[Stmt, ...
     return params, body    
 
 
-# def build_event(node: ParsedNode) -> EventParts:
-#     children = flat_children(node)
-#     name = expect_token(children[0], Definitions.Symbol.name).literal
-#     eventbody = expect_node(children[1], "args")
-#     wrap = expect_node(children[2], "wrap")
-
-#     return EventParts(
-#         name, 
-#         build_equation(eventbody),
-#         build_wrap(wrap)
-#     )
-
-
 def build_function(node: ParsedNode) -> FunctionParts:
     children = flat_children(node)
-    name = expect_token(children[0], Definitions.Symbol.name).literal
+    name = expect_token(children[0], Definitions.Symbol.name)
     funcbody = expect_node(children[1], "funcbody")
 
     params, body = build_funcbody(funcbody)
 
+    if len(body) > 0:
+        end = body[-1].span.end
+    elif len(params) > 0:
+        end = params[-1].span.end
+    else:
+        end = name.span.end
+
     return FunctionParts(
-        name,
+        name.literal,
         params,
-        body
+        body,
+        span=SourceSpan(
+            start=name.span.start,
+            end=end
+        )
     ) 
 
 
@@ -699,24 +703,47 @@ def build_functionstat(node: ParsedNode) -> FunctionDefStmt:
     function = find_first_node(node, "function")
     parts = build_function(function)
 
+    start = None
+
+    if warp:
+        start = find_first_token(node, Definitions.Warp.name)
+
     return FunctionDefStmt(
         parts.name,
         parts.params,
         parts.body,
         warp,
+        span=SourceSpan(
+            start=start.span.start if start else parts.span.start,
+            end=parts.span.end
+        )
     )
 
 
 def build_eventstat(node: ParsedNode) -> EventHandlerStmt:
     children = flat_children(node)
-    name = expect_token(children[1], Definitions.Symbol.name).literal
+    name = expect_token(children[1], Definitions.Symbol.name)
     eventbody = expect_node(children[2], "args")
     wrap = expect_node(children[3], "wrap")
+
+    args = build_varlist1(eventbody)
+    wrap_nodes = build_wrap(wrap)
+
+    if len(wrap_nodes) > 0:
+        end = wrap_nodes[-1].span.end
+    elif len(args) > 0:
+        end = args[-1].span.end
+    else:
+        end = name.span.end
     
     return EventHandlerStmt(
-        name, 
+        name.literal, 
         build_varlist1(eventbody),
-        build_wrap(wrap)
+        build_wrap(wrap),
+        span=SourceSpan(
+            start=name.span.start,
+            end=end
+        )
     )
 
 
@@ -725,29 +752,37 @@ def build_for_body(node: ParsedNode) -> ForBody:
 
     if any(is_token(child, Definitions.In.name) for child in children):
         # var_node = next(search_nodes(children, "var"))
-        var_node = next(
+        var_node = build_var(next(
             i for i in children 
             if isinstance(i, ParsedNode) and i.name == "var"
-            )
+            ))
 
-        return ForInBody(build_var(var_node))
+        return ForInBody(var_node, span=var_node.span)
     
     equations = [
         i for i in children
         if isinstance(i, ParsedNode) and i.name == "equation"
     ]
 
+    equation_start = build_equation(equations[0])
+    equation_stop = build_equation(equations[1])
+    step = build_equation(equations[2])
+
     return ForRangeBody(
-        build_equation(equations[0]),
-        build_equation(equations[1]),
-        build_equation(equations[2])
+        equation_start,
+        equation_stop,
+        step,
+        span=SourceSpan(
+            start=equation_start.span.start,
+            end=step.span.end
+        )
     )
 
 
 def build_forstat(node: ParsedNode):
     children = flat_children(node)
 
-    expect_token(children[0], "For")
+    for_token = expect_token(children[0], "For")
     var_name = expect_token(children[1], "Symbol").literal
 
     forbody = expect_node(children[2], "forbody")
@@ -756,19 +791,36 @@ def build_forstat(node: ParsedNode):
     body_spec = build_for_body(forbody)
     body = build_wrap(wrap)
 
+    end = None
+
+    if len(body) > 0:
+        end = body[-1].span.end
+
+    if not end:
+        end = body_spec.span.end
+
     if isinstance(body_spec, ForRangeBody):
         return ForRangeStmt(
             var_name,
             body_spec.start,
             body_spec.stop,
             body_spec.step,
-            body
+            body,
+            span=SourceSpan(
+                start=for_token.span.start,
+                end=end
+            )
         )
     else:
+        
         return ForInStmt(
             var_name,
             body_spec.iterable,
-            body
+            body,
+            span=SourceSpan(
+                start=for_token.span.start,
+                end=end
+            )
         )
 
 
@@ -778,14 +830,18 @@ def build_ifstat(node: ParsedNode):
     branches: list[IfBranch] = []
     else_body: tuple[Stmt, ...] = ()
 
-    expect_token(children[0], "If")
+    if_token = children[0]
+    assert isinstance(if_token, Token) and if_token.kind.name == Definitions.If.name
     condition = build_equation(expect_node(children[1], "equation"))
     body = build_wrap(expect_node(children[2], "wrap"))
     i = 3
 
-    branches.append(IfBranch(condition, body))
+    branches.append(IfBranch(condition, body, span=SourceSpan(if_token.span.start, body[-1].span.end if len(body) > 0 else condition.span.end)))
 
     while i < len(children) and is_token(children[i], "ElseIf"):
+        elseif_token = children[i]
+        assert isinstance(elseif_token, Token)
+
         i += 1
 
         condition = build_equation(expect_node(children[i], "equation"))
@@ -794,25 +850,41 @@ def build_ifstat(node: ParsedNode):
         body = build_wrap(expect_node(children[i], "wrap"))
         i += 1
 
-        branches.append(IfBranch(condition, body))
+        branches.append(IfBranch(condition, body, span=SourceSpan(elseif_token.span.start, body[-1].span.end if len(body) > 0 else condition.span.end)))
     
     if i < len(children) and is_token(children[i], "Else"):
         i += 1
         else_body = build_wrap(expect_node(children[i], "wrap"))
 
+    if len(else_body) > 0:
+        end = else_body[-1].span.end
+    else:
+        # branches guaranteed to have at least one member.
+        end = branches[-1].span.end
+    
+
     return IfStmt(
         tuple(branches),
-        else_body
+        else_body,
+        span=SourceSpan(if_token.span.start, end)
     ) 
 
 
 def build_whilestat(node: ParsedNode):
+    while_token = find_first_token(node, "while")
     condition = find_first_node(node, "equation")
     body = find_first_node(node, "wrap")
 
+    equation = build_equation(condition)
+    wrap = build_wrap(body)
+
     return WhileStmt(
-        build_equation(condition),
-        build_wrap(body)
+        equation,
+        wrap,
+        span=SourceSpan(
+            while_token.span.start,
+            wrap[-1].span.end if len(wrap) > 0 else equation.span.end
+        )
     )
 
 
@@ -831,17 +903,19 @@ def build_wrap(node: ParsedNode):
 def build_laststat(node: ParsedNode) -> Stmt:
     children = flat_children(node)
 
-    if any(is_token(i, Definitions.Break.name) for i in children):
-        return BreakStmt()
+    if has_token(node, Definitions.Break.name, children):
+        break_token = find_first_token(node, Definitions.Break.name, children)
+        return BreakStmt(span=break_token.span)
     
-    if any(is_token(i, Definitions.Return.name) for i in children):
+    if has_token(node, Definitions.Return.name):
+        return_token = find_first_token(node, Definitions.Return.name, children)
         values: tuple[Expr, ...] = ()
 
         for child in children:
             if isinstance(child, ParsedNode) and child.name == "varlist1":
                 values = build_varlist1(child)
         
-        return ReturnStmt(values)
+        return ReturnStmt(values, span=SourceSpan(return_token.span.start, values[-1].span.end if len(values) > 0 else return_token.span.end))
 
     raise ValueError("that's not good :[")
 
@@ -853,7 +927,19 @@ def build_stat(node: ParsedNode) -> Stmt:
 
         match child.name:
             case "wrap":
-                return BlockStmt(build_wrap(child))
+                wrap = build_wrap(child)
+
+                bracket_tokens = [
+                    child
+                    for child in flat_children(child)
+                    if isinstance(child, Token)
+                    and child.kind in {
+                        Definitions.OpenSquareBracket,
+                        Definitions.CloseSquareBracket,
+                    }
+                ]
+                
+                return BlockStmt(wrap, span=SourceSpan(bracket_tokens[0].span.start, bracket_tokens[-1].span.end))
             
             case "whilestat":
                 return build_whilestat(child)
@@ -912,13 +998,27 @@ def build_program(node: ParsedNode) -> Program:
         if isinstance(child, ParsedNode) and child.name == "vardefstat"
     )
 
-    chunk = next(
+    chunk = build_chunk(next(
         child
         for child in children
         if isinstance(child, ParsedNode) and child.name == "chunk"
-    )
+    ))
 
-    return Program(variable_definitions + build_chunk(chunk))
+    if len(variable_definitions) > 0:
+        start = variable_definitions[0].span.start
+    elif len(chunk) > 0:
+        start = chunk[0].span.start
+    else:
+        start = SourcePosition(0, 0)
+
+    if len(chunk) > 0:
+        end = chunk[-1].span.end
+    elif len(variable_definitions) > 0:
+        end = variable_definitions[-1].span.end
+    else:
+        end = SourcePosition(0, 0)
+
+    return Program(variable_definitions + chunk, span=SourceSpan(start, end))
 
 
 def build_ast(tree: ParsedChild) -> Program:

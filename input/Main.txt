@@ -1,0 +1,16 @@
+define draw_square() {
+    pen_penUp()
+    motion_gotoxy(-40, 40)
+    pen_penDown()
+    motion_gotoxy(40, 40)
+    motion_gotoxy(40, -40)
+    motion_gotoxy(-40, -40)
+    motion_gotoxy(-40, 40)
+    pen_penDown()
+}
+
+
+event event_whenflagclicked() {
+    pen_clear()
+    draw_square()
+}

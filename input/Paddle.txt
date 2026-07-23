@@ -1,7 +1,0 @@
-event event_whenflagclicked() {
-    motion_gotoxy(0, -140)
-
-    while true {
-        motion_setx(sensing_mousex())
-    }
-}

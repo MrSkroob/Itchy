@@ -14,7 +14,7 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 from tokenizer import Token, Definitions
-from compiler_shared import VariableTypes, DataType, SPRITE_TEMPLATE, COSTUME_TEMPLATE
+from shared_templates import VariableTypes, DataType, SPRITE_TEMPLATE, COSTUME_TEMPLATE
 from scratch_blocks import SCRATCH_BLOCKS, Block, Reporter, Event, Menu
 from itch_ast import \
     Stmt, VarRef, BlockStmt, IfStmt, BreakStmt, ForInStmt, WhileStmt, AssignStmt, ReturnStmt, VarDefStmt, ForRangeStmt, FunctionCallStmt, FunctionDefStmt, EventHandlerStmt, \
@@ -159,7 +159,7 @@ class Assembler:
         Do this when you strictly expect the variable to exist, and want to error if it wasn't implicitly/explicitly defined previously.
         """
         key = name
-        assert key in self.variable_map, "variable not defined!"
+        assert key in self.variable_map, f"variable {name} not defined!"
         return self.variable_map[key]
 
     def define_broadcast(self, name: str) -> str:
@@ -607,7 +607,8 @@ class Assembler:
         stop_condition = BinaryOpExpr(
             left=VarExpr(VarRef(stmt.variable)),
             op=">",
-            right=stmt.stop
+            right=stmt.stop,
+            span=stmt.span,
         )
 
         # repeat
@@ -873,42 +874,10 @@ class Assembler:
 
                 return BlockRange(block_id, block_id)
             else:
-                # string interpolation
-
-                # This commented code is for documentation - 
-                # it's a nice pattern to see how inputs/fields work in Scratch json :+1:
-
-                # var_id = self.get_variable(target.root)
-                # block_id = self.make_block(
-                #     "data_setvariableto",
-                #     parent=parent,
-                #     fields={
-                #         "VARIABLE": [target.root, var_id]
-                #     },
-                #     inputs={
-                #         "VALUE": self.emit_expr(value)
-                #     }
-                # )
-
-                # self.make_block(
-                #     "operator_letter_of",
-                #     parent=block_id,
-                #     inputs={
-                #         "LETTER": self.emit_expr(target.slice_expr),
-                #         "STRING": [InputType.REPORTER, [
-                #             DataType.VARIABLE,
-                #             target.root,
-                #             var_id
-                #         ]]
-                #     }
-                # )
-                # return BlockRange(
-                #     block_id,
-                #     block_id
-                # )
-
                 raise TypeError("Strings do not support item assignment")
         else:
+            # if 
+
             var_id = self.get_variable(target.root) 
             block_id = self.new_id()
             self.make_block(
@@ -978,6 +947,29 @@ class Assembler:
             case _:
                 raise TypeError("Bare expression (coder sucks :/)")
 
+
+    # def emit_table_expr(self, expr: TableExpr, context: StrOptional, parent: StrOptional) -> ScratchInput:
+    #     # expr.values
+    #     assert parent is not None
+
+    #     list_name = self.new_id()
+    #     temporary_list = self.define_variable(shared=False, 
+    #                                           type_name=VariableTypes.LIST.name, 
+    #                                           name=self.new_id(), 
+    #                                           context=context)
+
+    #     parent_block = self.blocks[parent]
+
+    #     if len(expr.values) > 0:
+    #         first_item = next(expr.values)
+
+    #         for item in expr.values:
+    #             block_range = self.emit_scratch_block(FunctionCallStmt("data_addtolist", (item,)))
+
+
+    #     return ScratchInput(
+    #         (InputType.BLOCK_ONLY, (DataType.LIST, ))
+    #     )
         
         # return expression
     def emit_function_expr(self, expr: FunctionCallExpr, context: StrOptional, parent: StrOptional) -> ScratchInput:
@@ -1072,7 +1064,7 @@ class Assembler:
         if op == "-":
             if isinstance(value, NumberExpr):
                 return self.emit_expr(
-                    NumberExpr(-1 * value.value), context, parent
+                    NumberExpr(-1 * value.value, span=value.span), context, parent
                 )
             else:
                 self.make_block(

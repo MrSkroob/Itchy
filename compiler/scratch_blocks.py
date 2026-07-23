@@ -1,6 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass
-from compiler_shared import VariableTypes, DataType
+from shared_templates import VariableTypes, DataType
 
 
 @dataclass(frozen=True)
@@ -192,7 +192,7 @@ SCRATCH_BLOCKS: dict[str, Block | Reporter | Event] = {
     "data_insertatlist": Block((ReturnType("ITEM", DataType.STRING), ReturnType("INDEX")), ("LIST",), variables=("LIST",)),
     
     "data_itemoflist": Reporter((ReturnType("INDEX"),), ("LIST",), variables=("LIST",)),
-    "data_itemnumoflist": Reporter((ReturnType("ITEM"),), ("LIST",), variables=("LIST",)),
+    "data_itemnumoflist": Reporter((ReturnType("ITEM", DataType.STRING),), ("LIST",), variables=("LIST",)),
     "data_lengthoflist": Reporter(fields=("LIST",), variables=("LIST",)),
     "data_listcontainsitem": Reporter((ReturnType("ITEM"),), ("LIST",), variables=("LIST",)),
 

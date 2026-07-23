@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Generic, Iterator, TypeVar
 from enum import StrEnum
+from shared_templates import SourceSpan, SourcePosition
 import re
 
 # these tend to be treated specially other than the other rules below:
@@ -20,6 +21,13 @@ class Token(Generic[TokenRule]):
     literal: str
     line: int
     char: int
+
+    @property
+    def span(self) -> SourceSpan:
+        return SourceSpan(
+            start=SourcePosition(self.line, self.char),
+            end=SourcePosition(self.line, self.char + len(self.literal))
+        )
 
     def __repr__(self) -> str:
         return f"Token: {self.kind.name} on line {self.line}"
