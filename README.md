@@ -15,6 +15,8 @@ https://en.scratch-wiki.info/wiki/Blocks
 https://github.com/scratchfoundation/scratch-vm
 https://github.com/scratchfoundation/scratch-editor 
 
+There's *some* abstractions like for loops, while loops, for *in* loops. 
+
 # Examples
 ```
 string alphabet
