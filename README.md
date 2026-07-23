@@ -15,8 +15,6 @@ https://en.scratch-wiki.info/wiki/Blocks
 https://github.com/scratchfoundation/scratch-vm
 https://github.com/scratchfoundation/scratch-editor 
 
-Notes:
-Error reporting is hit or miss (extremely vague - only tells you if something has gone wrong and nothing else).
 # Examples
 ```
 string alphabet
