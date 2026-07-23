@@ -54,7 +54,7 @@ class Definitions(StrEnum):
     If = r"\b(if)\b"
     In = r"\b(in)\b"
     Number = r"[0-9][_0-9]*(\.[0-9][_0-9]*)?"
-    Type = r"\b(number)|(string)|(list)|(bool)\b"
+    Type = r"\b(var)|(list)\b"
     Bool = r"\b(true)|(false)\b"
     Assign = r"\*=|\+=|-=|/=|=(?!=)"
     Binop = r"\.\.|<=|>=|==|!=|\+|-|\*|/|<|>|\b(?:and|or)\b|\b(not)\b"

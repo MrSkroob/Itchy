@@ -16,7 +16,7 @@ from typing import Any
 from shared_templates import VariableTypes, DataType, SPRITE_TEMPLATE, COSTUME_TEMPLATE
 from scratch_blocks import SCRATCH_BLOCKS, Block, Reporter, Event, Menu
 from itch_ast import \
-    ASTNode, \
+    ASTNode, Param, \
     Stmt, VarRef, BlockStmt, IfStmt, BreakStmt, ForInStmt, WhileStmt, AssignStmt, ReturnStmt, VarDefStmt, ForRangeStmt, FunctionCallStmt, FunctionDefStmt, EventHandlerStmt, \
     IfBranch, Expr, NumberExpr, BoolExpr, StringExpr, VarExpr, UnaryOpExpr, BinaryOpExpr, TableExpr, FunctionCallExpr, Program
 
@@ -227,6 +227,29 @@ class Assembler:
         the canvas, not linked to one another.
         """
         x, y = 100, 100
+
+        self.define_variable(False, "list", "compiler:return_values", None)
+        self.define_variable(False, "list", "compiler:return_flags", None)
+
+        # return_helper_1
+        push_return_frame = FunctionDefStmt(
+            name="compiler:push_return_frame",
+            params=(),
+            body=(
+                FunctionCallStmt("data_addtolist", (StringExpr(""), VarExpr(VarRef("compiler:return_values")))),
+                FunctionCallStmt("data_addtolist", (StringExpr("false"), VarExpr(VarRef("compiler:return_flags")))),
+            )
+        )
+
+        # return_helper_2
+        set_return_value = FunctionDefStmt(
+            name="compiler:set_return_value",
+            params=(Param("value", "string"),),
+            body=(
+                FunctionCallStmt("data_replaceitemoflist", (FunctionCallExpr("data_lengthoflist", (VarExpr(VarRef("compiler:return_values")),)), VarExpr(VarRef("value")), VarExpr(VarRef("compiler:return_values")))),
+                FunctionCallStmt("data_replaceitemoflist", (StringExpr("false"), VarExpr(VarRef("compiler:return_flags")))),
+            )
+        )
 
         for stmt in program.body:
             block_range = self.emit_stmt(stmt, None, None)
@@ -535,6 +558,8 @@ class Assembler:
         return BlockRange(event_id, body.last or event_id)
             
     def emit_function_def(self, stmt: FunctionDefStmt, parent: StrOptional) -> BlockRange:
+        self.define_variable(False, "string", stmt.name + ":return", None)
+
         definition_id = self.make_block(
             opcode="procedures_definition",
             parent=parent,
