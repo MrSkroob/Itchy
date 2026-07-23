@@ -62,6 +62,3 @@ event event_whenflagclicked() {
 }
 ```
 <img width="765" height="505" alt="image" src="https://github.com/user-attachments/assets/ef6963df-8d11-45d7-917e-6c16e356aa55" />
-
-# 
-
