@@ -33,10 +33,10 @@ event event_whenflagclicked() {
 <img width="450" height="357" alt="image" src="https://github.com/user-attachments/assets/d91fc50f-3fc6-4ac0-8a30-09824cab8a18" />
 
 ```
-number total
+var total
 list results
 
-define classify(value: number) {
+define classify(value: var) {
     if value < 0 {
         data_addtolist("negative", results)
     }
@@ -64,3 +64,25 @@ event event_whenflagclicked() {
 }
 ```
 <img width="765" height="505" alt="image" src="https://github.com/user-attachments/assets/ef6963df-8d11-45d7-917e-6c16e356aa55" />
+
+```
+var output
+
+define add_one(value: var) {
+    return value + 1
+}
+
+
+event event_whenflagclicked() {
+    output = 1
+    output = add_one(add_one(output))
+    if output == 3 {
+        looks_say("true")
+    }
+    else {
+        looks_say("false")
+    }    
+}
+```
+<img width="414" height="825" alt="image" src="https://github.com/user-attachments/assets/842cecc2-61b7-418a-9b62-8b2eb12f9bf2" />
+
