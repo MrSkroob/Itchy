@@ -148,12 +148,19 @@ class Assembler:
         ) -> str:
         # please note that we will use Scratch's naming scheme (javascript) in string names so they'll match up in the
         # final json.
+
+        if inputs is None:
+            inputs = {}
+
+        if fields is None:
+            fields = {}
+
         block: ScratchBlock = {
             "opcode": opcode,
             "next": None,
             "parent": parent,
-            "inputs": inputs or {},
-            "fields": fields or {},
+            "inputs": inputs,
+            "fields": fields,
             "shadow": shadow,
             "topLevel": top_level
         }
