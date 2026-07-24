@@ -63,8 +63,7 @@ class DataType(Enum):
 
 
 class VariableTypes(StrEnum):
-    NUMBER = "number"
-    STRING = "string"
-    BOOLEAN = "boolean"
+    VAR = "var"
+    BOOL = "bool"
     LIST = "list"
     UNKNOWN = "unknown"

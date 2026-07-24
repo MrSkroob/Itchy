@@ -49,7 +49,7 @@ class Reporter:
     """
     inputs: tuple[ReturnType | Menu, ...] = ()
     fields: tuple[Field, ...] = ()
-    return_type: VariableTypes = VariableTypes.NUMBER
+    return_type: VariableTypes = VariableTypes.VAR
     variables: tuple[str, ...] = ()
  
 @dataclass(frozen=True)
@@ -117,10 +117,10 @@ SCRATCH_BLOCKS: dict[str, Block | Reporter | Event] = {
 
     "looks_size": Reporter((),),
     "looks_costumenumbername": Reporter(
-        fields=(Field("NUMBER_NAME", ("name", "number")),), return_type=VariableTypes.STRING,
+        fields=(Field("NUMBER_NAME", ("name", "number")),), 
     ),
     "looks_backdropnumbername": Reporter(
-        (), fields=(Field("NUMBER_NAME", ("name", "number")),), return_type=VariableTypes.STRING,
+        (), fields=(Field("NUMBER_NAME", ("name", "number")),), 
     ),
 
     # --- sound ----------------------------------------------------------
@@ -143,14 +143,14 @@ SCRATCH_BLOCKS: dict[str, Block | Reporter | Event] = {
     "operator_random": Reporter((ReturnType("FROM"), ReturnType("TO"))),
     "operator_join": Reporter(
         (ReturnType("STRING1", DataType.STRING), ReturnType("STRING2", DataType.STRING)),
-        return_type=VariableTypes.STRING,
+        
     ),
     "operator_letter_of": Reporter(
         (ReturnType("LETTER"), ReturnType("STRING", DataType.STRING)),
-        return_type=VariableTypes.STRING,
+        
     ),
     "operator_length": Reporter((ReturnType("STRING", DataType.STRING),)),
-    "operator_contains": Reporter((ReturnType("STRING1", DataType.STRING), ReturnType("STRING2", DataType.STRING)), return_type=VariableTypes.BOOLEAN),
+    "operator_contains": Reporter((ReturnType("STRING1", DataType.STRING), ReturnType("STRING2", DataType.STRING)), ),
     "operator_round": Reporter((ReturnType("NUM"),)),
     "operator_mathop": Reporter(
         (ReturnType("NUM"),), (Field("OPERATOR", (
@@ -190,16 +190,16 @@ SCRATCH_BLOCKS: dict[str, Block | Reporter | Event] = {
     "event_broadcastandwait": Block((ReturnType("BROADCAST_INPUT", DataType.STRING),), broadcasts=("BROADCAST_INPUT",)),
 
     # --- sensing ----------------------------------------------------
-    "sensing_touchingobject": Reporter((Menu("sensing_touchingobjectmenu", "TOUCHINGOBJECTMENU"),), return_type=VariableTypes.BOOLEAN),
-    "sensing_touchingcolor": Reporter((ReturnType("COLOR", DataType.COLOR),), return_type=VariableTypes.BOOLEAN),
-    "sensing_coloristouchingcolor": Reporter((ReturnType("COLOR", DataType.COLOR), ReturnType("COLOR2", DataType.COLOR)), return_type=VariableTypes.BOOLEAN),
+    "sensing_touchingobject": Reporter((Menu("sensing_touchingobjectmenu", "TOUCHINGOBJECTMENU"),), ),
+    "sensing_touchingcolor": Reporter((ReturnType("COLOR", DataType.COLOR),), ),
+    "sensing_coloristouchingcolor": Reporter((ReturnType("COLOR", DataType.COLOR), ReturnType("COLOR2", DataType.COLOR)), ),
     "sensing_distanceto": Reporter((Menu("sensing_distancetomenu", "DISTANCETOMENU"),)),
 
     "sensing_askandwait": Block((ReturnType("QUESTION", DataType.STRING),)),
-    "sensing_answer": Reporter((), return_type=VariableTypes.STRING),
+    "sensing_answer": Reporter((), ),
 
     "sensing_keypressed": Reporter((Menu("sensing_keyoptions", "KEY_OPTION"),)),
-    "sensing_mousedown": Reporter(return_type=VariableTypes.BOOLEAN),
+    "sensing_mousedown": Reporter(),
     "sensing_mousex": Reporter(),
     "sensing_mousey": Reporter(),
 
@@ -220,8 +220,8 @@ SCRATCH_BLOCKS: dict[str, Block | Reporter | Event] = {
     )),),),
     "sensing_dayssince2000": Reporter(),
 
-    "sensing_username": Reporter(return_type=VariableTypes.STRING),
-    "sensing_online": Reporter(return_type=VariableTypes.BOOLEAN),
+    "sensing_username": Reporter(),
+    "sensing_online": Reporter(),
     
     # -- lists and variables
     "data_addtolist": Block((ReturnType("ITEM", DataType.STRING),), (LIST_FIELD,), variables=("LIST",)),

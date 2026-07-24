@@ -48,7 +48,6 @@ class Definitions(StrEnum):
     Warp = r"\b(warp)\b"
     Else = r"\b(else)\b"
     For = r"\b(for)\b"
-    Var = r"\b(var)\b"
     # Not = r"\b(not)\b"
     Let = r"\b(let)\b"
     If = r"\b(if)\b"

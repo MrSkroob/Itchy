@@ -24,6 +24,12 @@ from itch_ast import \
 ScratchBlock = dict[str, Any]
 StrOptional = str | None
 
+RETURN_STACK = "compiler:return_values"
+FLAG_STACK = "compiler:return_flags" 
+PUSH_RETURN_FRAME = "compiler:push_return_frame"
+SET_RETURN_VALUE = "compiler:set_return_value"
+POP_RETURN_FRAME = "compiler:pop_return_frame"
+
 
 HEXCODE = re.compile(r"^#(?:[0-9a-fA-F]{3}){1,2}$")
 ROOT = Path(__file__).parent.parent
@@ -70,7 +76,11 @@ class ArgumentError(CompilerError):
     pass
 
 
-@dataclass(frozen=True)
+class SyntaxError(CompilerError):
+    pass
+
+
+@dataclass
 class BlockRange:
     first: StrOptional
     last: StrOptional
@@ -228,43 +238,97 @@ class Assembler:
         """
         x, y = 100, 100
 
-        self.define_variable(False, "list", "compiler:return_values", None)
-        self.define_variable(False, "list", "compiler:return_flags", None)
+        self.define_variable(False, "list", RETURN_STACK, None)
+        self.define_variable(False, "list", FLAG_STACK, None)
 
-        # return_helper_1
+        # return_helper
         push_return_frame = FunctionDefStmt(
-            name="compiler:push_return_frame",
+            name=PUSH_RETURN_FRAME,
             params=(),
             body=(
-                FunctionCallStmt("data_addtolist", (StringExpr(""), VarExpr(VarRef("compiler:return_values")))),
-                FunctionCallStmt("data_addtolist", (StringExpr("false"), VarExpr(VarRef("compiler:return_flags")))),
+                FunctionCallStmt("data_addtolist", (StringExpr(""), VarExpr(VarRef(RETURN_STACK)))),
+                FunctionCallStmt("data_addtolist", (StringExpr("false"), VarExpr(VarRef(FLAG_STACK)))),
             )
         )
+        self.emit_function_def(push_return_frame, None)
 
-        # return_helper_2
+        # return_helper
         set_return_value = FunctionDefStmt(
-            name="compiler:set_return_value",
-            params=(Param("value", "string"),),
+            name=SET_RETURN_VALUE,
+            params=(Param("value", "var"),),
             body=(
-                FunctionCallStmt("data_replaceitemoflist", (FunctionCallExpr("data_lengthoflist", (VarExpr(VarRef("compiler:return_values")),)), VarExpr(VarRef("value")), VarExpr(VarRef("compiler:return_values")))),
-                FunctionCallStmt("data_replaceitemoflist", (StringExpr("false"), VarExpr(VarRef("compiler:return_flags")))),
+                FunctionCallStmt("data_replaceitemoflist", (FunctionCallExpr("data_lengthoflist", 
+                                                                            (VarExpr(
+                                                                                VarRef(RETURN_STACK)),)), 
+                                                            VarExpr(
+                                                                VarRef("value")), 
+                                                            VarExpr(
+                                                                VarRef(RETURN_STACK)))),
+                FunctionCallStmt("data_replaceitemoflist", (FunctionCallExpr("data_lengthoflist", 
+                                                                                            (VarExpr(
+                                                                                                VarRef(FLAG_STACK)),)), 
+                                                                            VarExpr(
+                                                                                VarRef("value")), 
+                                                                            VarExpr(
+                                                                                VarRef(FLAG_STACK)))),
             )
         )
 
-        for stmt in program.body:
-            block_range = self.emit_stmt(stmt, None, None)
+        # # return helper
+        pop_return_frame = FunctionDefStmt(
+            name=POP_RETURN_FRAME,
+            params=(),
+            body=(
+                FunctionCallStmt("data_deleteoflist", (FunctionCallExpr("data_lengthoflist", 
+                                                                                        (VarExpr(
+                                                                                            VarRef(RETURN_STACK)),)), 
+                                                                        VarExpr(
+                                                                            VarRef(RETURN_STACK)))),
+                FunctionCallStmt("data_deleteoflist", (FunctionCallExpr("data_lengthoflist", 
+                                                                                                        (VarExpr(
+                                                                                                            VarRef(FLAG_STACK)),)), 
+                                                                                        VarExpr(
+                                                                                            VarRef(FLAG_STACK)))),
+            )
+        )
 
-            if block_range.first is None:
-                # e.g. a bare VarDefStmt, which doesn't emit a block
-                continue
+        pre_defines = (push_return_frame, set_return_value, pop_return_frame)
 
-            first_block = self.blocks[block_range.first]
-            first_block["topLevel"] = True
-            first_block["parent"] = None
-            first_block["x"] = x
-            first_block["y"] = y
+        def emit_statements(statements: tuple[Stmt, ...]):
+            nonlocal x
+            nonlocal y
+            for stmt in statements:
+                block_range = self.emit_stmt(stmt, None, None)
+                if block_range.first is None:
+                    # e.g. a bare VarDefStmt, which doesn't emit a block
+                    continue
 
-            x += 200
+                first_block = self.blocks[block_range.first]
+                first_block["topLevel"] = True
+                first_block["parent"] = None
+                first_block["x"] = x
+                first_block["y"] = y
+
+                x += 200
+
+        emit_statements(pre_defines)
+        emit_statements(program.body)
+
+        # for stmt in body:
+        #     block_range = self.emit_stmt(stmt, None, None)
+
+        #     if block_range.first is None:
+        #         # e.g. a bare VarDefStmt, which doesn't emit a block
+        #         continue
+
+        #     first_block = self.blocks[block_range.first]
+        #     first_block["topLevel"] = True
+        #     first_block["parent"] = None
+        #     first_block["x"] = x
+        #     first_block["y"] = y
+
+        #     x += 200
+    
     
     def emit_sequence(
             self,
@@ -312,7 +376,7 @@ class Assembler:
             case ForInStmt():
                 return self.emit_for_in(stmt, parent, context)
             case EventHandlerStmt():
-                return self.emit_event_handler(stmt)
+                return self.emit_event_handler(stmt, context)
             case FunctionDefStmt():
                 return self.emit_function_def(stmt, parent)
             case FunctionCallStmt():
@@ -320,11 +384,56 @@ class Assembler:
             case BreakStmt():
                 raise NotImplementedError("Not implemented")
             case ReturnStmt():
-                raise NotImplementedError("Not implemented")
+                return self.emit_return(stmt, parent, context)
             case _:
                 raise TypeError("Bad statement type")
-            
-    def emit_scratch_block(self, stmt: FunctionCallStmt, parent: str | None, context: StrOptional) -> BlockRange | None:
+
+
+    def emit_return(self, stmt: ReturnStmt, parent: StrOptional, context: StrOptional) -> BlockRange:
+        if context is None:
+            raise SyntaxError("'return' outside of function", stmt)
+
+        proc_data = self.procedures[context]
+        return_variable = proc_data.name + ":return"
+        self.define_variable(False, "var", return_variable, None)
+
+        body: list[Stmt] = []
+
+        if len(stmt.values) > 0:
+            for value in stmt.values:
+                body.append(
+                    FunctionCallStmt(SET_RETURN_VALUE, (value,))
+                )
+        else:
+            body.append(
+                FunctionCallStmt(SET_RETURN_VALUE, (StringExpr(""),))
+            )
+
+        body.append(FunctionCallStmt("control_stop", (StringExpr("this script"),)))
+
+        return self.emit_if(
+            IfStmt(
+                branches=(IfBranch(
+                    condition=BinaryOpExpr(FunctionCallExpr("data_itemoflist", (
+                        FunctionCallExpr("data_lengthoflist", (VarExpr(VarRef(FLAG_STACK)),
+                                                                                )),
+                        VarExpr(VarRef(FLAG_STACK)), 
+                                                                                
+                                                                            )
+                                                            ), 
+                                                            "==", 
+                                                            StringExpr("false")),
+                    body=tuple(body)
+                ),),
+                else_body=()
+            ),
+            parent=parent,
+            context=context
+        )
+        
+
+    
+    def emit_scratch_block(self, stmt: FunctionCallStmt, parent: StrOptional, context: StrOptional) -> BlockRange | None:
         if stmt.callee not in SCRATCH_BLOCKS:
             return None
 
@@ -355,11 +464,13 @@ class Assembler:
 
         # inputs come first, positionally, then fields -- matches how the
         # expected_args check above adds them together.
+        index = 0
+
         for arg, arg_expr in zip(block_data.inputs, stmt.args):
             if arg in block_data.broadcasts:
                 if not isinstance(arg_expr, StringExpr):
                     inputs[arg.name] = (
-                        self.emit_expr(arg_expr, context, block_id).value
+                        self.emit_expr(arg_expr, context, BlockRange(block_id, block_id), block_id).value
                     )
                 else:
                     broadcast_id = self.define_broadcast(arg_expr.value)
@@ -368,7 +479,7 @@ class Assembler:
             elif arg in block_data.variables:
                 if not isinstance(arg_expr, VarExpr):
                     inputs[arg.name] = (
-                        self.emit_expr(arg_expr, context, block_id).value
+                        self.emit_expr(arg_expr, context, BlockRange(block_id, block_id), block_id).value
                     )
                 else:
                     try:
@@ -396,13 +507,15 @@ class Assembler:
                         inputs[arg.name] = (InputType.SHADOW_ONLY, 
                             (arg.return_type, arg_expr.value))
                 else:
-                    inputs[arg.name] = self.emit_expr(arg_expr, context, block_id).value
+                    inputs[arg.name] = self.emit_expr(arg_expr, context, BlockRange(block_id, block_id), block_id).value
+
+            index += 1
 
         for field, arg_expr in zip(block_data.fields, stmt.args[len(block_data.inputs):]):
             if field.name in block_data.variables:
                 if not isinstance(arg_expr, VarExpr):
                     raise InvalidTypeError(
-                        f"{stmt.callee}: argument for {field.name} must be a variable", arg_expr
+                        f"{stmt.callee}: argument for {index} must be a variable", arg_expr
                     )
                 try:
                     fields[field.name] = (arg_expr.ref.root, self.get_variable(arg_expr.ref.root))
@@ -411,13 +524,13 @@ class Assembler:
             elif field.name in block_data.broadcasts:
                 if not isinstance(arg_expr, StringExpr):
                     raise InvalidTypeError(
-                        f"{stmt.callee}: argument for {field.name} must be a string literal", arg_expr
+                        f"{stmt.callee}: argument {index} must be a string literal", arg_expr
                     )
                 fields[field.name] = (arg_expr.value, self.define_broadcast(arg_expr.value))
             else:
                 if not isinstance(arg_expr, StringExpr):
                     raise InvalidTypeError(
-                        f"{stmt.callee}: argument for {field.name} must be a string literal", arg_expr
+                        f"{stmt.callee}: argument {index} must be a string literal", arg_expr
                     )
                 
                 if arg_expr.value not in field.expected and len(field.expected) > 0:
@@ -425,12 +538,14 @@ class Assembler:
 
                 fields[field.name] = (arg_expr.value, None)
 
+            index += 1
+
         self.blocks[block_id]["fields"] = fields
         self.blocks[block_id]["inputs"] = inputs
 
         return BlockRange(block_id, block_id)
             
-    def emit_function_call(self, stmt: FunctionCallStmt, parent: str | None, context: StrOptional) -> BlockRange:
+    def emit_function_call(self, stmt: FunctionCallStmt, parent: StrOptional, context: StrOptional) -> BlockRange:
         if stmt.callee not in self.procedures:
             # is either a custom scratch block or a hallucination :v
             block_range = self.emit_scratch_block(stmt, parent, context)
@@ -450,16 +565,16 @@ class Assembler:
         inputs: dict[str, ScratchInputRaw] = {}
         block_id = self.new_id()
 
-        for arg_id, arg_expr in zip(info.argument_ids, stmt.args):
-            emitted_arg = self.emit_expr(arg_expr, context, block_id)
-            inputs[arg_id] = emitted_arg.value
-
         self.make_block(
             opcode="procedures_call",
             id=block_id,
             parent=parent,
             inputs=inputs,
         )
+
+        for arg_id, arg_expr in zip(info.argument_ids, stmt.args):
+            emitted_arg = self.emit_expr(arg_expr, context, BlockRange(block_id, block_id), block_id)
+            inputs[arg_id] = emitted_arg.value
 
         self.blocks[block_id]["mutation"] = {
             "tagName": "mutation",
@@ -471,7 +586,10 @@ class Assembler:
 
         return BlockRange(block_id, block_id)
     
-    def emit_event_handler(self, stmt: EventHandlerStmt) -> BlockRange:
+    def emit_event_handler(self, stmt: EventHandlerStmt, context: StrOptional) -> BlockRange:
+        if context is not None:
+            raise CompilerError(f"Cannot start a new thread while inside a function/event", stmt)
+
         if stmt.name not in SCRATCH_BLOCKS:
             raise NotDefinedError(f"{stmt.name} is not a known event", stmt)
 
@@ -506,11 +624,13 @@ class Assembler:
 
         # inputs come first, positionally, then fields, then broadcasts --
         # matches how the expected_args check above adds them together.
+        index = 0
+
         for arg, arg_expr in zip(block_data.inputs, stmt.params):
             if arg in block_data.broadcasts:
                 if not isinstance(arg_expr, StringExpr):
                     inputs[arg.name] = (
-                        self.emit_expr(arg_expr, None, event_id).value
+                        self.emit_expr(arg_expr, None, BlockRange(event_id, event_id), event_id).value
                     )
                 else:
                     broadcast_id = self.define_broadcast(arg_expr.value)
@@ -527,13 +647,14 @@ class Assembler:
                     else:
                         inputs[arg.name] = (InputType.SHADOW_ONLY, (arg.return_type, arg_expr.value))
                 else:
-                    inputs[arg.name] = self.emit_expr(arg_expr, None, event_id).value
+                    inputs[arg.name] = self.emit_expr(arg_expr, None, BlockRange(event_id, event_id), event_id).value
+            index += 1
 
         field_args = stmt.params[len(block_data.inputs):]
 
         for field, arg_expr in zip(block_data.fields, field_args):
             if not isinstance(arg_expr, StringExpr):
-                raise InvalidTypeError(f"{stmt.name}: argument for {field.name} must be a string literal", arg_expr)
+                raise InvalidTypeError(f"{stmt.name}: argument {index} must be a string literal", arg_expr)
             
             if field.name in block_data.broadcasts:
                 fields[field.name] = (arg_expr.value, self.define_broadcast(arg_expr.value))
@@ -541,6 +662,7 @@ class Assembler:
                 if arg_expr.value not in field.expected and len(field.expected) > 0:
                     raise ArgumentError(f"{arg_expr.value} is not one of {field.expected}", arg_expr)
                 fields[field.name] = (arg_expr.value, None)
+            index += 1
 
 
         # make_block does `inputs or {}` / `fields or {}`, so when they start
@@ -550,7 +672,7 @@ class Assembler:
         self.blocks[event_id]["inputs"] = inputs
         self.blocks[event_id]["fields"] = fields
 
-        body = self.emit_sequence(stmt.body, event_id, None)
+        body = self.emit_sequence(stmt.body, event_id, stmt.name)
 
         if body.first is not None:
             self.blocks[event_id]["next"] = body.first
@@ -558,7 +680,10 @@ class Assembler:
         return BlockRange(event_id, body.last or event_id)
             
     def emit_function_def(self, stmt: FunctionDefStmt, parent: StrOptional) -> BlockRange:
-        self.define_variable(False, "string", stmt.name + ":return", None)
+        if parent is not None:
+            raise SyntaxError("Cannot define function inside of another", stmt)
+
+        self.define_variable(False, "var", stmt.name + ":return", None)
 
         definition_id = self.make_block(
             opcode="procedures_definition",
@@ -624,6 +749,7 @@ class Assembler:
             argument_defaults=argument_defaults_tuple,
         )
 
+        # for concise' sake, append a return statement always
         body_range = self.emit_sequence(stmt.body, definition_id, stmt.name)
 
         if body_range.first is not None:
@@ -645,6 +771,9 @@ class Assembler:
 
         var_id = self.define_variable(False, "number", stmt.variable, context)
         set_id = self.new_id()
+
+        set_inputs: dict[str, ScratchInputRaw] = {}
+
         self.make_block(
             "data_setvariableto",
             id=set_id,
@@ -652,10 +781,10 @@ class Assembler:
             fields={
                 "VARIABLE": (stmt.variable, var_id)
             },
-            inputs={
-                "VALUE": self.emit_expr(stmt.start, context, set_id).value
-            }
+            inputs=set_inputs
         )
+
+        set_inputs["VALUE"] = self.emit_expr(stmt.start, context, BlockRange(set_id, set_id), set_id).value
 
         stop_condition = BinaryOpExpr(
             left=VarExpr(VarRef(stmt.variable)),
@@ -671,7 +800,7 @@ class Assembler:
             id=repeat_id,
             parent=set_id,
             inputs={
-                "CONDITION": self.emit_expr(stop_condition, context, repeat_id).value
+                "CONDITION": self.emit_expr(stop_condition, context, BlockRange(set_id, set_id), repeat_id).value
             }
         )
         
@@ -686,7 +815,7 @@ class Assembler:
                 "VARIABLE": (stmt.variable, var_id)
             },
             inputs={
-                "VALUE": self.emit_expr(stmt.step, context, change_id).value
+                "VALUE": self.emit_expr(stmt.step, context, BlockRange(set_id, set_id), change_id).value
             }
         )
 
@@ -732,9 +861,11 @@ class Assembler:
 
         subsequent body is parented to change_id
         """
+        repeat_id = self.new_id()
 
         # iterator variable
         set_id = self.new_id()
+        set_inputs: dict[str, ScratchInputRaw] = {}
         self.make_block(
             "data_setvariableto",
             id=set_id,
@@ -742,10 +873,9 @@ class Assembler:
             fields={
                 "VARIABLE": (list_variable_name, var_id)
             },
-            inputs={
-                "VALUE": self.emit_expr(NumberExpr(1), context, set_id).value
-            }
+            inputs=set_inputs
         )
+        set_inputs["VALUE"] = self.emit_expr(NumberExpr(1), context, BlockRange(set_id, set_id), set_id).value
 
         # operator that gets n item of list
         list_set_id = self.new_id()
@@ -754,7 +884,7 @@ class Assembler:
             itemoflist = self.emit_function_expr(FunctionCallExpr("data_itemoflist",
                                                                   (VarExpr(VarRef(list_variable_name)), 
                                                                    VarExpr(VarRef(stmt.iterable.root)))
-                                                                   ), context, list_set_id)
+                                                                   ), context, BlockRange(set_id, set_id), list_set_id)
             stop_condition = BinaryOpExpr(
                 left=VarExpr(VarRef(list_variable_name)),
                 op=">",
@@ -764,7 +894,7 @@ class Assembler:
             itemoflist = self.emit_function_expr(FunctionCallExpr("operator_letter_of", 
                                                                   (VarExpr(VarRef(list_variable_name)), 
                                                                    VarExpr(VarRef(stmt.iterable.root)))
-                                                                   ), context, list_set_id)
+                                                                   ), context, BlockRange(set_id, set_id), list_set_id)
             stop_condition = BinaryOpExpr(
                 left=VarExpr(VarRef(list_variable_name)),
                 op=">",
@@ -774,13 +904,12 @@ class Assembler:
         
 
         # repeat
-        repeat_id = self.new_id()
         self.make_block(
             "control_repeat_until",
             parent=set_id,
             id=repeat_id,
             inputs={
-                "CONDITION": self.emit_expr(stop_condition, context, repeat_id).value
+                "CONDITION": self.emit_expr(stop_condition, context, BlockRange(set_id, set_id), repeat_id).value
             }
         )
 
@@ -808,7 +937,7 @@ class Assembler:
                 "VARIABLE": (stmt.variable, var_id)
             },
             inputs={
-                "VALUE": self.emit_expr(NumberExpr(1), context, change_id).value
+                "VALUE": self.emit_expr(NumberExpr(1), context, BlockRange(set_id, set_id), change_id).value
             }
         )
 
@@ -835,15 +964,14 @@ class Assembler:
         not_condition = UnaryOpExpr("not", stmt.condition)
 
         block_id = self.new_id()
-
+        inputs: dict[str, ScratchInputRaw] = {}
         self.make_block(
             opcode="control_repeat_until",
             id=block_id,
             parent=parent,
-            inputs={
-                "CONDITION": self.emit_expr(not_condition, context, block_id).value
-            }
+            inputs=inputs
         )
+        inputs["CONDITION"] = self.emit_expr(not_condition, context, BlockRange(block_id, block_id), block_id).value
 
         body = self.emit_sequence(stmt.body, block_id, context)
 
@@ -870,14 +998,14 @@ class Assembler:
         opcode = "control_if_else" if has_else else "control_if"
 
         block_id = self.new_id()
+        inputs: dict[str, ScratchInputRaw] = {}
         self.make_block(
             opcode=opcode,
             id=block_id,
             parent=parent,
-            inputs={
-                "CONDITION": self.emit_expr(branch.condition, context, block_id).value
-            }
+            inputs=inputs
         )
+        inputs["CONDITION"] = self.emit_expr(branch.condition, context, BlockRange(block_id, block_id), block_id).value
 
         then_blocks = self.emit_sequence(branch.body, block_id, context)
 
@@ -905,8 +1033,10 @@ class Assembler:
     
     
     def emit_assignment(self, target: VarRef, value: Expr, parent: StrOptional, context: StrOptional) -> BlockRange:
-        if context is not None and target.root in self.procedures[context].argument_names:
+        if context in self.procedures and target.root in self.procedures[context].argument_names:
             raise CompilerError(f"Cannot assign read only argument {target.root}", target)
+
+        inputs: dict[str, ScratchInputRaw] = {}
         
         if target.slice_expr is not None:
             try:
@@ -923,14 +1053,13 @@ class Assembler:
                     "data_replaceitemoflist",
                     id=block_id,
                     parent=parent,
-                    inputs={
-                        "INDEX": self.emit_expr(target.slice_expr, context, block_id).value,
-                        "ITEM": self.emit_expr(value, context, block_id).value
-                    },
+                    inputs=inputs,
                     fields={
                         "LIST": (target.root, var_id)
                     }
                 )
+                inputs["INDEX"] = self.emit_expr(target.slice_expr, context, BlockRange(block_id, block_id), block_id).value
+                inputs["ITEM"] = self.emit_expr(value, context, BlockRange(block_id, block_id), block_id).value
 
                 return BlockRange(block_id, block_id)
             else:
@@ -950,28 +1079,28 @@ class Assembler:
                 fields={
                     "VARIABLE": (target.root, var_id)
                 },
-                inputs={
-                    "VALUE": self.emit_expr(value, context, block_id).value
-                }
+                inputs=inputs
             )
+
+            inputs["VALUE"] = self.emit_expr(value, context, BlockRange(block_id, block_id), block_id).value
             
             return BlockRange(
                 block_id,
                 block_id,
             )
     
-    def emit_expr(self, expr: Expr, context: StrOptional, parent: StrOptional) -> ScratchInput:
+    def emit_expr(self, expr: Expr, context: StrOptional, block_parent: BlockRange, parent: StrOptional) -> ScratchInput:
         # block_id = self.new_id()
         # expression: ScratchInput = [InputType.REPORTER, block_id]
         
         match expr:
             case NumberExpr(value=value):
-                return ScratchInput((InputType.SHADOW_ONLY, (DataType.NUMBER, str(value))), VariableTypes.NUMBER)
+                return ScratchInput((InputType.SHADOW_ONLY, (DataType.NUMBER, str(value))), VariableTypes.VAR)
             case StringExpr(value=value):
                 if re.match(HEXCODE, value) is not None:
-                    return ScratchInput((InputType.SHADOW_ONLY, (DataType.COLOR, value)), VariableTypes.STRING)
+                    return ScratchInput((InputType.SHADOW_ONLY, (DataType.COLOR, value)), VariableTypes.VAR)
                 else:
-                    return ScratchInput((InputType.SHADOW_ONLY, (DataType.STRING, value)), VariableTypes.STRING)
+                    return ScratchInput((InputType.SHADOW_ONLY, (DataType.STRING, value)), VariableTypes.VAR)
             case BoolExpr(value=value):
                 # in scratch:
                 # if (0 == 0) == "true" is true, so we can just use strings without any fancy conversion
@@ -995,137 +1124,418 @@ class Assembler:
                     }
                 )
 
-                return ScratchInput((InputType.BLOCK_ONLY, operator_id), VariableTypes.BOOLEAN)
+                return ScratchInput((InputType.BLOCK_ONLY, operator_id), VariableTypes.BOOL)
             case VarExpr(ref=ref):
-                return self.emit_var_ref(ref, context, parent)
+                return self.emit_var_ref(ref, context, block_parent, parent)
             case UnaryOpExpr(op=op, value=value):
-                return self.emit_unary_expr(op, value, context, parent)
+                return self.emit_unary_expr(op, value, context, block_parent, parent)
             case BinaryOpExpr(left=left, op=op, right=right):
-                return self.emit_binary_expr(left, op, right, context, parent)
+                return self.emit_binary_expr(left, op, right, context, block_parent, parent)
             case FunctionCallExpr():
                 # only available for scratch built-ins :v
-                return self.emit_function_expr(expr, context, parent)
+                return self.emit_function_expr(expr, context, block_parent, parent)
             case TableExpr():
                 raise NotImplementedError("out of scope for now :v")
             case _:
                 raise TypeError("Bare expression (coder sucks :/)")
 
 
-    # def emit_table_expr(self, expr: TableExpr, context: StrOptional, parent: StrOptional) -> ScratchInput:
-    #     # expr.values
-    #     assert parent is not None
+    def insert_setup_before_consumer(
+        self,
+        block_range: BlockRange,
+        setup: BlockRange,
+    ) -> None:
+        """
+        Inserts setup blocks immediately before the statement represented by
+        block_range.last.
 
-    #     list_name = self.new_id()
-    #     temporary_list = self.define_variable(shared=False, 
-    #                                           type_name=VariableTypes.LIST.name, 
-    #                                           name=self.new_id(), 
-    #                                           context=context)
+        First insertion:
 
-    #     parent_block = self.blocks[parent]
+            consumer
 
-    #     if len(expr.values) > 0:
-    #         first_item = next(expr.values)
+        becomes:
 
-    #         for item in expr.values:
-    #             block_range = self.emit_scratch_block(FunctionCallStmt("data_addtolist", (item,)))
+            setup -> consumer
 
+        Further insertions preserve evaluation order:
 
-    #     return ScratchInput(
-    #         (InputType.BLOCK_ONLY, (DataType.LIST, ))
-    #     )
-        
-        # return expression
-    def emit_function_expr(self, expr: FunctionCallExpr, context: StrOptional, parent: StrOptional) -> ScratchInput:
-        block_data = SCRATCH_BLOCKS[expr.callee]
+            setup1 -> consumer
 
-        if not isinstance(block_data, Reporter):
-            raise CompilerError(
-                f"{expr.callee} does not return anything.",
-                expr
+        becomes:
+
+            setup1 -> setup2 -> consumer
+        """
+        if setup.first is None:
+            return
+
+        if block_range.first is None or block_range.last is None:
+            raise ValueError("Cannot add expression setup to an empty block range")
+
+        assert setup.last is not None
+
+        consumer_id = block_range.last
+        consumer = self.blocks[consumer_id]
+
+        if self.blocks[setup.last]["next"] is not None:
+            raise ValueError(
+                "Expression setup already has a block after its final block"
             )
-    
-        expected_args = len(block_data.inputs) + len(block_data.fields)
 
-        if len(expr.args) != expected_args:
-            raise ArgumentError(
-                f"Block {expr.callee} expects {expected_args} argument(s), got {len(expr.args)}",
-                expr
+        if block_range.first == consumer_id:
+            # No earlier setup has been inserted yet.
+            outer_parent = consumer["parent"]
+
+            self.blocks[setup.first]["parent"] = outer_parent
+            self.blocks[setup.last]["next"] = consumer_id
+            consumer["parent"] = setup.last
+
+            block_range.first = setup.first
+            return
+
+        # Other setup blocks already precede the consumer. Insert this setup
+        # after them but before the consumer, preserving left-to-right order.
+        previous_id = consumer["parent"]
+
+        if previous_id is None:
+            raise ValueError(
+                f"Consumer block {consumer_id!r} has no previous setup block"
             )
-        
-        block_id = self.make_block(
-            opcode=expr.callee,
-            parent=parent
+
+        previous = self.blocks[previous_id]
+
+        if previous.get("next") != consumer_id:
+            raise ValueError(
+                f"Block {previous_id!r} is the consumer's parent but does not "
+                f"point to {consumer_id!r} through 'next'"
+            )
+
+        previous["next"] = setup.first
+        self.blocks[setup.first]["parent"] = previous_id
+
+        self.blocks[setup.last]["next"] = consumer_id
+        consumer["parent"] = setup.last
+
+
+    def prepend_range(
+        self,
+        block_range: BlockRange,
+        prefix: BlockRange,
+    ) -> None:
+        """
+        Inserts `prefix` immediately before `block_range`.
+
+        Before:
+
+            previous -> original_first -> ...
+
+        After:
+
+            previous -> prefix_first -> ... -> prefix_last
+                    -> original_first -> ...
+
+        `block_range` is updated in place so its first block is now
+        `prefix.first`.
+        """
+        if prefix.first is None:
+            return
+
+        if block_range.first is None:
+            block_range.first = prefix.first
+            block_range.last = prefix.last
+            return
+
+        assert prefix.last is not None
+
+        original_first = block_range.first
+        original_block = self.blocks[original_first]
+        original_parent = original_block["parent"]
+
+        prefix_first = prefix.first
+        prefix_last = prefix.last
+
+        # Connect the end of the generated setup to the original block.
+        if self.blocks[prefix_last]["next"] is not None:
+            raise ValueError(
+                "Cannot prepend a block range whose last block already has a next block"
+            )
+
+        self.blocks[prefix_last]["next"] = original_first
+        original_block["parent"] = prefix_last
+
+        if original_parent is None:
+            # It may already be a top-level script.
+            if original_block.get("topLevel", False):
+                prefix_block = self.blocks[prefix_first]
+
+                prefix_block["topLevel"] = True
+                prefix_block["parent"] = None
+                prefix_block["x"] = original_block.get("x", 100)
+                prefix_block["y"] = original_block.get("y", 100)
+
+                original_block["topLevel"] = False
+                original_block.pop("x", None)
+                original_block.pop("y", None)
+
+            else:
+                # The statement has not yet been attached by emit_sequence().
+                self.blocks[prefix_first]["parent"] = None
+
+        else:
+            parent_block = self.blocks[original_parent]
+
+            if parent_block.get("next") == original_first:
+                # Ordinary stack connection, including event hats and
+                # procedure definitions.
+                parent_block["next"] = prefix_first
+
+            elif self.replace_substack_child(
+                original_parent,
+                original_first,
+                prefix_first,
+            ):
+                # First block of an if/else/loop substack.
+                pass
+
+            else:
+                raise ValueError(
+                    "Could not find the stack connection to the block "
+                    f"{original_first!r} from its parent {original_parent!r}"
+                )
+
+            self.blocks[prefix_first]["parent"] = original_parent
+
+        # The enclosing emitter must now regard the generated setup as the
+        # beginning of the complete statement.
+        block_range.first = prefix_first
+
+
+    def replace_substack_child(
+        self,
+        parent_id: str,
+        old_child: str,
+        new_child: str,
+    ) -> bool:
+        parent_block: dict[str, Any | dict[str, ScratchInputRaw]] = self.blocks[parent_id]
+
+        for input_name, input_value in parent_block["inputs"].items():
+            if not input_name.startswith("SUBSTACK"):
+                continue
+
+            if (
+                isinstance(input_value, (tuple))
+                and len(input_value) >= 2
+                and input_value[1] == old_child
+            ):
+                if isinstance(input_value, tuple):
+                    parent_block["inputs"][input_name] = (
+                        input_value[0],
+                        new_child,
+                        *input_value[2:],
+                    )
+                else:
+                    input_value[1] = new_child
+
+                return True
+
+        return False
+
+
+    def append_range(
+        self,
+        chain: BlockRange,
+        added: BlockRange,
+    ) -> BlockRange:
+        """
+        Appends `added` to `chain`.
+
+            chain -> added
+        """
+        if added.first is None:
+            return chain
+
+        if chain.first is None:
+            return BlockRange(
+                first=added.first,
+                last=added.last,
+            )
+
+        assert chain.last is not None
+        assert added.last is not None
+
+        self.blocks[chain.last]["next"] = added.first
+        self.blocks[added.first]["parent"] = chain.last
+
+        return BlockRange(
+            first=chain.first,
+            last=added.last,
         )
 
-        inputs: dict[str, ScratchInputRaw] = {}
-        fields: dict[str, ScratchFieldRaw] = {}
-        
-        for arg, arg_expr in zip(block_data.inputs, expr.args):
-            if arg.name in block_data.variables:
-                if not isinstance(arg_expr, VarExpr):
-                    inputs[arg.name] = (
-                        self.emit_expr(arg_expr, context, block_id).value
-                    )
-                else:
-                    try:
-                        var_id = self.get_variable(arg_expr.ref.root)
-                    except NameError:
-                        raise NotDefinedError(f"{arg_expr.ref.root} not defined.", arg_expr)
-                    inputs[arg.name] = (InputType.SHADOW_ONLY,
-                                        (DataType.VARIABLE, arg_expr.ref.root, var_id))
-            else:
-                if isinstance(arg_expr, StringExpr):
-                    if isinstance(arg, Menu):
-                        # create the menu
-                        menu_id = self.make_block(
-                            opcode=arg.opcode, 
-                            parent=block_id,
-                            fields={
-                                arg.name: (
-                                    arg_expr.value,
-                                    None
-                                )
-                            }, 
-                            shadow=True)
+        # return expression
+    def emit_function_expr(self, expr: FunctionCallExpr, context: StrOptional, block_parent: BlockRange, parent: StrOptional) -> ScratchInput:
+        # if expr.callee not in SCRATCH_BLOCKS:
+        #     raise CompilerError(
+        #         f"{expr.callee} is not a valid scratch block",
+        #         expr
+        #     )
+        if expr.callee not in SCRATCH_BLOCKS:
+            setup = BlockRange(None, None)
 
-                        inputs[(arg.field_name or arg.name)] = (InputType.SHADOW_ONLY, menu_id)
-                    else:
-                        inputs[arg.name] = (InputType.SHADOW_ONLY, (arg.return_type, arg_expr.value))
-                else:
-                    inputs[arg.name] = self.emit_expr(arg_expr, context, parent).value
+            push_return_frame = self.emit_function_call(FunctionCallStmt(
+                PUSH_RETURN_FRAME,
+                ()
+            ), None, None)
 
-        for field, arg_expr in zip(block_data.fields, expr.args[len(block_data.inputs):]):
-            if field.name in block_data.variables:
-                if not isinstance(arg_expr, VarExpr):
-                    raise InvalidTypeError(
-                        f"{expr.callee}: argument for {field.name} must be a variable",
-                        arg_expr
-                    )
-                try:
-                    fields[field.name] = (arg_expr.ref.root, self.get_variable(arg_expr.ref.root))
-                except NameError:
-                    raise NotDefinedError(f"{arg_expr.ref.root} not defined.", arg_expr)
-            else:
-                if not isinstance(arg_expr, StringExpr):
-                    raise InvalidTypeError(
-                        f"{expr.callee}: argument for {field.name} must be a string literal",
-                        arg_expr
-                    )
+            setup = self.append_range(
+                setup,
+                push_return_frame,
+            )
 
-                if arg_expr.value not in field.expected and len(field.expected) > 0:
-                    raise ArgumentError(f"{arg_expr.value} is not one of {field.expected}", arg_expr)
+            function_call = self.emit_function_call(FunctionCallStmt(
+                expr.callee,
+                expr.args
+            ), None, context)
 
-                fields[field.name] = (arg_expr.value, None)
+            setup = self.append_range(
+                setup,
+                function_call,
+            )
 
             
-        self.blocks[block_id]["fields"] = fields
-        self.blocks[block_id]["inputs"] = inputs
+            set_variable = self.emit_assignment(
+                VarRef(expr.callee + ":return"),
+                FunctionCallExpr(
+                    "data_itemoflist",
+                    (
+                        FunctionCallExpr(
+                            "data_lengthoflist",
+                            (
+                                VarExpr(
+                                    VarRef(RETURN_STACK),
+                                ),
+                            ),
+                        ),
+                        VarExpr(
+                            VarRef(RETURN_STACK),
+                        ),
+                    ),
+                ),
+                None,
+                None,
+            )
 
-        return ScratchInput(
-            (InputType.BLOCK_ONLY if block_data.return_type == VariableTypes.BOOLEAN else InputType.BLOCK_AND_SHADOW, block_id), block_data.return_type
-        )
+            setup = self.append_range(
+                setup,
+                set_variable,
+            )
 
-    def emit_unary_expr(self, op: str, value: Expr, context: StrOptional, parent: StrOptional) -> ScratchInput:
+            pop_return_frame = self.emit_function_call(FunctionCallStmt(
+                POP_RETURN_FRAME,
+                ()
+            ), None, None)
+
+            setup = self.append_range(
+                setup,
+                pop_return_frame,
+            )
+
+            self.insert_setup_before_consumer(
+                block_parent,
+                setup,
+            )
+        else:
+            block_data = SCRATCH_BLOCKS[expr.callee]
+
+            if not isinstance(block_data, Reporter):
+                raise CompilerError(
+                    f"{expr.callee} does not return anything.",
+                    expr
+                )
+        
+            expected_args = len(block_data.inputs) + len(block_data.fields)
+
+            if len(expr.args) != expected_args:
+                raise ArgumentError(
+                    f"Block {expr.callee} expects {expected_args} argument(s), got {len(expr.args)}",
+                    expr
+                )
+            
+            block_id = self.make_block(
+                opcode=expr.callee,
+                parent=parent
+            )
+
+            inputs: dict[str, ScratchInputRaw] = {}
+            fields: dict[str, ScratchFieldRaw] = {}
+
+            index = 0
+            for arg, arg_expr in zip(block_data.inputs, expr.args):
+                if arg.name in block_data.variables:
+                    if not isinstance(arg_expr, VarExpr):
+                        inputs[arg.name] = (
+                            self.emit_expr(arg_expr, context, block_parent, block_id).value
+                        )
+                    else:
+                        try:
+                            var_id = self.get_variable(arg_expr.ref.root)
+                        except NameError:
+                            raise NotDefinedError(f"{arg_expr.ref.root} not defined.", arg_expr)
+                        inputs[arg.name] = (InputType.SHADOW_ONLY,
+                                            (DataType.VARIABLE, arg_expr.ref.root, var_id))
+                else:
+                    if isinstance(arg_expr, StringExpr):
+                        if isinstance(arg, Menu):
+                            # create the menu
+                            menu_id = self.make_block(
+                                opcode=arg.opcode, 
+                                parent=block_id,
+                                fields={
+                                    arg.name: (
+                                        arg_expr.value,
+                                        None
+                                    )
+                                }, 
+                                shadow=True)
+
+                            inputs[(arg.field_name or arg.name)] = (InputType.SHADOW_ONLY, menu_id)
+                        else:
+                            inputs[arg.name] = (InputType.SHADOW_ONLY, (arg.return_type, arg_expr.value))
+                    else:
+                        inputs[arg.name] = self.emit_expr(arg_expr, context, block_parent, parent).value
+                index += 1
+
+            for field, arg_expr in zip(block_data.fields, expr.args[len(block_data.inputs):]):
+                if field.name in block_data.variables:
+                    if not isinstance(arg_expr, VarExpr):
+                        raise InvalidTypeError(
+                            f"{expr.callee}: argument {index} must be a variable",
+                            arg_expr
+                        )
+                    try:
+                        fields[field.name] = (arg_expr.ref.root, self.get_variable(arg_expr.ref.root))
+                    except NameError:
+                        raise NotDefinedError(f"{arg_expr.ref.root} not defined.", arg_expr)
+                else:
+                    if not isinstance(arg_expr, StringExpr):
+                        raise InvalidTypeError(
+                            f"{expr.callee}: argument {index} must be a string literal",
+                            arg_expr
+                        )
+
+                    if arg_expr.value not in field.expected and len(field.expected) > 0:
+                        raise ArgumentError(f"{arg_expr.value} is not one of {field.expected}", arg_expr)
+
+                    fields[field.name] = (arg_expr.value, None)
+                index += 1
+
+                
+            self.blocks[block_id]["fields"] = fields
+            self.blocks[block_id]["inputs"] = inputs
+
+            return ScratchInput(
+                (InputType.BLOCK_ONLY if block_data.return_type == VariableTypes.BOOL else InputType.BLOCK_AND_SHADOW, block_id), block_data.return_type
+            )
+
+    def emit_unary_expr(self, op: str, value: Expr, context: StrOptional, block_parent: BlockRange, parent: StrOptional) -> ScratchInput:
         block_id = self.new_id()
         if op in {"not", "!"}:
             self.make_block(
@@ -1133,15 +1543,15 @@ class Assembler:
                 id=block_id,
                 parent=parent,
                 inputs={
-                    "OPERAND": self.emit_expr(value, context, block_id).value,
+                    "OPERAND": self.emit_expr(value, context, block_parent, block_id).value,
                 },
             )
-            return ScratchInput((InputType.BLOCK_ONLY, block_id), VariableTypes.BOOLEAN)
+            return ScratchInput((InputType.BLOCK_ONLY, block_id), VariableTypes.BOOL)
 
         if op == "-":
             if isinstance(value, NumberExpr):
                 return self.emit_expr(
-                    NumberExpr(-1 * value.value, span=value.span), context, parent
+                    NumberExpr(-1 * value.value, span=value.span), context, block_parent, parent
                 )
             else:
                 self.make_block(
@@ -1150,18 +1560,18 @@ class Assembler:
                     parent=parent,
                     inputs={
                         "NUM1": (InputType.SHADOW_ONLY, (DataType.NUMBER, "-1")),
-                        "NUM2": self.emit_expr(value, context, block_id).value,
+                        "NUM2": self.emit_expr(value, context, block_parent, block_id).value,
                     },
                 )
-                return ScratchInput((InputType.BLOCK_ONLY, block_id), VariableTypes.NUMBER)
+                return ScratchInput((InputType.BLOCK_ONLY, block_id), VariableTypes.VAR)
 
         raise NotImplementedError(f"Unsupported unary operator: {op}")
     
-    def emit_binary_expr(self, left: Expr, op: str, right: Expr, context: StrOptional, parent: StrOptional) -> ScratchInput:
+    def emit_binary_expr(self, left: Expr, op: str, right: Expr, context: StrOptional, block_parent: BlockRange, parent: StrOptional) -> ScratchInput:
         block_id = self.new_id()
 
-        left_expr = self.emit_expr(left, context, block_id)
-        right_expr = self.emit_expr(right, context, block_id)
+        left_expr = self.emit_expr(left, context, block_parent, block_id)
+        right_expr = self.emit_expr(right, context, block_parent, block_id)
 
         opcode, left_name, right_name = {
             "+": ("operator_add", "NUM1", "NUM2"),
@@ -1175,9 +1585,9 @@ class Assembler:
             "or": ("operator_or", "OPERAND1", "OPERAND2"),
         }[op]
         if op in {"==", ">", "<", "and", "or"}:
-            return_type = VariableTypes.BOOLEAN
+            return_type = VariableTypes.BOOL
         else:
-            return_type = VariableTypes.NUMBER
+            return_type = VariableTypes.VAR
 
         left_input = left_expr.value
         right_input = right_expr.value
@@ -1193,11 +1603,11 @@ class Assembler:
         )
 
         return ScratchInput(
-            (InputType.BLOCK_ONLY if return_type == VariableTypes.BOOLEAN else InputType.BLOCK_AND_SHADOW, block_id),
+            (InputType.BLOCK_ONLY if return_type == VariableTypes.BOOL else InputType.BLOCK_AND_SHADOW, block_id),
             return_type,
         )
 
-    def emit_var_ref(self, ref: VarRef, context: StrOptional, parent: StrOptional) -> ScratchInput:
+    def emit_var_ref(self, ref: VarRef, context: StrOptional, block_parent: BlockRange, parent: StrOptional) -> ScratchInput:
         if context in self.procedures:
             procedure_info = self.procedures[context]
 
@@ -1248,7 +1658,7 @@ class Assembler:
                         opcode="data_itemoflist",
                         parent=parent,
                         inputs={
-                            "INDEX": self.emit_expr(ref.slice_expr, context, parent).value
+                            "INDEX": self.emit_expr(ref.slice_expr, context, block_parent, parent).value
                         },
                         fields={
                             "LIST": (
@@ -1266,7 +1676,7 @@ class Assembler:
                         opcode="operator_letter_of",
                         parent=parent,
                         inputs={
-                            "LETTER": self.emit_expr(ref.slice_expr, context, parent).value,
+                            "LETTER": self.emit_expr(ref.slice_expr, context, block_parent, parent).value,
                             "STRING": (
                                 InputType.BLOCK_ONLY,  (
                                     DataType.VARIABLE,
@@ -1281,7 +1691,7 @@ class Assembler:
                         (
                             InputType.BLOCK_ONLY,
                             operator_id
-                        ), VariableTypes.STRING
+                        ), VariableTypes.VAR
                     )
 
             else:
