@@ -19,7 +19,7 @@ There's *some* abstractions like for loops, while loops, for *in* loops and retu
 
 # Examples
 ```
-string alphabet
+var alphabet
 
 event event_whenflagclicked() {
     alphabet = "abcdefghijklmnopqrstuvwxyz"
