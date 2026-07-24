@@ -414,6 +414,10 @@ class Assembler:
                 FunctionCallStmt(SET_RETURN_VALUE, (StringExpr(""),))
             )
 
+        body.append(FunctionCallStmt(
+            "control_stop", (StringExpr("this script"),)
+        ))
+
         return self.emit_if(
             IfStmt(
                 branches=(IfBranch(
@@ -779,7 +783,7 @@ class Assembler:
         except NameError:
             raise CompilerError(f"Cannot override read only argument {stmt.variable}", stmt.start)
 
-        var_id = self.define_variable(False, "number", stmt.variable, context)
+        var_id = self.define_variable(False, "var", stmt.variable, context)
         set_id = self.new_id()
 
         set_inputs: dict[str, ScratchInputRaw] = {}
@@ -871,8 +875,8 @@ class Assembler:
         self.assert_writable_name(stmt.variable, context)
         # we *still* need this id to be unique, because even if it's in a for loop, scratch considers it global.
         # so we need a variable with a unique name to avoid amiguity.
-        var_id = self.define_variable(False, "number", list_variable_name, context) # not to be used by the programmer, so is given garbage name.
-        var_list_item_id = self.define_variable(False, "number", stmt.variable, context) # variable type doesn't matter as long as it's not 'list'
+        var_id = self.define_variable(False, "var", list_variable_name, context) # not to be used by the programmer, so is given garbage name.
+        var_list_item_id = self.define_variable(False, "var", stmt.variable, context) # variable type doesn't matter as long as it's not 'list'
 
         """
         temp = 1 // set_id
