@@ -250,7 +250,6 @@ class Assembler:
                 FunctionCallStmt("data_addtolist", (StringExpr("false"), VarExpr(VarRef(FLAG_STACK)))),
             )
         )
-        self.emit_function_def(push_return_frame, None)
 
         # return_helper
         set_return_value = FunctionDefStmt(
@@ -267,8 +266,7 @@ class Assembler:
                 FunctionCallStmt("data_replaceitemoflist", (FunctionCallExpr("data_lengthoflist", 
                                                                                             (VarExpr(
                                                                                                 VarRef(FLAG_STACK)),)), 
-                                                                            VarExpr(
-                                                                                VarRef("value")), 
+                                                                            StringExpr("true"),
                                                                             VarExpr(
                                                                                 VarRef(FLAG_STACK)))),
             )
@@ -409,8 +407,6 @@ class Assembler:
                 FunctionCallStmt(SET_RETURN_VALUE, (StringExpr(""),))
             )
 
-        body.append(FunctionCallStmt("control_stop", (StringExpr("this script"),)))
-
         return self.emit_if(
             IfStmt(
                 branches=(IfBranch(
@@ -461,6 +457,7 @@ class Assembler:
             opcode=stmt.callee,
             parent=parent,
         )
+        block_range = BlockRange(block_id, block_id)
 
         # inputs come first, positionally, then fields -- matches how the
         # expected_args check above adds them together.
@@ -470,7 +467,7 @@ class Assembler:
             if arg in block_data.broadcasts:
                 if not isinstance(arg_expr, StringExpr):
                     inputs[arg.name] = (
-                        self.emit_expr(arg_expr, context, BlockRange(block_id, block_id), block_id).value
+                        self.emit_expr(arg_expr, context, block_range, block_id).value
                     )
                 else:
                     broadcast_id = self.define_broadcast(arg_expr.value)
@@ -479,7 +476,7 @@ class Assembler:
             elif arg in block_data.variables:
                 if not isinstance(arg_expr, VarExpr):
                     inputs[arg.name] = (
-                        self.emit_expr(arg_expr, context, BlockRange(block_id, block_id), block_id).value
+                        self.emit_expr(arg_expr, context, block_range, block_id).value
                     )
                 else:
                     try:
@@ -507,7 +504,7 @@ class Assembler:
                         inputs[arg.name] = (InputType.SHADOW_ONLY, 
                             (arg.return_type, arg_expr.value))
                 else:
-                    inputs[arg.name] = self.emit_expr(arg_expr, context, BlockRange(block_id, block_id), block_id).value
+                    inputs[arg.name] = self.emit_expr(arg_expr, context, block_range, block_id).value
 
             index += 1
 
@@ -543,7 +540,7 @@ class Assembler:
         self.blocks[block_id]["fields"] = fields
         self.blocks[block_id]["inputs"] = inputs
 
-        return BlockRange(block_id, block_id)
+        return block_range
             
     def emit_function_call(self, stmt: FunctionCallStmt, parent: StrOptional, context: StrOptional) -> BlockRange:
         if stmt.callee not in self.procedures:
@@ -571,9 +568,15 @@ class Assembler:
             parent=parent,
             inputs=inputs,
         )
+        block_range = BlockRange(block_id, block_id)
 
         for arg_id, arg_expr in zip(info.argument_ids, stmt.args):
-            emitted_arg = self.emit_expr(arg_expr, context, BlockRange(block_id, block_id), block_id)
+            emitted_arg = self.emit_expr(
+                arg_expr,
+                context,
+                block_range,
+                block_id,
+            )
             inputs[arg_id] = emitted_arg.value
 
         self.blocks[block_id]["mutation"] = {
@@ -584,7 +587,7 @@ class Assembler:
             "warp": "false",
         }
 
-        return BlockRange(block_id, block_id)
+        return block_range
     
     def emit_event_handler(self, stmt: EventHandlerStmt, context: StrOptional) -> BlockRange:
         if context is not None:
@@ -784,7 +787,10 @@ class Assembler:
             inputs=set_inputs
         )
 
-        set_inputs["VALUE"] = self.emit_expr(stmt.start, context, BlockRange(set_id, set_id), set_id).value
+        set_range = BlockRange(set_id, set_id)
+        set_inputs["VALUE"] = self.emit_expr(
+            stmt.start, context, set_range, set_id
+        ).value
 
         stop_condition = BinaryOpExpr(
             left=VarExpr(VarRef(stmt.variable)),
@@ -795,18 +801,25 @@ class Assembler:
 
         # repeat
         repeat_id = self.new_id()
+        repeat_inputs: dict[str, ScratchInputRaw] = {}
         self.make_block(
             "control_repeat_until",
             id=repeat_id,
             parent=set_id,
-            inputs={
-                "CONDITION": self.emit_expr(stop_condition, context, BlockRange(set_id, set_id), repeat_id).value
-            }
+            inputs=repeat_inputs,
         )
-        
-        self.blocks[set_id]["next"] = repeat_id
+        repeat_range = BlockRange(repeat_id, repeat_id)
+        repeat_inputs["CONDITION"] = self.emit_expr(
+            stop_condition, context, repeat_range, repeat_id
+        ).value
+
+        assert set_range.last is not None
+        assert repeat_range.first is not None
+        self.blocks[set_range.last]["next"] = repeat_range.first
+        self.blocks[repeat_range.first]["parent"] = set_range.last
 
         change_id = self.new_id()
+        change_inputs: dict[str, ScratchInputRaw] = {}
         self.make_block(
             opcode="data_changevariableby",
             id=change_id,
@@ -814,22 +827,32 @@ class Assembler:
             fields={
                 "VARIABLE": (stmt.variable, var_id)
             },
-            inputs={
-                "VALUE": self.emit_expr(stmt.step, context, BlockRange(set_id, set_id), change_id).value
-            }
+            inputs=change_inputs,
         )
+        change_range = BlockRange(change_id, change_id)
+        change_inputs["VALUE"] = self.emit_expr(
+            stmt.step, context, change_range, change_id
+        ).value
 
-        body = self.emit_sequence(stmt.body, change_id, context)
+        body = self.emit_sequence(stmt.body, repeat_id, context)
 
+        assert change_range.first is not None
         if body.first is None:
-            self.blocks[repeat_id]["inputs"]["SUBSTACK"] = (InputType.BLOCK_ONLY, change_id)
+            self.blocks[repeat_id]["inputs"]["SUBSTACK"] = (
+                InputType.BLOCK_ONLY,
+                change_range.first,
+            )
+            self.blocks[change_range.first]["parent"] = repeat_id
         else:
-            self.blocks[repeat_id]["inputs"]["SUBSTACK"] = (InputType.BLOCK_ONLY, body.first)
-            assert body.last is not None, "body.first isn't None, but body.last is?"
-            self.blocks[body.last]["next"] = change_id
-            self.blocks[change_id]["parent"] = body.last
-        
-        return BlockRange(set_id, repeat_id)
+            self.blocks[repeat_id]["inputs"]["SUBSTACK"] = (
+                InputType.BLOCK_ONLY,
+                body.first,
+            )
+            assert body.last is not None
+            self.blocks[body.last]["next"] = change_range.first
+            self.blocks[change_range.first]["parent"] = body.last
+
+        return BlockRange(set_range.first, repeat_id)
     
     def emit_for_in(self, stmt: ForInStmt, parent: StrOptional, context: StrOptional):
         list_variable_name = "list_getter" + self.new_id()
@@ -971,25 +994,26 @@ class Assembler:
             parent=parent,
             inputs=inputs
         )
-        inputs["CONDITION"] = self.emit_expr(not_condition, context, BlockRange(block_id, block_id), block_id).value
+        block_range = BlockRange(block_id, block_id)
+        inputs["CONDITION"] = self.emit_expr(
+            not_condition, context, block_range, block_id
+        ).value
 
         body = self.emit_sequence(stmt.body, block_id, context)
 
         if body.first is not None:
             self.blocks[block_id]["inputs"]["SUBSTACK"] = (InputType.BLOCK_ONLY, body.first)
         
-        return BlockRange(block_id, block_id)
+        return block_range
             
-    def emit_if(self, stmt: IfStmt, parent: StrOptional, context: StrOptional):
-        first = self.emit_if_branch_chain(
+    def emit_if(self, stmt: IfStmt, parent: StrOptional, context: StrOptional) -> BlockRange:
+        return self.emit_if_branch_chain(
             stmt.branches,
             stmt.else_body,
             0,
             parent,
-            context
+            context,
         )
-
-        return BlockRange(first, first)
 
     def emit_if_branch_chain(self, branches: tuple[IfBranch, ...], else_body: tuple[Stmt, ...], index: int, parent: StrOptional, context: StrOptional):
         branch = branches[index]
@@ -1005,7 +1029,10 @@ class Assembler:
             parent=parent,
             inputs=inputs
         )
-        inputs["CONDITION"] = self.emit_expr(branch.condition, context, BlockRange(block_id, block_id), block_id).value
+        block_range = BlockRange(block_id, block_id)
+        inputs["CONDITION"] = self.emit_expr(
+            branch.condition, context, block_range, block_id
+        ).value
 
         then_blocks = self.emit_sequence(branch.body, block_id, context)
 
@@ -1020,16 +1047,19 @@ class Assembler:
                     else_body,
                     index + 1,
                     block_id,
-                    context
+                    context,
                 )
-                self.blocks[block_id]["inputs"]["SUBSTACK2"] = (InputType.BLOCK_ONLY, nested_if)
+                self.blocks[block_id]["inputs"]["SUBSTACK2"] = (
+                    InputType.BLOCK_ONLY,
+                    nested_if.first,
+                )
             else:
                 # no more if statements. rest of the code is not part of this if branch
                 else_blocks = self.emit_sequence(else_body, block_id, context)
                 if else_blocks.first is not None:
                     self.blocks[block_id]["inputs"]["SUBSTACK2"] = (InputType.BLOCK_ONLY, else_blocks.first)
         
-        return block_id
+        return block_range
     
     
     def emit_assignment(self, target: VarRef, value: Expr, parent: StrOptional, context: StrOptional) -> BlockRange:
@@ -1058,10 +1088,15 @@ class Assembler:
                         "LIST": (target.root, var_id)
                     }
                 )
-                inputs["INDEX"] = self.emit_expr(target.slice_expr, context, BlockRange(block_id, block_id), block_id).value
-                inputs["ITEM"] = self.emit_expr(value, context, BlockRange(block_id, block_id), block_id).value
+                block_range = BlockRange(block_id, block_id)
+                inputs["INDEX"] = self.emit_expr(
+                    target.slice_expr, context, block_range, block_id
+                ).value
+                inputs["ITEM"] = self.emit_expr(
+                    value, context, block_range, block_id
+                ).value
 
-                return BlockRange(block_id, block_id)
+                return block_range
             else:
                 raise TypeError("Strings do not support item assignment")
         else:
@@ -1082,12 +1117,12 @@ class Assembler:
                 inputs=inputs
             )
 
-            inputs["VALUE"] = self.emit_expr(value, context, BlockRange(block_id, block_id), block_id).value
-            
-            return BlockRange(
-                block_id,
-                block_id,
-            )
+            block_range = BlockRange(block_id, block_id)
+            inputs["VALUE"] = self.emit_expr(
+                value, context, block_range, block_id
+            ).value
+
+            return block_range
     
     def emit_expr(self, expr: Expr, context: StrOptional, block_parent: BlockRange, parent: StrOptional) -> ScratchInput:
         # block_id = self.new_id()
@@ -1146,30 +1181,24 @@ class Assembler:
         setup: BlockRange,
     ) -> None:
         """
-        Inserts setup blocks immediately before the statement represented by
-        block_range.last.
+        Inserts command blocks required by an expression immediately before
+        the statement block that consumes the expression.
 
-        First insertion:
+        The consumer is ``block_range.last``.  ``block_range.first`` may
+        already point to setup generated by an earlier argument, so further
+        setup is inserted after the existing setup and before the consumer.
 
-            consumer
-
-        becomes:
-
-            setup -> consumer
-
-        Further insertions preserve evaluation order:
-
-            setup1 -> consumer
-
-        becomes:
-
-            setup1 -> setup2 -> consumer
+        This is intended for blocks that are still being emitted.  The outer
+        ``next``/``SUBSTACK`` connection is established later by
+        ``emit_sequence`` or the surrounding control-block emitter.
         """
         if setup.first is None:
             return
 
         if block_range.first is None or block_range.last is None:
-            raise ValueError("Cannot add expression setup to an empty block range")
+            raise ValueError(
+                "Cannot add expression setup to an empty block range"
+            )
 
         assert setup.last is not None
 
@@ -1182,131 +1211,35 @@ class Assembler:
             )
 
         if block_range.first == consumer_id:
-            # No earlier setup has been inserted yet.
+            # This is the first setup sequence inserted before the consumer.
             outer_parent = consumer["parent"]
 
             self.blocks[setup.first]["parent"] = outer_parent
             self.blocks[setup.last]["next"] = consumer_id
             consumer["parent"] = setup.last
-
             block_range.first = setup.first
             return
 
-        # Other setup blocks already precede the consumer. Insert this setup
-        # after them but before the consumer, preserving left-to-right order.
+        # Existing setup already leads into the consumer. Append the new
+        # setup immediately before the consumer to preserve left-to-right
+        # argument evaluation.
         previous_id = consumer["parent"]
-
         if previous_id is None:
             raise ValueError(
-                f"Consumer block {consumer_id!r} has no previous setup block"
+                f"Consumer block {consumer_id!r} has no preceding setup block"
             )
 
         previous = self.blocks[previous_id]
-
         if previous.get("next") != consumer_id:
             raise ValueError(
-                f"Block {previous_id!r} is the consumer's parent but does not "
-                f"point to {consumer_id!r} through 'next'"
+                f"Block {previous_id!r} is the consumer's parent but does "
+                f"not point to {consumer_id!r} through 'next'"
             )
 
         previous["next"] = setup.first
         self.blocks[setup.first]["parent"] = previous_id
-
         self.blocks[setup.last]["next"] = consumer_id
         consumer["parent"] = setup.last
-
-
-    def prepend_range(
-        self,
-        block_range: BlockRange,
-        prefix: BlockRange,
-    ) -> None:
-        """
-        Inserts `prefix` immediately before `block_range`.
-
-        Before:
-
-            previous -> original_first -> ...
-
-        After:
-
-            previous -> prefix_first -> ... -> prefix_last
-                    -> original_first -> ...
-
-        `block_range` is updated in place so its first block is now
-        `prefix.first`.
-        """
-        if prefix.first is None:
-            return
-
-        if block_range.first is None:
-            block_range.first = prefix.first
-            block_range.last = prefix.last
-            return
-
-        assert prefix.last is not None
-
-        original_first = block_range.first
-        original_block = self.blocks[original_first]
-        original_parent = original_block["parent"]
-
-        prefix_first = prefix.first
-        prefix_last = prefix.last
-
-        # Connect the end of the generated setup to the original block.
-        if self.blocks[prefix_last]["next"] is not None:
-            raise ValueError(
-                "Cannot prepend a block range whose last block already has a next block"
-            )
-
-        self.blocks[prefix_last]["next"] = original_first
-        original_block["parent"] = prefix_last
-
-        if original_parent is None:
-            # It may already be a top-level script.
-            if original_block.get("topLevel", False):
-                prefix_block = self.blocks[prefix_first]
-
-                prefix_block["topLevel"] = True
-                prefix_block["parent"] = None
-                prefix_block["x"] = original_block.get("x", 100)
-                prefix_block["y"] = original_block.get("y", 100)
-
-                original_block["topLevel"] = False
-                original_block.pop("x", None)
-                original_block.pop("y", None)
-
-            else:
-                # The statement has not yet been attached by emit_sequence().
-                self.blocks[prefix_first]["parent"] = None
-
-        else:
-            parent_block = self.blocks[original_parent]
-
-            if parent_block.get("next") == original_first:
-                # Ordinary stack connection, including event hats and
-                # procedure definitions.
-                parent_block["next"] = prefix_first
-
-            elif self.replace_substack_child(
-                original_parent,
-                original_first,
-                prefix_first,
-            ):
-                # First block of an if/else/loop substack.
-                pass
-
-            else:
-                raise ValueError(
-                    "Could not find the stack connection to the block "
-                    f"{original_first!r} from its parent {original_parent!r}"
-                )
-
-            self.blocks[prefix_first]["parent"] = original_parent
-
-        # The enclosing emitter must now regard the generated setup as the
-        # beginning of the complete statement.
-        block_range.first = prefix_first
 
 
     def replace_substack_child(
@@ -1442,6 +1375,13 @@ class Assembler:
                 block_parent,
                 setup,
             )
+
+            return self.emit_var_ref(
+                VarRef(expr.callee + ":return"),
+                None,
+                block_parent,
+                parent,
+            )
         else:
             block_data = SCRATCH_BLOCKS[expr.callee]
 
@@ -1500,7 +1440,7 @@ class Assembler:
                         else:
                             inputs[arg.name] = (InputType.SHADOW_ONLY, (arg.return_type, arg_expr.value))
                     else:
-                        inputs[arg.name] = self.emit_expr(arg_expr, context, block_parent, parent).value
+                        inputs[arg.name] = self.emit_expr(arg_expr, context, block_parent, block_id).value
                 index += 1
 
             for field, arg_expr in zip(block_data.fields, expr.args[len(block_data.inputs):]):
@@ -1608,7 +1548,10 @@ class Assembler:
         )
 
     def emit_var_ref(self, ref: VarRef, context: StrOptional, block_parent: BlockRange, parent: StrOptional) -> ScratchInput:
-        if context in self.procedures:
+        if (
+            context in self.procedures
+            and ref.root in self.procedures[context].argument_names
+        ):
             procedure_info = self.procedures[context]
 
             try:

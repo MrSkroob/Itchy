@@ -6,5 +6,6 @@ define add_one(value: var) {
 
 
 event event_whenflagclicked() {
+    one = 0
     one = add_one(one)
 }
