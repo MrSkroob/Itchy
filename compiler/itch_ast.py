@@ -904,21 +904,46 @@ def build_laststat(node: ParsedNode) -> Stmt:
     children = flat_children(node)
 
     if has_token(node, Definitions.Break.name, children):
-        break_token = find_first_token(node, Definitions.Break.name, children)
+        break_token = find_first_token(
+            node,
+            Definitions.Break.name,
+            children,
+        )
         return BreakStmt(span=break_token.span)
-    
-    if has_token(node, Definitions.Return.name):
-        return_token = find_first_token(node, Definitions.Return.name, children)
-        values: tuple[Expr, ...] = ()
 
-        for child in children:
-            if isinstance(child, ParsedNode) and child.name == "varlist1":
-                values = build_varlist1(child)
-        
-        return ReturnStmt(values, span=SourceSpan(return_token.span.start, values[-1].span.end if len(values) > 0 else return_token.span.end))
+    if has_token(node, Definitions.Return.name, children):
+        return_token = find_first_token(
+            node,
+            Definitions.Return.name,
+            children,
+        )
+
+        equation_node = next(
+            (
+                child
+                for child in children
+                if isinstance(child, ParsedNode) and child.name == "equation"
+            ),
+            None,
+        )
+
+        if equation_node is None:
+            return ReturnStmt(
+                (),
+                span=return_token.span,
+            )
+
+        value = build_equation(equation_node)
+
+        return ReturnStmt(
+            (value,),
+            span=SourceSpan(
+                start=return_token.span.start,
+                end=value.span.end,
+            ),
+        )
 
     raise ValueError("that's not good :[")
-
 
 def build_stat(node: ParsedNode) -> Stmt:
     for child in flat_children(node):
