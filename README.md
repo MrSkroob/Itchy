@@ -16,6 +16,7 @@ https://github.com/scratchfoundation/scratch-vm
 https://github.com/scratchfoundation/scratch-editor 
 
 There's *some* abstractions like for loops, while loops, for *in* loops and return statements.
+Return statements use a stack, so they'll work for recursive calls and nested calls like `variable = foo(foo(variable))`
 
 # Examples
 ```
