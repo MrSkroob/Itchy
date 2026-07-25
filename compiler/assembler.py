@@ -809,7 +809,7 @@ class Assembler:
         stop_condition = BinaryOpExpr(
             left=VarExpr(VarRef(stmt.variable)),
             op=">",
-            right=BinaryOpExpr(stmt.start, "-", stmt.step),
+            right=BinaryOpExpr(stmt.stop, "-", stmt.step),
             span=stmt.span,
         )
 
