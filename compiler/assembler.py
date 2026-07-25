@@ -106,6 +106,9 @@ class ProcedureInfo:
     argument_names: tuple[str, ...]
     argument_defaults: tuple[str, ...]
 
+    # compiler only. does not get serialised
+    argument_types: tuple[VariableTypes, ...]
+
 
 class Assembler:
     def __init__(self) -> None:
@@ -463,6 +466,7 @@ class Assembler:
         index = 0
 
         for arg, arg_expr in zip(block_data.inputs, stmt.args):
+            # arg.return_type
             if arg in block_data.broadcasts:
                 if not isinstance(arg_expr, StringExpr):
                     inputs[arg.name] = (
@@ -548,9 +552,9 @@ class Assembler:
             if block_range is None:
                 raise NotDefinedError(f"Procedure {stmt.callee} is not defined and is not a valid scratch block.", stmt)
             return block_range
-        
-        info = self.procedures[stmt.callee]
 
+        info = self.procedures[stmt.callee]
+        
         if len(stmt.args) != len(info.argument_ids):
             raise ArgumentError(
                 f"Function {stmt.callee} expects {len(info.argument_ids)} arguments, "
@@ -569,14 +573,20 @@ class Assembler:
         )
         block_range = BlockRange(block_id, block_id)
 
-        for arg_id, arg_expr in zip(info.argument_ids, stmt.args):
+        index = 0
+        for arg_id, arg_type, arg_expr in zip(info.argument_ids, info.argument_types, stmt.args):
             emitted_arg = self.emit_expr(
                 arg_expr,
                 context,
                 block_range,
                 block_id,
             )
+
+            if arg_type != emitted_arg.return_type:
+                raise InvalidTypeError(f"{stmt.callee}: argument {index} expected {arg_type} not {emitted_arg.return_type}", arg_expr)
+            
             inputs[arg_id] = emitted_arg.value
+            index += 1
 
         self.blocks[block_id]["mutation"] = {
             "tagName": "mutation",
@@ -703,6 +713,7 @@ class Assembler:
         argument_ids: list[str] = []
         argument_names: list[str] = []
         argument_defaults: list[str] = []
+        argument_types: list[VariableTypes] = []
         proccode_parts: list[str] = [stmt.name]
 
         for param in stmt.params:
@@ -710,6 +721,7 @@ class Assembler:
 
             argument_ids.append(arg_id)
             argument_names.append(param.name)
+            argument_types.append(VariableTypes(param.type_name))
 
             if param.type_name == "bool":
                 proccode_parts.append("%b")
@@ -717,6 +729,7 @@ class Assembler:
             else:
                 proccode_parts.append("%s")
                 argument_defaults.append("")
+
 
             self.define_variable(False, param.type_name, param.name, definition_id)
 
@@ -740,6 +753,7 @@ class Assembler:
         argument_ids_tuple = tuple(argument_ids)
         argument_names_tuple = tuple(argument_names)
         argument_defaults_tuple = tuple(argument_defaults)
+        argument_types_tuple = tuple(argument_types)
         proccode = " ".join(proccode_parts)
 
         self.procedures[stmt.name] = ProcedureInfo(
@@ -749,6 +763,7 @@ class Assembler:
             argument_ids=argument_ids_tuple,
             argument_names=argument_names_tuple,
             argument_defaults=argument_defaults_tuple,
+            argument_types=argument_types_tuple
         )
 
         # for concise' sake, append a return statement always
@@ -1513,6 +1528,33 @@ class Assembler:
         left_expr = self.emit_expr(left, context, block_parent, block_id)
         right_expr = self.emit_expr(right, context, block_parent, block_id)
 
+        if op == "in":
+            if right_expr.return_type is VariableTypes.LIST:
+                if not isinstance(right, VarExpr):
+                    raise InvalidTypeError(f"Right expression must be a list", right)
+
+                try:
+                    list_id = self.get_variable(right.ref.root)
+                except NameError:
+                    raise NotDefinedError(f"{right.ref.root} is not defined", right)
+
+                self.make_block(
+                    opcode="data_listcontainsitem",
+                    id=block_id,
+                    parent=parent,
+                    inputs={
+                        "ITEM": left_expr.value
+                    },
+                    fields={
+                        "LIST": (right.ref.root, list_id)
+                    }
+                )
+
+                return ScratchInput(
+                    (InputType.BLOCK_AND_SHADOW, block_id), VariableTypes.BOOL
+                )
+                
+        
         opcode, left_name, right_name = {
             "+": ("operator_add", "NUM1", "NUM2"),
             "-": ("operator_subtract", "NUM1", "NUM2"),
@@ -1523,6 +1565,7 @@ class Assembler:
             "<": ("operator_lt", "OPERAND1", "OPERAND2"),
             "and": ("operator_and", "OPERAND1", "OPERAND2"),
             "or": ("operator_or", "OPERAND1", "OPERAND2"),
+            "in": ("operator_contains", "STRING1", "STRING2")
         }[op]
         if op in {"==", ">", "<", "and", "or"}:
             return_type = VariableTypes.BOOL

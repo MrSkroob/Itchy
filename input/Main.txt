@@ -1,8 +1,16 @@
 var alphabet
+list test
+
+
+define len(variable: var) {
+    return operator_length(variable)
+}
 
 
 define main() {
     alphabet = "abcdefghijklmnopqrstuvwxyz"
+
+    looks_sayforsecs(len(alphabet), 2)
 
     for i in alphabet {
         looks_say(i)
@@ -12,5 +20,8 @@ define main() {
 
 
 event event_whenflagclicked() {
+    if "a" in test {
+        looks_say("oh noes!")
+    }
     main()
 }
