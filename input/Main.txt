@@ -1,10 +1,12 @@
-var result
+var alphabet
 
 
 define main() {
-    for i = 1, 10, 1 {
+    alphabet = "abcdefghijklmnopqrstuvwxyz"
+
+    for i in alphabet {
         looks_say(i)
-        control_wait(0.5)
+        control_wait(0.1)
     }
 }
 

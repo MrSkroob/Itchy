@@ -960,7 +960,7 @@ class Assembler:
                 "VARIABLE": (stmt.variable, var_id)
             },
             inputs={
-                "VALUE": self.emit_expr(NumberExpr(1), context, BlockRange(set_id, set_id), change_id).value
+                "VALUE": self.emit_expr(NumberExpr(0), context, BlockRange(set_id, set_id), change_id).value
             }
         )
 
