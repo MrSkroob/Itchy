@@ -959,8 +959,8 @@ def build_stat(node: ParsedNode) -> Stmt:
                     for child in flat_children(child)
                     if isinstance(child, Token)
                     and child.kind in {
-                        Definitions.OpenSquareBracket,
-                        Definitions.CloseSquareBracket,
+                        Definitions.OpenCurlyBracket,
+                        Definitions.CloseCurlyBracket,
                     }
                 ]
                 

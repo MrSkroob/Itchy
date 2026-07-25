@@ -1,11 +1,14 @@
-var one
+var result
 
-define add_one(value: var) {
-    return value + 1
+
+define main() {
+    for i = 1, 10, 1 {
+        looks_say(i)
+        control_wait(0.5)
+    }
 }
 
 
 event event_whenflagclicked() {
-    one = 0
-    one = add_one(one)
+    main()
 }

@@ -57,6 +57,7 @@ def format_syntax_error(
     filename: str = "<source>",
     message: str = "invalid syntax",
 ) -> str:
+    print(state.node)
     
     # we use max because state.pos has - 1 applied to it already, so it's impossible for it to be greater than the number of tokens.
     token = state.tokens[max(0, state.pos)]

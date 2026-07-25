@@ -196,6 +196,9 @@ class Assembler:
     def assert_writable_name(self, var_name: str, context: StrOptional) -> None:
         if context is None:
             return
+
+        if context not in self.procedures:
+            return
         
         procedure = self.procedures[context]
         if var_name in procedure.argument_names:
@@ -318,21 +321,6 @@ class Assembler:
 
         emit_statements(pre_defines)
         emit_statements(program.body)
-
-        # for stmt in body:
-        #     block_range = self.emit_stmt(stmt, None, None)
-
-        #     if block_range.first is None:
-        #         # e.g. a bare VarDefStmt, which doesn't emit a block
-        #         continue
-
-        #     first_block = self.blocks[block_range.first]
-        #     first_block["topLevel"] = True
-        #     first_block["parent"] = None
-        #     first_block["x"] = x
-        #     first_block["y"] = y
-
-        #     x += 200
     
     
     def emit_sequence(
@@ -409,37 +397,37 @@ class Assembler:
                 body.append(
                     FunctionCallStmt(SET_RETURN_VALUE, (value,))
                 )
-        else:
-            body.append(
-                FunctionCallStmt(SET_RETURN_VALUE, (StringExpr(""),))
-            )
 
-        body.append(FunctionCallStmt(
+        control_stop = FunctionCallStmt(
             "control_stop", (StringExpr("this script"),)
-        ))
-
-        return self.emit_if(
-            IfStmt(
-                branches=(IfBranch(
-                    condition=BinaryOpExpr(FunctionCallExpr("data_itemoflist", (
-                        FunctionCallExpr("data_lengthoflist", (VarExpr(VarRef(FLAG_STACK)),
-                                                                                )),
-                        VarExpr(VarRef(FLAG_STACK)), 
-                                                                                
-                                                                            )
-                                                            ), 
-                                                            "==", 
-                                                            StringExpr("false")),
-                    body=tuple(body)
-                ),),
-                else_body=()
-            ),
-            parent=parent,
-            context=context
         )
+
+        body.append(control_stop)
+
+        if len(stmt.values) > 0:
+            return self.emit_if(
+                IfStmt(
+                    branches=(IfBranch(
+                        condition=BinaryOpExpr(FunctionCallExpr("data_itemoflist", (
+                            FunctionCallExpr("data_lengthoflist", (VarExpr(VarRef(FLAG_STACK)),
+                                                                                    )),
+                            VarExpr(VarRef(FLAG_STACK)), 
+                                                                                    
+                                                                                )
+                                                                ), 
+                                                                "==", 
+                                                                StringExpr("false")),
+                        body=tuple(body)
+                    ),),
+                    else_body=()
+                ),
+                parent=parent,
+                context=context
+            )
+        else:
+            return self.emit_function_call(control_stop, parent, context)
         
 
-    
     def emit_scratch_block(self, stmt: FunctionCallStmt, parent: StrOptional, context: StrOptional) -> BlockRange | None:
         if stmt.callee not in SCRATCH_BLOCKS:
             return None
@@ -800,13 +788,13 @@ class Assembler:
 
         set_range = BlockRange(set_id, set_id)
         set_inputs["VALUE"] = self.emit_expr(
-            stmt.start, context, set_range, set_id
+            BinaryOpExpr(stmt.start, "-", stmt.step), context, set_range, set_id
         ).value
 
         stop_condition = BinaryOpExpr(
             left=VarExpr(VarRef(stmt.variable)),
             op=">",
-            right=stmt.stop,
+            right=BinaryOpExpr(stmt.start, "-", stmt.step),
             span=stmt.span,
         )
 
@@ -845,23 +833,24 @@ class Assembler:
             stmt.step, context, change_range, change_id
         ).value
 
-        body = self.emit_sequence(stmt.body, repeat_id, context)
+        body = self.emit_sequence(stmt.body, change_id, context)
 
         assert change_range.first is not None
         if body.first is None:
             self.blocks[repeat_id]["inputs"]["SUBSTACK"] = (
                 InputType.BLOCK_ONLY,
-                change_range.first,
+                change_id,
             )
-            self.blocks[change_range.first]["parent"] = repeat_id
+            # self.blocks[change_range.first]["parent"] = repeat_id
         else:
             self.blocks[repeat_id]["inputs"]["SUBSTACK"] = (
                 InputType.BLOCK_ONLY,
-                body.first,
+                change_id,
             )
-            assert body.last is not None
-            self.blocks[body.last]["next"] = change_range.first
-            self.blocks[change_range.first]["parent"] = body.last
+            assert body.first is not None
+            self.blocks[change_id]["next"] = body.first
+            # self.blocks[body.last]["next"] = change_range.first
+            # self.blocks[change_range.first]["parent"] = body.last
 
         return BlockRange(set_range.first, repeat_id)
     
@@ -1259,7 +1248,7 @@ class Assembler:
         old_child: str,
         new_child: str,
     ) -> bool:
-        parent_block: dict[str, Any | dict[str, ScratchInputRaw]] = self.blocks[parent_id]
+        parent_block: dict[str, ScratchBlock] = self.blocks[parent_id]
 
         for input_name, input_value in parent_block["inputs"].items():
             if not input_name.startswith("SUBSTACK"):
@@ -1267,10 +1256,10 @@ class Assembler:
 
             if (
                 isinstance(input_value, (tuple))
-                and len(input_value) >= 2
+                and len(input_value) >= 2 # type: ignore
                 and input_value[1] == old_child
             ):
-                if isinstance(input_value, tuple):
+                if isinstance(input_value, tuple): # type: ignore
                     parent_block["inputs"][input_name] = (
                         input_value[0],
                         new_child,
