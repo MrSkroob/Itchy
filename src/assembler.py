@@ -32,7 +32,7 @@ POP_RETURN_FRAME = "compiler:pop_return_frame"
 
 
 HEXCODE = re.compile(r"^#(?:[0-9a-fA-F]{3}){1,2}$")
-ROOT = Path(__file__).parent.parent
+ROOT = Path(__file__).parent
 TEMP_FILE_SRC = ROOT / "assets" / "empty.svg"
 
 # return types as tuples are OKAY, because serialisation converts them all to lists anyway.
@@ -320,7 +320,7 @@ class Assembler:
                 first_block["x"] = x
                 first_block["y"] = y
 
-                x += 200
+                y += 200
 
         emit_statements(pre_defines)
         emit_statements(program.body)
@@ -1748,13 +1748,29 @@ class Assembler:
     def _serialise_broadcasts(self) -> dict[str, str]:
         return {broadcast_id: name for name, broadcast_id in self.messages.items()}
 
+    def get_stage(self, f: zipfile.ZipFile) -> dict[str, dict[str, tuple[str, Any] | str]]:
+        project = json.loads(f.read("project.json").decode("utf-8"))
+        targets: list[dict[str, Any]] = project.get("targets", [])
+        for candidate in targets:
+            if candidate.get("isStage", True):
+                return candidate
+        raise CompilerError(f"No stage target in project file.", None)
 
-    def prepare_assemble(self) -> None:
+    def prepare(self, target: str) -> None:
         """
         Prepares the assembler to assemble the next file. It does the following:
         1. Clears blocks, variables, lists, etc. that are local to the sprite
         2. *Keeps* stage/global data
         """
+        with zipfile.ZipFile(target, "r") as f:
+            stage = self.get_stage(f)
+
+        for var_id, var_data in stage["variables"].items():
+            self.variables[var_id] = VariableData(var_data[0], var_id, None, VariableTypes.VAR, False, True, var_data[1])
+
+        for broadcast_id, broadcast_name in stage["broadcasts"].items():
+            assert isinstance(broadcast_name, str)
+            self.messages[broadcast_id] = broadcast_name
 
         # we do not clear shared variables/lists, 
         for variable_id in list(self.variables):
@@ -1769,15 +1785,6 @@ class Assembler:
         self.blocks.clear()
         self.procedures.clear()
         self.current_token = None
-
-    
-    # def clone_asset(self, file_name: str):
-    #     asset_id = self.new_id()
-
-    #     directory = ROOT / "assets" / file_name
-
-    #     # src = Path(s(directory.absolute()))
-    #     dst = Path()
 
 
     def assemble(self, program: Program, project_file: str, target: str) -> None:

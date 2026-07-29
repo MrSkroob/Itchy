@@ -20,7 +20,7 @@ def print_out_all(json_dict: dict[str, Any]):
     print(json.dumps(json_dict, indent=4))
 
 
-def print_out_stuff(json_dict: dict[str, Any], verbose: bool=False):
+def print_out_stuff(json_dict: dict[str, Any], verbose: bool=False, ignore_blocks: bool=False):
     if verbose:
         print("FULL: ", json.dumps(project_json, indent=4))
     else:
@@ -28,9 +28,11 @@ def print_out_stuff(json_dict: dict[str, Any], verbose: bool=False):
             print("\nTARGET:", i["name"])
             print(i["variables"])
             print(i["lists"])
-            blocks = i["blocks"]
-            for id in blocks:
-                print(id, json.dumps(blocks[id], indent=4, ensure_ascii=True))
+            print(i["broadcasts"])
+            if not ignore_blocks:
+                blocks = i["blocks"]
+                for id in blocks:
+                    print(id, json.dumps(blocks[id], indent=4, ensure_ascii=True))
 
 
 # `project_json = load_project("scratch_project/Scratch Project.sb3")
@@ -40,10 +42,11 @@ def print_out_stuff(json_dict: dict[str, Any], verbose: bool=False):
 
 parser = argparse.ArgumentParser()
 parser.add_argument("dir", help="file directory to print out")
+parser.add_argument("-b", "--blocks", help="do not print blocks", default=False, type=bool)
 parser.add_argument("-v", "--verbose", help="print in full", default=False, type=bool)
 args = parser.parse_args()
 project_json = load_project(args.dir)
-print_out_stuff(project_json, args.verbose)
+print_out_stuff(project_json, args.verbose, args.blocks)
 
 
 # example of block data:

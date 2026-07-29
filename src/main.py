@@ -2,6 +2,7 @@ from parser import Parser, ParseError, FailState
 from itch_ast import build_ast
 # from tools.ast_printer import print_ast
 from assembler import Assembler, CompilerError
+import argparse
 
 import os
 # from os.path import isfile
@@ -88,7 +89,7 @@ def compile(file: str, output: str, target: str):
     with open(file) as f:
         source = f.read()
         try:
-            assembler.prepare_assemble()
+            assembler.prepare(output)
             parsed = parser.read(source)
             tree = build_ast(parsed.tree)
             assembler.assemble(tree, output, target)
@@ -131,4 +132,12 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    cli_parser = argparse.ArgumentParser(
+        prog="Itchy Compiler",
+        description="Compiles itchy code to .sb3"
+    )
+    cli_parser.add_argument("source", help="Path to the itch code", type=str)
+    cli_parser.add_argument("output", help="Output .sb3 file", type=str)
+    args = cli_parser.parse_args()
+    source_path = Path(args.source)
+    compile(args.source, args.output, os.path.basename(str(source_path.with_suffix(''))))
