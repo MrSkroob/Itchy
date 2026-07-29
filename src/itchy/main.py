@@ -1,6 +1,7 @@
-from parser import Parser, ParseError, FailState
+from parser import Parser, ParseError
 from itch_ast import build_ast
 # from tools.ast_printer import print_ast
+from errors import format_syntax_error, format_compiler_error
 from assembler import Assembler, CompilerError
 import argparse
 
@@ -14,72 +15,6 @@ ROOT = Path(__file__).parent.parent
 
 parser = Parser()
 assembler = Assembler()
-
-
-def format_compiler_error(
-    error: CompilerError,
-    source: str,
-    filename: str = "<source>",
-) -> str:
-    lines = source.splitlines()
-    span = error.error_node.span if error.error_node is not None else None
-
-    if span is None:
-        # no span info available - fall back to a bare message
-        return f'  File "{filename}"\nCompilerError: {error}'
-
-    start = span.start
-    end = span.end
-
-    line_number = start.line
-    if 1 <= line_number <= len(lines):
-        source_line = lines[line_number - 1]
-    else:
-        source_line = ""
-
-    if end.line == start.line:
-        pointer_width = max(1, end.character - start.character)
-    else:
-        # span crosses multiple lines - just underline to the end of the first line
-        pointer_width = max(1, len(source_line) - start.character + 1)
-
-    return (
-        f'  File "{filename}", line {line_number}\n'
-        f"    {source_line}\n"
-        f"    {' ' * (start.character - 1)}{'^' * pointer_width}\n"
-        f"{error.__class__.__name__}: {error}"
-    )
-
-
-
-def format_syntax_error(
-    state: FailState,
-    source: str,
-    filename: str = "<source>",
-    message: str = "invalid syntax",
-) -> str:
-    print(state.node)
-    
-    # we use max because state.pos has - 1 applied to it already, so it's impossible for it to be greater than the number of tokens.
-    token = state.tokens[max(0, state.pos)]
-    lines = source.splitlines()
-
-    line_number = token.line
-    character = token.char
-
-    if 1 <= line_number <= len(lines):
-        source_line = lines[line_number - 1]
-    else:
-        source_line = ""
-
-    pointer_width = max(1, len(token.literal))
-
-    return (
-        f'  File "{filename}", line {line_number}\n'
-        f"    {source_line}\n"
-        f"    {' ' * (character - 1)}{'^' * pointer_width}\n"
-        f"SyntaxError: {message}"
-    )
 
 
 def compile(file: str, output: str, target: str):
