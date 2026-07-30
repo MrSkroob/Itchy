@@ -3,12 +3,12 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "itch-compiler"
+name = "itchy"
 version = "0.1.0"
 requires-python = ">=3.12"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/itch"]
+packages = ["src/itchy"]
 
 [tool.hatch.build.targets.wheel.force-include]
-"src/itch/assets" = "itch/assets"
+"src/itchy/assets" = "itchy/assets"
