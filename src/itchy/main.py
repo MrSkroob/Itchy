@@ -53,7 +53,7 @@ def main():
 
         abs_path = input_path / file_name
 
-        if file_name == "Stage.txt":
+        if file_name == "Stage.itch":
             stage = abs_path
         else:
             paths.append(abs_path)
@@ -75,4 +75,6 @@ if __name__ == "__main__":
     cli_parser.add_argument("output", help="Output .sb3 file", type=str)
     args = cli_parser.parse_args()
     source_path = Path(args.source)
+    if source_path.suffix != ".itch":
+        print(f"provided file {source_path} is not a .itch file.")
     compile(args.source, args.output, os.path.basename(str(source_path.with_suffix(''))))
