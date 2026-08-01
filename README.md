@@ -88,6 +88,7 @@ event event_whenflagclicked() {
 <img width="414" height="825" alt="image" src="https://github.com/user-attachments/assets/842cecc2-61b7-418a-9b62-8b2eb12f9bf2" />
 
 # Trying it out:
+The LSP is here (use at your own risk): https://github.com/MrSkroob/Itchy-LSP
 I've avoided using anything that isn't part of the standard library, so no need to install anything other than python :].
 
 ```
