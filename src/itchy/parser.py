@@ -1,10 +1,30 @@
 from __future__ import annotations
-from dataclasses import dataclass
-from itchy.tokenizer import Definitions, Tokenizer, Token
+from dataclasses import dataclass, field
+from itchy.tokenizer import Definitions, GenericRules, Tokenizer, Token
 from itchy.tree import Rule, Terminal, NonTerminal, Alternative, OptionalNode, Repeat, Sequence, GrammarNode, build_parse_tree, get_root_node
 
 
 DEBUG = False
+
+@dataclass(frozen=True)
+class ExpectedToken:
+    definition: Definitions | GenericRules
+    path: tuple[str, ...]
+
+
+@dataclass()
+class ExpectedState:
+    pos: int = -1
+    paths: set[ExpectedToken] = field(default_factory=set[ExpectedToken])
+
+    def record(self, pos: int, definition: Definitions | GenericRules, rule_path: tuple[str, ...]) -> None:
+        expectation = ExpectedToken(definition, rule_path)
+
+        if pos > self.pos:
+            self.pos = pos
+            self.items = {expectation}
+        else:
+            self.items.add(expectation)
 
 
 @dataclass(frozen=True)
@@ -70,11 +90,37 @@ class Parser:
         self.rules = build_parse_tree()
         self.tokenizer = Tokenizer(Definitions, {"Comment", "Whitespace", "Newline"})
         self.furthest_error: ParseError | None = None
+        self.expected = ExpectedState()
+        self.rule_stack: list[str] = [] 
         # furthest place we got before failing
 
         # best place to recover a tree from (a terminal isn't gonna be that helpful)
         # we want to basically go back to the last valid rule we fulfilled. 
         self.deepest_partial: ParseResult | None = None
+
+
+    def reset_expected(self):
+        self.expected = ExpectedState()
+
+    def record_expected(self, token_kind: Definitions | GenericRules, pos: int):
+        self.expected.record(pos=pos,
+                             definition=token_kind,
+                             rule_path=tuple(self.rule_stack))
+
+    def expected_at_cursor(self, source: str) -> set[ExpectedToken]:
+        self.reset_expected()
+        self.rule_stack.clear()
+
+        tokens = list(self.tokenizer.read(source))
+        eof_pos = len(tokens) - 1
+
+        if self.expected.pos != eof_pos:
+            return set()
+
+        return {
+            expectation for expectation in self.expected.items
+            if expectation.definition is not GenericRules.EOF
+        }
 
     @property
     def fail_state(self):
@@ -118,8 +164,10 @@ class Parser:
         return error
 
     def parse_rule(self, rule: Rule, tokens: list[Token[Definitions]], pos: int) -> ParseResult:
+        self.rule_stack.append(rule.name)
         try:
             result = self.parse_node(rule.body, tokens, pos)
+            self.rule_stack.pop()
         except ParseError as error:
             # On success this wraps the matched body in a ParsedNode named
             # after the rule (e.g. "ifstat", "wrap"). Do the same for a
@@ -143,6 +191,7 @@ class Parser:
                 if pos < len(tokens) and value.name == tokens[pos].kind.name:
                     debug_print(f"{print_token_safe(tokens, pos)}. Matched {value.name}")
                     return ParseResult(tokens[pos], pos + 1)
+                self.record_expected(tokens[pos].kind, pos)
                 debug_print(f"{print_token_safe(tokens, pos)}. Terminal rule not matched {value.name}")
                 raise self.make_error(tokens, pos, node)
             
@@ -329,6 +378,7 @@ class Parser:
         # from a previous file into the next one.
         self.furthest_error = None
         self.deepest_partial = None
+        self.reset_expected()
 
         root = get_root_node(self.rules)
         tokens = list(self.tokenizer.read(text))

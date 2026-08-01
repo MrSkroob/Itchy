@@ -903,13 +903,13 @@ def build_wrap(node: ParsedNode):
 def build_laststat(node: ParsedNode) -> Stmt:
     children = flat_children(node)
 
-    if has_token(node, Definitions.Break.name, children):
-        break_token = find_first_token(
-            node,
-            Definitions.Break.name,
-            children,
-        )
-        return BreakStmt(span=break_token.span)
+    # if has_token(node, Definitions.Break.name, children):
+    #     break_token = find_first_token(
+    #         node,
+    #         Definitions.Break.name,
+    #         children,
+    #     )
+    #     return BreakStmt(span=break_token.span)
 
     if has_token(node, Definitions.Return.name, children):
         return_token = find_first_token(

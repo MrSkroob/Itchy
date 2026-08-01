@@ -1,5 +1,5 @@
 from itchy.parser import Parser, ParseError
-from itchy.itch_ast import build_ast, flat_children
+from itchy.itch_ast import build_ast
 # from tools.ast_printer import print_ast
 from itchy.errors import format_syntax_error, format_compiler_error
 from itchy.assembler import Assembler, CompilerError
