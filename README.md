@@ -87,3 +87,50 @@ event event_whenflagclicked() {
 ```
 <img width="414" height="825" alt="image" src="https://github.com/user-attachments/assets/842cecc2-61b7-418a-9b62-8b2eb12f9bf2" />
 
+# Trying it out:
+I've avoided using anything that isn't part of the standard library.
+
+Assuming you have python 3.10+, you can run the main function like so:
+```
+python main.py <INPUT_FILE>.itch <OUTPUT_FILE>.sb3
+```
+The file's name (e.g. `Sprite1.itch`) will replace the contents of `Sprite1` in the .sb3 file. 
+
+# Grammar:
+```
+<program> ::= {<vardefstat>} <chunk> <EOF> 
+<chunk> ::= {<stat> {<StatementSeperator>}} [<laststat> {<StatementSeperator>}]
+<stat> ::= <wrap> | <whilestat> | <ifstat> | <forstat> | <functionstat> | <eventstat> | <varassignstat> | <functioncall>
+
+<whilestat> ::= <While> <equation> <wrap>
+<ifstat> ::= <If> <equation> <wrap> {<ElseIf> <equation> <wrap>} [<Else> <wrap>]
+<forstat> ::= <For> <Symbol> <forbody> <wrap>
+<functionstat> ::= <Define> [<Warp>] <function>
+<eventstat> ::= <Event> <Symbol> <args> <wrap>
+<vardefstat> ::= [<Shared>] <Type> <Symbol>
+<varassignstat> ::= <var> <Assign> <equation>
+<functioncall> ::= <Symbol> <args>
+
+<forbody> ::= "=" <equation> <FieldSeperator> <equation> <FieldSeperator> <equation> | <In> <var>
+<namelist> ::= <Symbol> {<FieldSeperator> <Symbol>}
+<tableconstructor> ::= "[" [<varlist1>] "]"
+<wrap> ::= "{" [<chunk>] "}"
+<function> ::= <Symbol> <funcbody>
+<funcbody> ::= "(" [<paramlist>] ")" <wrap>
+<slice> ::= "[" <equation> "]"
+<equation> ::= <comparison>
+<comparison> ::= <addition> { ("==" | ">" | "<" | <In> ) <addition> }
+<addition> ::= <multiplication> { ("+" | "-") <multiplication> }
+<multiplication> ::= <unary> { ("*" | "/" | "and" | "or") <unary> }
+<unary> ::= ["-" | "not"] <primary>
+<primary> ::= <literals> | "(" <equation> ")"
+<var> ::= <Symbol> [<slice>]
+<literals> ::= <functioncall> | <tableconstructor> | <var> | <Bool> | <Number> | <String> 
+<laststat> ::= <Break> | <Return> [<equation>]
+<varlist1> ::= <equation> {<FieldSeperator> <equation>}
+<args> ::= "(" [<varlist1>] ")"
+<argtype> ::= <Symbol> <Colon> <Type>
+<paramlist> ::= <argtype> {<FieldSeperator> <argtype>}
+
+```
+
