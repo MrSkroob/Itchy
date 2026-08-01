@@ -26,7 +26,8 @@ def compile(file: str, output: str, target: str):
         try:
             assembler.prepare(output)
             parsed = parser.read(source)
-            tree, _ = build_ast_with_semantic_tokens(parsed.tree, source)
+            tree, semantics = build_ast_with_semantic_tokens(parsed.tree, source)
+            print(semantics)
             # tree = build_ast(parsed.tree)
             assembler.assemble(tree, output, target)
             # print_ast(tree)

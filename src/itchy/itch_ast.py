@@ -1013,28 +1013,33 @@ def build_whilestat(node: ParsedNode):
 
 
 def build_wrap(node: ParsedNode):
+    chunk = ()
     for child in flat_children(node):
         # if it passed the parser, we can sort of guarantee that the next node will be a chunk node,
         # but whatever...
 
         if isinstance(child, ParsedNode) and child.name == "chunk":
-            return build_chunk(child)
+            chunk = build_chunk(child)
+            break
+
+    if has_node(node, "laststat"):
+        chunk = chunk + (build_laststat(find_first_node(node, "laststat")),)
     
     # chunks are allowed to be empty
-    return ()
+    return chunk
 
 
 def build_laststat(node: ParsedNode) -> Stmt:
     children = flat_children(node)
 
-    if has_token(node, Definitions.Break.name, children):
-        break_token = find_first_token(
-            node,
-            Definitions.Break.name,
-            children,
-        )
-        emit_token(break_token, "keyword")
-        return BreakStmt(span=break_token.span)
+    # if has_token(node, Definitions.Break.name, children):
+    #     break_token = find_first_token(
+    #         node,
+    #         Definitions.Break.name,
+    #         children,
+    #     )
+    #     emit_token(break_token, "keyword")
+    #     return BreakStmt(span=break_token.span)
 
     if has_token(node, Definitions.Return.name, children):
         return_token = find_first_token(
@@ -1134,8 +1139,6 @@ def build_chunk(node: ParsedNode):
         if isinstance(child, ParsedNode):
             if child.name == "stat":
                 statements.append(build_stat(child))
-            elif child.name == "laststat":
-                statements.append(build_laststat(child))
     
     return tuple(statements)
 
