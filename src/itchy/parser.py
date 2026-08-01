@@ -118,8 +118,14 @@ class Parser:
 
         try:
             parse_result = self.read(source)
-        except ParseError:
-            pass
+        except ParseError as e:
+            if self.recovered_tree is None:
+                return None, set()
+            
+            parse_result = ParseResult(
+                tree=self.recovered_tree,
+                pos=e.pos
+            )
 
         if self.expected.pos != eof_pos:
             return parse_result, set()
@@ -188,7 +194,8 @@ class Parser:
                 )
                 error.previous_valid_tree = wrapped
                 self._consider_partial(wrapped)
-            raise
+            self.rule_stack.pop()
+            raise error
 
         return ParseResult(ParsedNode(rule.name, (result.tree, )), result.pos)
 
@@ -198,7 +205,7 @@ class Parser:
                 if pos < len(tokens) and value.name == tokens[pos].kind.name:
                     debug_print(f"{print_token_safe(tokens, pos)}. Matched {value.name}")
                     return ParseResult(tokens[pos], pos + 1)
-                self.record_expected(tokens[pos].kind, pos)
+                self.record_expected(node.child, pos)
                 debug_print(f"{print_token_safe(tokens, pos)}. Terminal rule not matched {value.name}")
                 raise self.make_error(tokens, pos, node)
             
