@@ -107,17 +107,24 @@ class Parser:
                              definition=token_kind,
                              rule_path=tuple(self.rule_stack))
 
-    def expected_at_cursor(self, source: str) -> set[ExpectedToken]:
+    def expected_at_cursor(self, source: str) -> tuple[ParseResult | None, set[ExpectedToken]]:
         self.reset_expected()
         self.rule_stack.clear()
 
         tokens = list(self.tokenizer.read(source))
         eof_pos = len(tokens) - 1
 
-        if self.expected.pos != eof_pos:
-            return set()
+        parse_result: ParseResult | None = None
 
-        return {
+        try:
+            parse_result = self.read(source)
+        except ParseError:
+            pass
+
+        if self.expected.pos != eof_pos:
+            return parse_result, set()
+
+        return parse_result, {
             expectation for expectation in self.expected.items
             if expectation.definition is not GenericRules.EOF
         }
