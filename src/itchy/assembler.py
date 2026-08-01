@@ -1756,21 +1756,22 @@ class Assembler:
                 return candidate
         raise CompilerError(f"No stage target in project file.", None)
 
-    def prepare(self, target: str) -> None:
+    def prepare(self, target: str | None=None) -> None:
         """
         Prepares the assembler to assemble the next file. It does the following:
         1. Clears blocks, variables, lists, etc. that are local to the sprite
         2. *Keeps* stage/global data
         """
-        with zipfile.ZipFile(target, "r") as f:
-            stage = self.get_stage(f)
+        if target is not None:
+            with zipfile.ZipFile(target, "r") as f:
+                stage = self.get_stage(f)
 
-        for var_id, var_data in stage["variables"].items():
-            self.variables[var_id] = VariableData(var_data[0], var_id, None, VariableTypes.VAR, False, True, var_data[1])
+            for var_id, var_data in stage["variables"].items():
+                self.variables[var_id] = VariableData(var_data[0], var_id, None, VariableTypes.VAR, False, True, var_data[1])
 
-        for broadcast_id, broadcast_name in stage["broadcasts"].items():
-            assert isinstance(broadcast_name, str)
-            self.messages[broadcast_id] = broadcast_name
+            for broadcast_id, broadcast_name in stage["broadcasts"].items():
+                assert isinstance(broadcast_name, str)
+                self.messages[broadcast_id] = broadcast_name
 
         # we do not clear shared variables/lists, 
         for variable_id in list(self.variables):
