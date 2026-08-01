@@ -1,5 +1,5 @@
 from itchy.parser import Parser, ParseError
-from itchy.itch_ast import build_ast
+from itchy.itch_ast import build_ast, flat_children
 # from tools.ast_printer import print_ast
 from itchy.errors import format_syntax_error, format_compiler_error
 from itchy.assembler import Assembler, CompilerError
@@ -33,6 +33,8 @@ def compile(file: str, output: str, target: str):
             if isinstance(e, ParseError):
                 fail_state = parser.fail_state
                 if fail_state is not None:
+                    # print(parser.deepest_partial.tree.children[-1].children[-1].children[-1].children[-1].children[-1].children[-1])
+                    # print(flat_children(parser.deepest_partial.tree.children[-1]))
                     print(format_syntax_error(fail_state, source, file))
             else:
                 print(format_compiler_error(e, source, file))

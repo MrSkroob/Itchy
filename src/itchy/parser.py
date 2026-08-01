@@ -70,6 +70,11 @@ class Parser:
         self.rules = build_parse_tree()
         self.tokenizer = Tokenizer(Definitions, {"Comment", "Whitespace", "Newline"})
         self.furthest_error: ParseError | None = None
+        # furthest place we got before failing
+
+        # best place to recover a tree from (a terminal isn't gonna be that helpful)
+        # we want to basically go back to the last valid rule we fulfilled. 
+        self.deepest_partial: ParseResult | None = None
 
     @property
     def fail_state(self):
@@ -81,6 +86,29 @@ class Parser:
             self.furthest_error.pos - 1
         )
 
+    @property
+    def recovered_tree(self) -> ParsedNode | Token[Definitions] | None:
+        """
+        The best-effort parse tree covering everything that was
+        successfully parsed up to (and including) the point of the syntax
+        error. `None` if nothing at all could be parsed.
+
+        This has the same node shape (Sequence/Repeat/OptionalNode/rule
+        wrappers) as a normal successful parse tree, just truncated at the
+        point of failure -- so it can be fed through the same
+        `flat_children`-based AST builders used for a clean parse, though
+        the branch containing the error will typically be missing trailing
+        children (e.g. a missing closing brace).
+        """
+        return self.deepest_partial.tree if self.deepest_partial is not None else None
+
+    def _consider_partial(self, result: ParseResult | None) -> None:
+        if result is None:
+            return
+
+        if self.deepest_partial is None or result.pos >= self.deepest_partial.pos:
+            self.deepest_partial = result
+
     def make_error(self, tokens: list[Token[Definitions]], pos: int, node: GrammarNode, previous_valid_tree: ParseResult | None=None):
         error = ParseError(tokens, pos, node, previous_valid_tree)
         
@@ -90,7 +118,22 @@ class Parser:
         return error
 
     def parse_rule(self, rule: Rule, tokens: list[Token[Definitions]], pos: int) -> ParseResult:
-        result = self.parse_node(rule.body, tokens, pos)
+        try:
+            result = self.parse_node(rule.body, tokens, pos)
+        except ParseError as error:
+            # On success this wraps the matched body in a ParsedNode named
+            # after the rule (e.g. "ifstat", "wrap"). Do the same for a
+            # partial match, so a recovered tree looks the same shape-wise
+            # as a fully successful one, and downstream code (e.g.
+            # find_first_node(node, "wrap")) can still recognise it.
+            if error.previous_valid_tree is not None:
+                wrapped = ParseResult(
+                    ParsedNode(rule.name, (error.previous_valid_tree.tree,)),
+                    error.previous_valid_tree.pos,
+                )
+                error.previous_valid_tree = wrapped
+                self._consider_partial(wrapped)
+            raise
 
         return ParseResult(ParsedNode(rule.name, (result.tree, )), result.pos)
 
@@ -139,6 +182,7 @@ class Parser:
                         )
 
                         error.previous_valid_tree = partial_result
+                        self._consider_partial(partial_result)
 
                         debug_print(f"{print_token_safe(tokens, pos)}. Sequence broken {node}.")
                         # propagate the error upwards
@@ -173,6 +217,7 @@ class Parser:
                 raise best_error
         
             case OptionalNode(child):
+                start_pos = pos
                 try:
                     result = self.parse_node(child, tokens, pos)
                     debug_print(f"{print_token_safe(tokens, pos)}. Matched {node}")
@@ -182,8 +227,34 @@ class Parser:
                         ),
                         result.pos
                     )
-                except ParseError:
-                    self.make_error(tokens, pos, node)
+                except ParseError as error:
+                    if error.pos == start_pos:
+                        return ParseResult(
+                            ParsedNode(
+                                OptionalNode.__name__,
+                                (),
+                            ),
+                            start_pos
+                        )
+
+                    if error.previous_valid_tree is not None:
+                        error.previous_valid_tree = ParseResult(
+                            ParsedNode(
+                                OptionalNode.__name__,
+                                (error.previous_valid_tree.tree,)
+                            ),
+                            error.previous_valid_tree.pos
+                        )
+                        # We're about to backtrack this optional away (treat
+                        # it as if it never matched), even though it made
+                        # real progress before failing. Register that
+                        # progress with the recovery tracker before it's
+                        # lost, since it's still the best information we
+                        # have about what the writer was trying to express
+                        # at this point in the source.
+                        self._consider_partial(error.previous_valid_tree)
+
+                    # self.make_error(tokens, pos, node)
                     debug_print(f"{print_token_safe(tokens, pos)}. Skipping {node}")
                     return ParseResult(
                         ParsedNode(
@@ -210,6 +281,24 @@ class Parser:
                         if error.previous_valid_tree is None:
                             error.previous_valid_tree = partial_result
 
+                        # The failed final attempt is about to be dropped on
+                        # the floor (Repeat always "succeeds" with whatever
+                        # it matched so far). For recovery purposes, also
+                        # register a combined view -- everything matched by
+                        # earlier repetitions *plus* the partially-parsed
+                        # failing one -- so an error deep inside e.g. the
+                        # third statement of a block doesn't lose the first
+                        # two statements from the recovered fragment.
+                        combined = ParseResult(
+                            ParsedNode(
+                                Repeat.__name__,
+                                tuple(parsed_children) + (error.previous_valid_tree.tree,),
+                            ),
+                            error.previous_valid_tree.pos,
+                        )
+                        self._consider_partial(partial_result)
+                        self._consider_partial(combined)
+
                         # self.make_error(tokens, pos, node, partial_result)
                         debug_print(f"{print_token_safe(tokens, pos)}. Skipping {node}")
                         break
@@ -235,6 +324,12 @@ class Parser:
 
 
     def read(self, text: str) -> ParseResult:
+        # Reset per-parse state so a Parser instance can be reused across
+        # multiple `read()` calls without leaking stale error/recovery info
+        # from a previous file into the next one.
+        self.furthest_error = None
+        self.deepest_partial = None
+
         root = get_root_node(self.rules)
         tokens = list(self.tokenizer.read(text))
         result = self.parse_rule(root, tokens, 0)

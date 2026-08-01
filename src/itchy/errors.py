@@ -40,7 +40,7 @@ TOKEN_NAMES: dict[str, str] = {
 
     # Operators
     "Assign": "an assignment operator",
-    "Binop": "a binary operator",
+    "Binop": "an operator",
 
     # Punctuation
     "Colon": "':'",
@@ -127,7 +127,7 @@ def format_syntax_error(
     )
 
     display_line = source_index + 1
-    display_column = character + 1
+    display_column = character
 
     # Do not let tabs make the caret visibly misaligned.
     caret_padding = _visual_padding(line_text[:character])
