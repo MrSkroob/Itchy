@@ -33,9 +33,9 @@ def emit_token(token: Token[Definitions] | None, token_type: str, modifiers: tup
         return
 
     sink.append(SemanticToken(
-        line=token.line,
-        character=token.char,
-        length=len(token.literal),
+        line=token.line - 1,
+        character=token.char - 1,
+        length=len(token.literal.strip()),
         token_type=token_type,
         modifiers=modifiers,
     ))
