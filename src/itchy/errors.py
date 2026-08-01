@@ -114,7 +114,6 @@ def format_syntax_error(
         underline_length = max(1, len(token.literal))
 
     source_lines = source.splitlines()
-
     # This supports either zero-based or one-based token line numbers.
     source_index = line_number
     if not (0 <= source_index < len(source_lines)):
@@ -125,18 +124,20 @@ def format_syntax_error(
         if 0 <= source_index < len(source_lines)
         else ""
     )
-
     display_line = source_index + 1
     display_column = character
 
-    # Do not let tabs make the caret visibly misaligned.
     caret_padding = _visual_padding(line_text[:character])
     caret = " " * caret_padding + "^" * underline_length
 
-    if expected:
-        message = f"expected {_join_expected(expected)}, but found {found}"
+    if not isinstance(fail_state.node, Terminal):
+        # Do not let tabs make the caret visibly misaligned.
+        if expected:
+            message = f"expected {_join_expected(expected)}, but found {found}"
+        else:
+            message = f"unexpected {found}"
     else:
-        message = f"unexpected {found}"
+        message = "invalid syntax"
 
     return (
         f'  File "{filename}", line {display_line}, column {display_column}\n'
