@@ -243,19 +243,28 @@ class Parser:
 
             case Alternative(options):
                 best_error: ParseError | None = None
+                parse_result = None
 
                 for option in options:
                     try:
                         result = self.parse_node(option, tokens, pos)
-                        debug_print(f"{print_token_safe(tokens, pos)}. Matched {node}")
-                        return ParseResult(
-                            ParsedNode(Alternative.__name__, (result.tree,)),
-                            result.pos
-                        )
+
+                        # test all options so we have more options
+                        if parse_result is None:
+                            debug_print(f"{print_token_safe(tokens, pos)}. Matched {node}")
+                            parse_result = result
+
                     except ParseError as error:
+                        if isinstance(option, Terminal):
+                            self.record_expected(option.child, pos)
+                            
                         if best_error is None or error.pos > best_error.pos:
                             best_error = error
                         self.make_error(tokens, pos, node)
+
+                if parse_result is not None:
+                    return parse_result
+                
                 debug_print(f"Nothing matched {node}. {print_token_safe(tokens, pos)}")
                 assert best_error is not None
                 raise best_error
