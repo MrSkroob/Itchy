@@ -88,11 +88,10 @@ event event_whenflagclicked() {
 <img width="414" height="825" alt="image" src="https://github.com/user-attachments/assets/842cecc2-61b7-418a-9b62-8b2eb12f9bf2" />
 
 # Trying it out:
-I've avoided using anything that isn't part of the standard library.
+I've avoided using anything that isn't part of the standard library, so no need to install anything other than python :].
 
-Assuming you have python 3.10+, you can run the main function like so:
 ```
-python main.py <INPUT_FILE>.itch <OUTPUT_FILE>.sb3
+python -m itchy <INPUT_FILE>.itch <OUTPUT_FILE>.sb3
 ```
 The file's name (e.g. `Sprite1.itch`) will replace the contents of `Sprite1` in the .sb3 file. 
 
