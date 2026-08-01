@@ -24,6 +24,13 @@ _SEMANTIC_TOKEN_SINK: contextvars.ContextVar[list[SemanticToken] | None] = conte
 )
 
 
+def emit_reference(token: Token[Definitions], *, parameters: set[str]) -> None:
+    if token.literal in parameters:
+        emit_token(token, "parameter", ("readonly",))
+    else:
+        emit_token(token, "variable")
+
+
 def emit_token(token: Token[Definitions] | None, token_type: str, modifiers: tuple[str, ...] = ()) -> None:
     if token is None:
         return
@@ -81,8 +88,8 @@ def build_ast_with_semantic_tokens(tree: ParsedChild, source: str | None = None)
     finally:
         _SEMANTIC_TOKEN_SINK.reset(reset_token)
 
-    if source is not None:
-        tokens.extend(collect_comment_tokens(source))
+    # if source is not None:
+        # tokens.extend(collect_comment_tokens(source))
 
     tokens.sort(key=lambda t: (t.line, t.character))
 
@@ -534,7 +541,7 @@ def build_literals(node: ParsedNode) -> Expr:
 
         if is_token(child, name="Number"):
             assert isinstance(child, Token)
-            emit_token(child, "number")
+            # emit_token(child, "number")
             return NumberExpr(parse_number(child.literal), span=child.span)
 
         if is_token(child, name="String"):
@@ -719,7 +726,7 @@ def build_vardefstat(node: ParsedNode) -> VarDefStmt:
     type_token = find_first_token(node, "Type")
     symbol_token = find_first_token(node, "Symbol")
 
-    emit_token(type_token, "type")
+    # emit_token(type_token, "type")
     emit_token(symbol_token, "variable", ("declaration",))
 
     start = type_token.span.start
@@ -832,7 +839,7 @@ def build_eventstat(node: ParsedNode) -> EventHandlerStmt:
     expect_token(children[0], Definitions.Event.name)
     # emit_token(event_token, "keyword")
     name = expect_token(children[1], Definitions.Symbol.name)
-    # emit_token(name, "event")
+    emit_token(name, "event")
     eventbody = expect_node(children[2], "args")
     wrap = expect_node(children[3], "wrap")
 
@@ -900,7 +907,7 @@ def build_forstat(node: ParsedNode):
     # emit_token(for_token, "keyword")
 
     var_name_token = expect_token(children[1], "Symbol")
-    # emit_token(var_name_token, "variable", ("declaration",))
+    emit_token(var_name_token, "variable", ("declaration",))
     var_name = var_name_token.literal
 
     forbody = expect_node(children[2], "forbody")
