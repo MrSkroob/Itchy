@@ -89,7 +89,7 @@ class ASTNode():
 class Parser:
     def __init__(self) -> None:
         self.rules = build_parse_tree()
-        self.tokenizer = Tokenizer(Definitions, {"Comment", "Whitespace", "Newline"})
+        self.tokenizer = Tokenizer(Definitions, {"Comment", "Whitespace", "Newline", "BlockComment"})
         self.furthest_error: ParseError | None = None
         self.expected = ExpectedState()
         self.rule_stack: list[str] = [] 

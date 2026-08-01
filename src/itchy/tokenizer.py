@@ -38,6 +38,7 @@ class Token(Generic[TokenRule]):
 # typically, they'd be rules that are too generic or simple to warrant a rule, like numbers and symbols and keywords.
 class Definitions(StrEnum):
     Comment = r"//.*"
+    BlockComment = r"/\*[\s\S]*?\*/"
     Define = r"\b(define)\b"
     ElseIf = r"\b(elseif)\b"
     Return = r"\b(return)\b"
