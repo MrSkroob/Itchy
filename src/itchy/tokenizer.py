@@ -44,12 +44,11 @@ class Definitions(StrEnum):
     Shared = r"\b(shared)\b"
     Event = r"\b(event)\b"
     While = r"\b(while)\b"
-    Break = r"\b(break)\b"
+    # Break = r"\b(break)\b" # no support, but here for completion's sake
     Warp = r"\b(warp)\b"
     Else = r"\b(else)\b"
     For = r"\b(for)\b"
     # Not = r"\b(not)\b"
-    Let = r"\b(let)\b"
     If = r"\b(if)\b"
     In = r"\b(in)\b"
     Number = r"[0-9][_0-9]*(\.[0-9][_0-9]*)?"
