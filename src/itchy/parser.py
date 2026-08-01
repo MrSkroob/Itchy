@@ -204,6 +204,9 @@ class Parser:
                         parsed_children.append(result.tree)
                         pos = result.pos
                     except ParseError as error:
+                        if isinstance(child, Terminal):
+                            self.record_expected(child.child, pos)
+                        
                         partial_children = parsed_children.copy()
 
                         if error.previous_valid_tree is not None:

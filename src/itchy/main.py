@@ -33,7 +33,7 @@ def compile(file: str, output: str, target: str):
             if isinstance(e, ParseError):
                 fail_state = parser.fail_state
                 if fail_state is not None:
-                    # print(parser.expected.items)
+                    print(parser.expected.items)
                     print(format_syntax_error(fail_state, source, file))
             else:
                 print(format_compiler_error(e, source, file))
@@ -41,7 +41,7 @@ def compile(file: str, output: str, target: str):
             return False
     return True
 
-    
+
 def main():
     cli_parser = argparse.ArgumentParser(
         prog="Itchy Compiler",
