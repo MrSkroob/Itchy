@@ -70,17 +70,9 @@ TEXTMATE_SCOPES = {
 
 
 TEXTMATE_SCOPES.update({
-    Definitions.Define: "keyword.declaration.itchy",
     Definitions.Shared: "storage.modifier.itchy",
-    Definitions.Event: "keyword.declaration.itchy",
     Definitions.Warp: "storage.modifier.itchy",
 
-    Definitions.If: "keyword.control.conditional.itchy",
-    Definitions.ElseIf: "keyword.control.conditional.itchy",
-    Definitions.Else: "keyword.control.conditional.itchy",
-    Definitions.While: "keyword.control.loop.itchy",
-    Definitions.For: "keyword.control.loop.itchy",
-    Definitions.Return: "keyword.control.flow.itchy",
     Definitions.In: "keyword.operator.word.itchy",
 
     Definitions.Type: "storage.type.itchy",
@@ -94,11 +86,22 @@ TEXTMATE_SCOPES.update({
 })
 
 
-SPECIAL_PATTERNS: dict[Definitions, dict[str, str]] = {
+SPECIAL_PATTERNS: dict[Definitions, dict[str, str | list[dict[str, str]]]] = {
     Definitions.BlockComment: {
         "name": "comment.block.itchy",
         "begin": r"/\*",
         "end": r"\*/",
+    },
+    Definitions.String: {
+        "name": "string.quoted.double.itchy",
+        "begin": '"',
+        "end": '"',
+        "patterns": [
+            {
+                "name": "constant.character.escape.itchy",
+                "match": r"\\.",
+            },
+        ],
     }
 }
 
