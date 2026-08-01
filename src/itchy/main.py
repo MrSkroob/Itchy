@@ -39,6 +39,7 @@ def compile(file: str, output: str, target: str):
                 print(format_compiler_error(e, source, file))
 
             return False
+    print(parser.expected_items)
     return True
 
 

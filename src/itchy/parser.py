@@ -15,7 +15,7 @@ class ExpectedToken:
 @dataclass()
 class ExpectedState:
     pos: int = -1
-    paths: set[ExpectedToken] = field(default_factory=set[ExpectedToken])
+    items: set[ExpectedToken] = field(default_factory=set[ExpectedToken])
 
     def record(self, pos: int, definition: Definitions | GenericRules, rule_path: tuple[str, ...]) -> None:
         expectation = ExpectedToken(definition, rule_path)
@@ -23,7 +23,8 @@ class ExpectedState:
         if pos > self.pos:
             self.pos = pos
             self.items = {expectation}
-        else:
+
+        elif pos == self.pos:
             self.items.add(expectation)
 
 
@@ -203,10 +204,7 @@ class Parser:
                             
                         parsed_children.append(result.tree)
                         pos = result.pos
-                    except ParseError as error:
-                        if isinstance(child, Terminal):
-                            self.record_expected(child.child, pos)
-                        
+                    except ParseError as error:      
                         partial_children = parsed_children.copy()
 
                         if error.previous_valid_tree is not None:
@@ -243,28 +241,19 @@ class Parser:
 
             case Alternative(options):
                 best_error: ParseError | None = None
-                parse_result = None
 
                 for option in options:
                     try:
                         result = self.parse_node(option, tokens, pos)
-
-                        # test all options so we have more options
-                        if parse_result is None:
-                            debug_print(f"{print_token_safe(tokens, pos)}. Matched {node}")
-                            parse_result = result
-
+                        debug_print(f"{print_token_safe(tokens, pos)}. Matched {node}")
+                        return ParseResult(
+                            ParsedNode(Alternative.__name__, (result.tree,)),
+                            result.pos
+                        )
                     except ParseError as error:
-                        if isinstance(option, Terminal):
-                            self.record_expected(option.child, pos)
-                            
                         if best_error is None or error.pos > best_error.pos:
                             best_error = error
                         self.make_error(tokens, pos, node)
-
-                if parse_result is not None:
-                    return parse_result
-                
                 debug_print(f"Nothing matched {node}. {print_token_safe(tokens, pos)}")
                 assert best_error is not None
                 raise best_error
