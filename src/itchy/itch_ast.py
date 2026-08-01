@@ -726,7 +726,7 @@ def build_vardefstat(node: ParsedNode) -> VarDefStmt:
 
     if shared:
         shared_token = find_first_token(node, "Shared")
-        emit_token(shared_token, "keyword")
+        # emit_token(shared_token, "keyword")
         start = shared_token.span.start
 
     return VarDefStmt(
@@ -754,7 +754,7 @@ def build_argtype(node: ParsedNode) -> Param:
     name = expect_token(children[0], name="Symbol")
     type_name = expect_token(children[2], name="Type")
 
-    emit_token(name, "parameter", ("declaration",))
+    emit_token(name, "parameter", ("declaration", "readonly"))
     emit_token(type_name, "type")
 
     return Param(name.literal, type_name.literal, span=SourceSpan(name.span.start, type_name.span.end))
@@ -803,8 +803,8 @@ def build_function(node: ParsedNode) -> FunctionParts:
 def build_functionstat(node: ParsedNode) -> FunctionDefStmt:
     warp = has_token(node, Definitions.Warp.name)
 
-    define_token = find_first_token(node, Definitions.Define.name)
-    emit_token(define_token, "keyword")
+    find_first_token(node, Definitions.Define.name)
+    # emit_token(define_token, "keyword")
 
     function = find_first_node(node, "function")
     parts = build_function(function)
@@ -813,7 +813,7 @@ def build_functionstat(node: ParsedNode) -> FunctionDefStmt:
 
     if warp:
         start = find_first_token(node, Definitions.Warp.name)
-        emit_token(start, "keyword")
+        # emit_token(start, "keyword")
 
     return FunctionDefStmt(
         parts.name,
@@ -829,10 +829,10 @@ def build_functionstat(node: ParsedNode) -> FunctionDefStmt:
 
 def build_eventstat(node: ParsedNode) -> EventHandlerStmt:
     children = flat_children(node)
-    event_token = expect_token(children[0], Definitions.Event.name)
-    emit_token(event_token, "keyword")
+    expect_token(children[0], Definitions.Event.name)
+    # emit_token(event_token, "keyword")
     name = expect_token(children[1], Definitions.Symbol.name)
-    emit_token(name, "event")
+    # emit_token(name, "event")
     eventbody = expect_node(children[2], "args")
     wrap = expect_node(children[3], "wrap")
 
@@ -863,7 +863,7 @@ def build_for_body(node: ParsedNode) -> ForBody:
     if any(is_token(child, Definitions.In.name) for child in children):
         in_token = next(child for child in children if is_token(child, Definitions.In.name))
         assert isinstance(in_token, Token)
-        emit_token(in_token, "keyword")
+        # emit_token(in_token, "keyword")
 
         # var_node = next(search_nodes(children, "var"))
         var_node = build_var(next(
@@ -897,10 +897,10 @@ def build_forstat(node: ParsedNode):
     children = flat_children(node)
 
     for_token = expect_token(children[0], "For")
-    emit_token(for_token, "keyword")
+    # emit_token(for_token, "keyword")
 
     var_name_token = expect_token(children[1], "Symbol")
-    emit_token(var_name_token, "variable", ("declaration",))
+    # emit_token(var_name_token, "variable", ("declaration",))
     var_name = var_name_token.literal
 
     forbody = expect_node(children[2], "forbody")
@@ -950,7 +950,7 @@ def build_ifstat(node: ParsedNode):
 
     if_token = children[0]
     assert isinstance(if_token, Token) and if_token.kind.name == Definitions.If.name
-    emit_token(if_token, "keyword")
+    # emit_token(if_token, "keyword")
     condition = build_equation(expect_node(children[1], "equation"))
     body = build_wrap(expect_node(children[2], "wrap"))
     i = 3
@@ -960,7 +960,7 @@ def build_ifstat(node: ParsedNode):
     while i < len(children) and is_token(children[i], "ElseIf"):
         elseif_token = children[i]
         assert isinstance(elseif_token, Token)
-        emit_token(elseif_token, "keyword")
+        # emit_token(elseif_token, "keyword")
 
         i += 1
 
@@ -975,7 +975,7 @@ def build_ifstat(node: ParsedNode):
     if i < len(children) and is_token(children[i], "Else"):
         else_token = children[i]
         assert isinstance(else_token, Token)
-        emit_token(else_token, "keyword")
+        # emit_token(else_token, "keyword")
         i += 1
         else_body = build_wrap(expect_node(children[i], "wrap"))
 
@@ -995,7 +995,7 @@ def build_ifstat(node: ParsedNode):
 
 def build_whilestat(node: ParsedNode):
     while_token = find_first_token(node, "while")
-    emit_token(while_token, "keyword")
+    # emit_token(while_token, "keyword")
     condition = find_first_node(node, "equation")
     body = find_first_node(node, "wrap")
 
@@ -1047,7 +1047,7 @@ def build_laststat(node: ParsedNode) -> Stmt:
             Definitions.Return.name,
             children,
         )
-        emit_token(return_token, "keyword")
+        # emit_token(return_token, "keyword")
 
         equation_node = next(
             (
