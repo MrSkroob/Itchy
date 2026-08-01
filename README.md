@@ -9,11 +9,11 @@ Repo features:
 - Language specific AST builder
 - Assembler where its output becomes valid Scratch 3.0 json.
 
-Information for things such as the opcode, json format and others was used from:
-https://en.scratch-wiki.info/wiki/Scratch_File_Format
-https://en.scratch-wiki.info/wiki/Blocks
-https://github.com/scratchfoundation/scratch-vm
-https://github.com/scratchfoundation/scratch-editor 
+Information for things such as the opcode, json format and others was used from: <br />
+https://en.scratch-wiki.info/wiki/Scratch_File_Format <br />
+https://en.scratch-wiki.info/wiki/Blocks <br />
+https://github.com/scratchfoundation/scratch-vm <br />
+https://github.com/scratchfoundation/scratch-editor  <br />
 
 There's *some* abstractions like for loops, while loops, for *in* loops and return statements.
 Return statements use a stack, so they'll work for recursive calls and nested calls like `variable = foo(foo(variable))`
@@ -88,7 +88,7 @@ event event_whenflagclicked() {
 <img width="414" height="825" alt="image" src="https://github.com/user-attachments/assets/842cecc2-61b7-418a-9b62-8b2eb12f9bf2" />
 
 # Trying it out:
-The LSP is here (use at your own risk): https://github.com/MrSkroob/Itchy-LSP
+The LSP is here (use at your own risk): https://github.com/MrSkroob/Itchy-LSP<br />
 I've avoided using anything that isn't part of the standard library, so no need to install anything other than python :].
 
 ```
