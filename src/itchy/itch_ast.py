@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
-from parser import ParsedNode, Token, Sequence, Repeat, OptionalNode, Alternative
-from tokenizer import GenericRules, Definitions
-from shared_templates import SourceSpan, SourcePosition
+from itchy.parser import ParsedNode, Token, Sequence, Repeat, OptionalNode, Alternative
+from itchy.tokenizer import GenericRules, Definitions
+from itchy.shared_templates import SourceSpan, SourcePosition
 from typing import Callable
 import ast
 

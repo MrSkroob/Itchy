@@ -1,8 +1,8 @@
-from parser import Parser, ParseError
-from itch_ast import build_ast
+from itchy.parser import Parser, ParseError
+from itchy.itch_ast import build_ast
 # from tools.ast_printer import print_ast
-from errors import format_syntax_error, format_compiler_error
-from assembler import Assembler, CompilerError
+from itchy.errors import format_syntax_error, format_compiler_error
+from itchy.assembler import Assembler, CompilerError
 import argparse
 
 import os
@@ -42,31 +42,6 @@ def compile(file: str, output: str, target: str):
 
     
 def main():
-    input_path = ROOT / "input"
-    output_path = ROOT / "output"
-    
-    stage = None
-    paths: list[Path] = []
-
-    for path in os.listdir(str(input_path.absolute())):
-        file_name = os.path.basename(path)
-
-        abs_path = input_path / file_name
-
-        if file_name == "Stage.itch":
-            stage = abs_path
-        else:
-            paths.append(abs_path)
-    
-    if stage is not None:
-        paths.insert(0, stage)
-
-    for file_name in paths:
-        print("compiling: ", file_name)
-        compile(str(file_name), str((output_path / "Scratch Project.sb3")), os.path.basename(str(file_name.with_suffix(''))))
-
-
-if __name__ == "__main__":
     cli_parser = argparse.ArgumentParser(
         prog="Itchy Compiler",
         description="Compiles itchy code to .sb3"
@@ -78,3 +53,7 @@ if __name__ == "__main__":
     if source_path.suffix != ".itch":
         print(f"provided file {source_path} is not a .itch file.")
     compile(args.source, args.output, os.path.basename(str(source_path.with_suffix(''))))
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

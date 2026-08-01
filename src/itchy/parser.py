@@ -1,7 +1,7 @@
 from __future__ import annotations
 from dataclasses import dataclass
-from tokenizer import Definitions, Tokenizer, Token
-from tree import Rule, Terminal, NonTerminal, Alternative, OptionalNode, Repeat, Sequence, GrammarNode, build_parse_tree, get_root_node
+from itchy.tokenizer import Definitions, Tokenizer, Token
+from itchy.tree import Rule, Terminal, NonTerminal, Alternative, OptionalNode, Repeat, Sequence, GrammarNode, build_parse_tree, get_root_node
 
 
 DEBUG = False
@@ -38,10 +38,11 @@ class FailState():
 
 
 class ParseError(Exception):
-    def __init__(self, tokens: list[Token[Definitions]], pos: int, node: GrammarNode) -> None:
+    def __init__(self, tokens: list[Token[Definitions]], pos: int, node: GrammarNode, prevous_valid_tree: ParseResult | None=None) -> None:
         self.tokens = tokens
         self.pos = pos
         self.node = node
+        self.previous_valid_tree: ParseResult | None = self.previous_valid_tree
         super().__init__()
 
 
@@ -80,8 +81,8 @@ class Parser:
             self.furthest_error.pos - 1
         )
 
-    def make_error(self, tokens: list[Token[Definitions]], pos: int, node: GrammarNode):
-        error = ParseError(tokens, pos, node)
+    def make_error(self, tokens: list[Token[Definitions]], pos: int, node: GrammarNode, previous_valid_tree: ParseResult | None=None):
+        error = ParseError(tokens, pos, node, previous_valid_tree)
         
         if self.furthest_error is None or pos > self.furthest_error.pos:
             self.furthest_error = error
@@ -118,10 +119,25 @@ class Parser:
                             
                         parsed_children.append(result.tree)
                         pos = result.pos
-                    except ParseError:
+                    except ParseError as error:
+                        partial_children = parsed_children.copy()
+
+                        if error.previous_valid_tree is not None:
+                            partial_children.append(
+                                error.previous_valid_tree.tree
+                            )
+
+                        partial_result = ParseResult(
+                            ParsedNode(
+                                Sequence.__name__,
+                                tuple(partial_children)
+                            ),
+                            pos
+                        )
+
                         debug_print(f"{print_token_safe(tokens, pos)}. Sequence broken {node}.")
                         # propagate the error upwards
-                        raise self.make_error(tokens, pos, node)
+                        raise self.make_error(tokens, pos, node, partial_result)
                     
                 
                 if result is None:
@@ -133,6 +149,8 @@ class Parser:
                 )
 
             case Alternative(options):
+                best_error: ParseError | None = None
+
                 for option in options:
                     try:
                         result = self.parse_node(option, tokens, pos)
@@ -141,11 +159,13 @@ class Parser:
                             ParsedNode(Alternative.__name__, (result.tree,)),
                             result.pos
                         )
-                    except ParseError:
+                    except ParseError as error:
+                        if best_error is None or error.pos > best_error.pos:
+                            best_error = error
                         self.make_error(tokens, pos, node)
                 debug_print(f"Nothing matched {node}. {print_token_safe(tokens, pos)}")
-
-                raise self.make_error(tokens, pos, node)
+                assert best_error is not None
+                raise best_error
         
             case OptionalNode(child):
                 try:
@@ -173,8 +193,19 @@ class Parser:
                 while True:
                     try:
                         result = self.parse_node(child, tokens, pos)
-                    except ParseError:
-                        self.make_error(tokens, pos, node)
+                    except ParseError as error:
+                        partial_result = ParseResult(
+                            ParsedNode(
+                                Repeat.__name__,
+                                tuple(parsed_children),
+                            ),
+                            pos
+                        )
+
+                        if error.previous_valid_tree is None:
+                            error.previous_valid_tree = partial_result
+
+                        # self.make_error(tokens, pos, node, partial_result)
                         debug_print(f"{print_token_safe(tokens, pos)}. Skipping {node}")
                         break
 

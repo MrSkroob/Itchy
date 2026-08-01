@@ -1,6 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass
-from shared_templates import VariableTypes, DataType
+from itchy.shared_templates import VariableTypes, DataType
 
 
 @dataclass(frozen=True)

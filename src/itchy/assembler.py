@@ -13,9 +13,9 @@ from enum import Enum
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
-from shared_templates import VariableTypes, DataType, SPRITE_TEMPLATE, COSTUME_TEMPLATE
-from scratch_blocks import SCRATCH_BLOCKS, Block, Reporter, Event, Menu
-from itch_ast import \
+from itchy.shared_templates import VariableTypes, DataType, SPRITE_TEMPLATE, COSTUME_TEMPLATE
+from itchy.scratch_blocks import SCRATCH_BLOCKS, Block, Reporter, Event, Menu
+from itchy.itch_ast import \
     ASTNode, Param, \
     Stmt, VarRef, BlockStmt, IfStmt, BreakStmt, ForInStmt, WhileStmt, AssignStmt, ReturnStmt, VarDefStmt, ForRangeStmt, FunctionCallStmt, FunctionDefStmt, EventHandlerStmt, \
     IfBranch, Expr, NumberExpr, BoolExpr, StringExpr, VarExpr, UnaryOpExpr, BinaryOpExpr, TableExpr, FunctionCallExpr, Program

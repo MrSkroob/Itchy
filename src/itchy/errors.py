@@ -1,9 +1,9 @@
 from collections.abc import Iterable
-from parser import FailState
-from tokenizer import Token, Definitions
-from assembler import CompilerError
+from itchy.parser import FailState
+from itchy.tokenizer import Token, Definitions
+from itchy.assembler import CompilerError
 
-from tree import (
+from itchy.tree import (
     Alternative,
     GrammarNode,
     NonTerminal,
