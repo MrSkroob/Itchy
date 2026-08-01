@@ -1,0 +1,80 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Itchy",
+  "scopeName": "source.itchy",
+  "patterns": [
+    {
+      "name": "comment.line.double-slash.itchy",
+      "match": "//.*"
+    },
+    {
+      "name": "comment.block.itchy",
+      "begin": "/\\*",
+      "end": "\\*/"
+    },
+    {
+      "name": "keyword.declaration.itchy",
+      "match": "\\b(define)\\b"
+    },
+    {
+      "name": "keyword.control.conditional.itchy",
+      "match": "\\b(elseif)\\b"
+    },
+    {
+      "name": "keyword.control.flow.itchy",
+      "match": "\\b(return)\\b"
+    },
+    {
+      "name": "storage.modifier.itchy",
+      "match": "\\b(shared)\\b"
+    },
+    {
+      "name": "keyword.declaration.itchy",
+      "match": "\\b(event)\\b"
+    },
+    {
+      "name": "keyword.control.loop.itchy",
+      "match": "\\b(while)\\b"
+    },
+    {
+      "name": "storage.modifier.itchy",
+      "match": "\\b(warp)\\b"
+    },
+    {
+      "name": "keyword.control.conditional.itchy",
+      "match": "\\b(else)\\b"
+    },
+    {
+      "name": "keyword.control.loop.itchy",
+      "match": "\\b(for)\\b"
+    },
+    {
+      "name": "keyword.control.conditional.itchy",
+      "match": "\\b(if)\\b"
+    },
+    {
+      "name": "keyword.operator.word.itchy",
+      "match": "\\b(in)\\b"
+    },
+    {
+      "name": "constant.numeric.itchy",
+      "match": "[0-9][_0-9]*(\\.[0-9][_0-9]*)?"
+    },
+    {
+      "name": "storage.type.itchy",
+      "match": "\\b(?:var|bool|list)\\b"
+    },
+    {
+      "name": "constant.language.boolean.itchy",
+      "match": "\\b(?:true|false)\\b"
+    },
+    {
+      "name": "keyword.operator.assignment.itchy",
+      "match": "\\*=|\\+=|-=|/=|=(?!=)"
+    },
+    {
+      "name": "keyword.operator.arithmetic.itchy",
+      "match": "\\.\\.|<=|>=|==|!=|\\+|-|\\*|/|<|>|\\b(?:and|or)\\b|\\b(not)\\b"
+    }
+  ]
+}
