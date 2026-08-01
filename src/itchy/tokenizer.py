@@ -110,7 +110,7 @@ class Tokenizer(Generic[TokenRule]):
         pos = 0
 
         while pos < len(text):
-            if text[pos] in {"\n", "\r\n"} :
+            if text[pos] in {"\n", "\r\n", "\r"} :
                 if GenericRules.Newline.name not in self.blacklist:
                     yield Token(GenericRules.Newline, text[pos], line, char)
                 line += 1
