@@ -38,11 +38,6 @@ def generate_textmate_grammar(
     ]
 
     grammar = { # type: ignore
-        "$schema": (
-            "https://raw.githubusercontent.com/"
-            "martinring/tmlanguage/master/"
-            "tmlanguage.json"
-        ),
         "name": "Itchy",
         "scopeName": "source.itchy",
         "patterns": patterns,
@@ -55,9 +50,10 @@ def generate_textmate_grammar(
         json.dumps(grammar, indent=2) + "\n",
         encoding="utf-8",
     )
+    print("run")
 
 
 if __name__ == "__main__":
     generate_textmate_grammar(
-        "src/itchy/assets/itchy.tmLanguage.json"
+        "itchy/assets/itchy.tmLanguage.json"
     )
