@@ -107,33 +107,11 @@ class Parser:
                              definition=token_kind,
                              rule_path=tuple(self.rule_stack))
 
-    def expected_at_cursor(self, source: str) -> tuple[ParseResult | None, set[ExpectedToken]]:
-        self.reset_expected()
-        self.rule_stack.clear()
 
-        tokens = list(self.tokenizer.read(source))
-        eof_pos = len(tokens) - 1
+    @property
+    def expected_items(self):
+        return self.expected.items
 
-        parse_result: ParseResult | None = None
-
-        try:
-            parse_result = self.read(source)
-        except ParseError as e:
-            if self.recovered_tree is None:
-                return None, set()
-            
-            parse_result = ParseResult(
-                tree=self.recovered_tree,
-                pos=e.pos
-            )
-
-        if self.expected.pos != eof_pos:
-            return parse_result, set()
-
-        return parse_result, {
-            expectation for expectation in self.expected.items
-            if expectation.definition is not GenericRules.EOF
-        }
 
     @property
     def fail_state(self):
@@ -393,6 +371,7 @@ class Parser:
         self.furthest_error = None
         self.deepest_partial = None
         self.reset_expected()
+        self.rule_stack.clear()
 
         root = get_root_node(self.rules)
         tokens = list(self.tokenizer.read(text))

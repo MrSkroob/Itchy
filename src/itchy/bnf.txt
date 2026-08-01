@@ -12,7 +12,6 @@
 <functioncall> ::= <Symbol> <args>
 
 <forbody> ::= "=" <equation> <FieldSeperator> <equation> <FieldSeperator> <equation> | <In> <var>
-<namelist> ::= <Symbol> {<FieldSeperator> <Symbol>}
 <tableconstructor> ::= "[" [<varlist1>] "]"
 <wrap> ::= "{" [<chunk>] "}"
 <function> ::= <Symbol> <funcbody>
