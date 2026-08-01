@@ -38,11 +38,11 @@ class FailState():
 
 
 class ParseError(Exception):
-    def __init__(self, tokens: list[Token[Definitions]], pos: int, node: GrammarNode, prevous_valid_tree: ParseResult | None=None) -> None:
+    def __init__(self, tokens: list[Token[Definitions]], pos: int, node: GrammarNode, previous_valid_tree: ParseResult | None=None) -> None:
         self.tokens = tokens
         self.pos = pos
         self.node = node
-        self.previous_valid_tree: ParseResult | None = self.previous_valid_tree
+        self.previous_valid_tree: ParseResult | None = previous_valid_tree
         super().__init__()
 
 
@@ -126,14 +126,19 @@ class Parser:
                             partial_children.append(
                                 error.previous_valid_tree.tree
                             )
+                            
 
                         partial_result = ParseResult(
                             ParsedNode(
                                 Sequence.__name__,
                                 tuple(partial_children)
                             ),
-                            pos
+                            error.previous_valid_tree.pos
+                            if error.previous_valid_tree is not None
+                            else pos
                         )
+
+                        error.previous_valid_tree = partial_result
 
                         debug_print(f"{print_token_safe(tokens, pos)}. Sequence broken {node}.")
                         # propagate the error upwards
