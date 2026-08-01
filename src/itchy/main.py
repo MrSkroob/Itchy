@@ -1,5 +1,5 @@
 from itchy.parser import Parser, ParseError
-from itchy.itch_ast import build_ast
+from itchy.itch_ast import build_ast, build_ast_with_semantic_tokens
 # from tools.ast_printer import print_ast
 from itchy.errors import format_syntax_error, format_compiler_error
 from itchy.assembler import Assembler, CompilerError
@@ -26,7 +26,8 @@ def compile(file: str, output: str, target: str):
         try:
             assembler.prepare(output)
             parsed = parser.read(source)
-            tree = build_ast(parsed.tree)
+            tree, _ = build_ast_with_semantic_tokens(parsed.tree, source)
+            # tree = build_ast(parsed.tree)
             assembler.assemble(tree, output, target)
             # print_ast(tree)
         except (ParseError, CompilerError) as e:

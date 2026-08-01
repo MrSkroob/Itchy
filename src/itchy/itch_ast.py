@@ -1,12 +1,92 @@
 from dataclasses import dataclass, field
 from itchy.parser import ParsedNode, Token, Sequence, Repeat, OptionalNode, Alternative
-from itchy.tokenizer import GenericRules, Definitions
+from itchy.tokenizer import GenericRules, Definitions, Tokenizer
 from itchy.shared_templates import SourceSpan, SourcePosition
 from typing import Callable
 import ast
+import contextvars
 
 
 ParsedChild = ParsedNode | Token[Definitions]
+
+
+@dataclass(frozen=True)
+class SemanticToken:
+    line: int
+    character: int
+    length: int
+    token_type: str
+    modifiers: tuple[str, ...] = ()
+
+
+_SEMANTIC_TOKEN_SINK: contextvars.ContextVar[list[SemanticToken] | None] = contextvars.ContextVar(
+    "semantic_token_sink", default=None
+)
+
+
+def emit_token(token: Token[Definitions] | None, token_type: str, modifiers: tuple[str, ...] = ()) -> None:
+    if token is None:
+        return
+
+    sink = _SEMANTIC_TOKEN_SINK.get()
+    if sink is None:
+        return
+
+    sink.append(SemanticToken(
+        line=token.line,
+        character=token.char,
+        length=len(token.literal),
+        token_type=token_type,
+        modifiers=modifiers,
+    ))
+
+
+def collect_comment_tokens(source: str) -> list[SemanticToken]:
+    """
+    Comments are dropped by the tokenizer the parser uses (they're
+    blacklisted), so they never reach build_ast at all. Run a second,
+    throwaway tokenizer pass over the raw source that keeps comments, just
+    to harvest their positions for highlighting.
+    """
+    raw_tokenizer = Tokenizer(Definitions, {"Whitespace", "Newline"})
+
+    return [
+        SemanticToken(
+            line=token.line,
+            character=token.char,
+            length=len(token.literal),
+            token_type="comment",
+        )
+        for token in raw_tokenizer.read(source)
+        if token.kind == Definitions.Comment
+    ]
+
+
+def build_ast_with_semantic_tokens(tree: ParsedChild, source: str | None = None) -> tuple["Program", list[SemanticToken]]:
+    """
+    Like build_ast, but also returns a list of SemanticTokens gathered while
+    walking the tree (plus comment tokens, if `source` is provided, since
+    comments never make it into the parse tree in the first place).
+
+    The returned token list is sorted by (line, character) so it can be fed
+    straight to an LSP semantic-tokens encoder.
+
+    source is used to collect all comments in the code
+    """
+    tokens: list[SemanticToken] = []
+    reset_token = _SEMANTIC_TOKEN_SINK.set(tokens)
+
+    try:
+        program = build_ast(tree)
+    finally:
+        _SEMANTIC_TOKEN_SINK.reset(reset_token)
+
+    if source is not None:
+        tokens.extend(collect_comment_tokens(source))
+
+    tokens.sort(key=lambda t: (t.line, t.character))
+
+    return program, tokens
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -370,21 +450,23 @@ def build_left_associative(
     children = flat_children(node)
 
     operands: list[ParsedNode] = []
-    operators: list[str] = []
+    operators: list[Token[Definitions]] = []
 
     for child in children:
         if isinstance(child, ParsedNode) and child.name == operand_rule:
             operands.append(child)
 
         elif isinstance(child, Token):
-            operators.append(child.literal)
+            operators.append(child)
+            emit_token(child, "operator")
 
     if not operands:
         raise ValueError(f"i wanted an operand. you gave me: <{node.name}>")
 
     expr = operand_builder(operands[0])
 
-    for op, operand in zip(operators, operands[1:]):
+    for op_token, operand in zip(operators, operands[1:]):
+        op = op_token.literal
         right = operand_builder(operand)
         expr = BinaryOpExpr(
             left=expr,
@@ -419,6 +501,8 @@ def build_unary(node: ParsedNode) -> Expr:
     if op is None:
         return expr
 
+    emit_token(op, "operator")
+
     return UnaryOpExpr(op.literal, expr, 
                        span=SourceSpan(
                            start=SourcePosition(op.line, op.char),
@@ -445,14 +529,17 @@ def build_literals(node: ParsedNode) -> Expr:
     for child in children:
         if is_token(child, name="Bool"):
             assert isinstance(child, Token)
+            emit_token(child, "boolean")
             return BoolExpr(child.literal.lower() == "true", span=child.span)
 
         if is_token(child, name="Number"):
             assert isinstance(child, Token)
+            emit_token(child, "number")
             return NumberExpr(parse_number(child.literal), span=child.span)
 
         if is_token(child, name="String"):
             assert isinstance(child, Token)
+            emit_token(child, "string")
             return StringExpr(parse_string(child.literal), span=child.span)
 
         if isinstance(child, ParsedNode) and child.name == "tableconstructor":
@@ -461,6 +548,7 @@ def build_literals(node: ParsedNode) -> Expr:
         if isinstance(child, ParsedNode) and child.name == "var":
             has_slice = has_node(child, "slice")
             var_name = find_first_token(child, Definitions.Symbol.name)
+            emit_token(var_name, "variable")
 
             if has_slice:
                 slice_expr = build_slice(find_first_node(child, "slice"))
@@ -483,6 +571,7 @@ def build_literals(node: ParsedNode) -> Expr:
         
         if isinstance(child, ParsedNode) and child.name == "functioncall":
             func_name = find_first_token(child, Definitions.Symbol.name)
+            emit_token(func_name, "function")
             arg_list = build_varlist1(find_first_node(child, "args"))
 
             return FunctionCallExpr(
@@ -497,7 +586,7 @@ def build_literals(node: ParsedNode) -> Expr:
     raise ValueError(f"this ain't a literal g: {node.children}")
 
 
-def build_var(node: ParsedNode) -> VarRef:
+def build_var(node: ParsedNode, modifiers: tuple[str, ...] = ()) -> VarRef:
     # children = flat_children(node)
 
     symbol: Token[Definitions] = find_first_token(node, Definitions.Symbol.name)
@@ -508,6 +597,8 @@ def build_var(node: ParsedNode) -> VarRef:
 
     if not symbol:
         raise ValueError(f"how u gonna want a variable with no name: {node!r}")
+
+    emit_token(symbol, "variable", modifiers)
 
     return VarRef(
         root=symbol.literal,
@@ -570,6 +661,7 @@ def build_namelist(node: ParsedNode) -> tuple[str, ...]:
 
 def build_functioncall(node: ParsedNode) -> Stmt:
     function_name = find_first_token(node, Definitions.Symbol.name)
+    emit_token(function_name, "function")
     args = build_varlist1(find_first_node(node, "args"))
     return FunctionCallStmt(
         function_name.literal,
@@ -586,7 +678,8 @@ def build_varassignstat(node: ParsedNode) -> Stmt:
     operation = find_first_token(node, Definitions.Assign.name)
     action_node = find_first_node(node, "equation")
 
-    target = build_var(var_node)
+    target = build_var(var_node, ("modification",))
+    emit_token(operation, "operator")
     action = build_equation(action_node)
 
     if operation.literal == "=":
@@ -626,10 +719,15 @@ def build_vardefstat(node: ParsedNode) -> VarDefStmt:
     type_token = find_first_token(node, "Type")
     symbol_token = find_first_token(node, "Symbol")
 
+    emit_token(type_token, "type")
+    emit_token(symbol_token, "variable", ("declaration",))
+
     start = type_token.span.start
 
     if shared:
-        start = find_first_token(node, "Shared").span.start
+        shared_token = find_first_token(node, "Shared")
+        emit_token(shared_token, "keyword")
+        start = shared_token.span.start
 
     return VarDefStmt(
         type_token.literal,
@@ -656,6 +754,9 @@ def build_argtype(node: ParsedNode) -> Param:
     name = expect_token(children[0], name="Symbol")
     type_name = expect_token(children[2], name="Type")
 
+    emit_token(name, "parameter", ("declaration",))
+    emit_token(type_name, "type")
+
     return Param(name.literal, type_name.literal, span=SourceSpan(name.span.start, type_name.span.end))
 
 
@@ -676,6 +777,7 @@ def build_funcbody(node: ParsedNode) -> tuple[tuple[Param, ...], tuple[Stmt, ...
 def build_function(node: ParsedNode) -> FunctionParts:
     children = flat_children(node)
     name = expect_token(children[0], Definitions.Symbol.name)
+    emit_token(name, "function", ("declaration",))
     funcbody = expect_node(children[1], "funcbody")
 
     params, body = build_funcbody(funcbody)
@@ -700,6 +802,10 @@ def build_function(node: ParsedNode) -> FunctionParts:
 
 def build_functionstat(node: ParsedNode) -> FunctionDefStmt:
     warp = has_token(node, Definitions.Warp.name)
+
+    define_token = find_first_token(node, Definitions.Define.name)
+    emit_token(define_token, "keyword")
+
     function = find_first_node(node, "function")
     parts = build_function(function)
 
@@ -707,6 +813,7 @@ def build_functionstat(node: ParsedNode) -> FunctionDefStmt:
 
     if warp:
         start = find_first_token(node, Definitions.Warp.name)
+        emit_token(start, "keyword")
 
     return FunctionDefStmt(
         parts.name,
@@ -722,7 +829,10 @@ def build_functionstat(node: ParsedNode) -> FunctionDefStmt:
 
 def build_eventstat(node: ParsedNode) -> EventHandlerStmt:
     children = flat_children(node)
+    event_token = expect_token(children[0], Definitions.Event.name)
+    emit_token(event_token, "keyword")
     name = expect_token(children[1], Definitions.Symbol.name)
+    emit_token(name, "event")
     eventbody = expect_node(children[2], "args")
     wrap = expect_node(children[3], "wrap")
 
@@ -738,8 +848,8 @@ def build_eventstat(node: ParsedNode) -> EventHandlerStmt:
     
     return EventHandlerStmt(
         name.literal, 
-        build_varlist1(eventbody),
-        build_wrap(wrap),
+        args,
+        wrap_nodes,
         span=SourceSpan(
             start=name.span.start,
             end=end
@@ -751,6 +861,10 @@ def build_for_body(node: ParsedNode) -> ForBody:
     children = flat_children(node)
 
     if any(is_token(child, Definitions.In.name) for child in children):
+        in_token = next(child for child in children if is_token(child, Definitions.In.name))
+        assert isinstance(in_token, Token)
+        emit_token(in_token, "keyword")
+
         # var_node = next(search_nodes(children, "var"))
         var_node = build_var(next(
             i for i in children 
@@ -783,7 +897,11 @@ def build_forstat(node: ParsedNode):
     children = flat_children(node)
 
     for_token = expect_token(children[0], "For")
-    var_name = expect_token(children[1], "Symbol").literal
+    emit_token(for_token, "keyword")
+
+    var_name_token = expect_token(children[1], "Symbol")
+    emit_token(var_name_token, "variable", ("declaration",))
+    var_name = var_name_token.literal
 
     forbody = expect_node(children[2], "forbody")
     wrap = expect_node(children[3], "wrap")
@@ -832,6 +950,7 @@ def build_ifstat(node: ParsedNode):
 
     if_token = children[0]
     assert isinstance(if_token, Token) and if_token.kind.name == Definitions.If.name
+    emit_token(if_token, "keyword")
     condition = build_equation(expect_node(children[1], "equation"))
     body = build_wrap(expect_node(children[2], "wrap"))
     i = 3
@@ -841,6 +960,7 @@ def build_ifstat(node: ParsedNode):
     while i < len(children) and is_token(children[i], "ElseIf"):
         elseif_token = children[i]
         assert isinstance(elseif_token, Token)
+        emit_token(elseif_token, "keyword")
 
         i += 1
 
@@ -853,6 +973,9 @@ def build_ifstat(node: ParsedNode):
         branches.append(IfBranch(condition, body, span=SourceSpan(elseif_token.span.start, body[-1].span.end if len(body) > 0 else condition.span.end)))
     
     if i < len(children) and is_token(children[i], "Else"):
+        else_token = children[i]
+        assert isinstance(else_token, Token)
+        emit_token(else_token, "keyword")
         i += 1
         else_body = build_wrap(expect_node(children[i], "wrap"))
 
@@ -872,6 +995,7 @@ def build_ifstat(node: ParsedNode):
 
 def build_whilestat(node: ParsedNode):
     while_token = find_first_token(node, "while")
+    emit_token(while_token, "keyword")
     condition = find_first_node(node, "equation")
     body = find_first_node(node, "wrap")
 
@@ -889,18 +1013,12 @@ def build_whilestat(node: ParsedNode):
 
 
 def build_wrap(node: ParsedNode):
-    chunk: tuple[Stmt, ...] = ()
     for child in flat_children(node):
         # if it passed the parser, we can sort of guarantee that the next node will be a chunk node,
         # but whatever...
 
         if isinstance(child, ParsedNode) and child.name == "chunk":
-            chunk = build_chunk(child)
-        # if isinstance(child, ParsedNode) and child.name == "laststat":
-        #     statements.append()
-    
-    if has_node(node, "laststat"):
-        chunk = chunk + (build_laststat(find_first_node(node, "laststat")), )
+            return build_chunk(child)
     
     # chunks are allowed to be empty
     return ()
@@ -909,13 +1027,14 @@ def build_wrap(node: ParsedNode):
 def build_laststat(node: ParsedNode) -> Stmt:
     children = flat_children(node)
 
-    # if has_token(node, Definitions.Break.name, children):
-    #     break_token = find_first_token(
-    #         node,
-    #         Definitions.Break.name,
-    #         children,
-    #     )
-    #     return BreakStmt(span=break_token.span)
+    if has_token(node, Definitions.Break.name, children):
+        break_token = find_first_token(
+            node,
+            Definitions.Break.name,
+            children,
+        )
+        emit_token(break_token, "keyword")
+        return BreakStmt(span=break_token.span)
 
     if has_token(node, Definitions.Return.name, children):
         return_token = find_first_token(
@@ -923,6 +1042,7 @@ def build_laststat(node: ParsedNode) -> Stmt:
             Definitions.Return.name,
             children,
         )
+        emit_token(return_token, "keyword")
 
         equation_node = next(
             (
@@ -1014,6 +1134,8 @@ def build_chunk(node: ParsedNode):
         if isinstance(child, ParsedNode):
             if child.name == "stat":
                 statements.append(build_stat(child))
+            elif child.name == "laststat":
+                statements.append(build_laststat(child))
     
     return tuple(statements)
 

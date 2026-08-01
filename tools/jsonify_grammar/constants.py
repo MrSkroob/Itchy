@@ -1,5 +1,11 @@
 from enum import StrEnum
 
+"""
+YES. THIS IS IN itchy/tokenizer.py 
+YES. THIS IS A DUPLICATE OF THAT
+NO. I AM NOT DEALING WITH PYTHON'S SHITTY IMPORT SYSTEM
+GOODBYE.
+"""
 class Definitions(StrEnum):
     Comment = r"//.*"
     BlockComment = r"/\*[\s\S]*?\*/"
