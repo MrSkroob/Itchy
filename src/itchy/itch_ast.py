@@ -24,14 +24,11 @@ _SEMANTIC_TOKEN_SINK: contextvars.ContextVar[list[SemanticToken] | None] = conte
 )
 
 
-def emit_reference(token: Token[Definitions], *, parameters: set[str]) -> None:
-    if token.literal in parameters:
-        emit_token(token, "parameter", ("readonly",))
-    else:
-        emit_token(token, "variable")
-
-
-def emit_token(token: Token[Definitions] | None, token_type: str, modifiers: tuple[str, ...] = ()) -> None:
+def emit_token(
+    token: Token[Definitions] | None,
+    token_type: str,
+    modifiers: tuple[str, ...] = (),
+) -> None:
     if token is None:
         return
 
@@ -39,13 +36,23 @@ def emit_token(token: Token[Definitions] | None, token_type: str, modifiers: tup
     if sink is None:
         return
 
-    sink.append(SemanticToken(
-        line=token.line - 1,
-        character=token.char - 1,
-        length=len(token.literal.strip()),
-        token_type=token_type,
-        modifiers=modifiers,
-    ))
+    start = token.span.start
+    end = token.span.end
+
+    if start.line != end.line:
+        raise ValueError(
+            f"Semantic token cannot span multiple lines: {token!r}"
+        )
+
+    sink.append(
+        SemanticToken(
+            line=start.line,
+            character=start.character,
+            length=end.character - start.character,
+            token_type=token_type,
+            modifiers=modifiers,
+        )
+    )
 
 
 def collect_comment_tokens(source: str) -> list[SemanticToken]:
@@ -546,7 +553,7 @@ def build_literals(node: ParsedNode) -> Expr:
 
         if is_token(child, name="String"):
             assert isinstance(child, Token)
-            emit_token(child, "string")
+            # emit_token(child, "string")
             return StringExpr(parse_string(child.literal), span=child.span)
 
         if isinstance(child, ParsedNode) and child.name == "tableconstructor":
