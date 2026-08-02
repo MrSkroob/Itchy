@@ -11,8 +11,36 @@ class GenericRules(StrEnum):
     Newline = "NEWLINE"
     EOF = "EOF"
 
-
+NEWLINE_PATTERN = re.compile(r"\r\n|\r|\n")
 TokenRule = TypeVar("TokenRule", bound=StrEnum)
+
+def advance_position(
+    literal: str,
+    line: int,
+    character: int,
+) -> tuple[int, int]:
+    """
+    Advance a one-based source position over `literal`.
+
+    Newlines may be represented by:
+        CRLF: \\r\\n
+        CR:   \\r
+        LF:   \\n
+    """
+    newline_matches = list(NEWLINE_PATTERN.finditer(literal))
+
+    if not newline_matches:
+        return line, character + len(literal)
+
+    line += len(newline_matches)
+
+    final_newline = newline_matches[-1]
+    characters_after_newline = len(literal[final_newline.end():])
+
+    # Character positions are one-based.
+    character = 1 + characters_after_newline
+
+    return line, character
 
 
 @dataclass(frozen=True)
@@ -24,13 +52,26 @@ class Token(Generic[TokenRule]):
 
     @property
     def span(self) -> SourceSpan:
+        end_line, end_character = advance_position(
+            self.literal,
+            self.line,
+            self.char,
+        )
+
         return SourceSpan(
-            start=SourcePosition(self.line, self.char),
-            end=SourcePosition(self.line, self.char + len(self.literal))
+            start=SourcePosition(
+                line=self.line,
+                character=self.char,
+            ),
+            end=SourcePosition(
+                line=end_line,
+                character=end_character,
+            ),
         )
 
     def __repr__(self) -> str:
         return f"Token: {self.kind.name} on line {self.line}"
+
 
 # could also be considered as compiler rules. 
 # definitions provide, well, definitions for certain rules that haven't been defined explicitly in
@@ -98,49 +139,87 @@ def compile_rules(rules: type[TokenRule]):
     return re.compile("|".join(parts))
 
 
+
 class Tokenizer(Generic[TokenRule]):
-    def __init__(self, rules: type[TokenRule], blacklist: set[str]) -> None:
+    def __init__(
+        self,
+        rules: type[TokenRule],
+        blacklist: set[str],
+    ) -> None:
         self.rules = rules
         self.regex = compile_rules(rules)
         self.blacklist = blacklist
 
-    def read(self, text: str) -> Iterator[Token[TokenRule]]:
+    def read(
+        self,
+        text: str,
+    ) -> Iterator[Token[TokenRule]]:
         line = 1
         char = 1
         pos = 0
 
         while pos < len(text):
-            if text[pos] in {"\n", "\r\n", "\r"} :
+            # Handle CRLF, CR, and LF as exactly one newline.
+            newline_match = NEWLINE_PATTERN.match(text, pos)
+
+            if newline_match is not None:
+                literal = newline_match.group(0)
+
                 if GenericRules.Newline.name not in self.blacklist:
-                    yield Token(GenericRules.Newline, text[pos], line, char)
-                line += 1
-                char = 1
-                pos += 1
+                    yield Token(
+                        kind=GenericRules.Newline,
+                        literal=literal,
+                        line=line,
+                        char=char,
+                    )
+
+                line, char = advance_position(
+                    literal,
+                    line,
+                    char,
+                )
+                pos = newline_match.end()
                 continue
 
             match = self.regex.match(text, pos)
 
             if match is None:
+                # Retaining your previous behaviour: stop at the first
+                # unrecognised character.
                 break
-            
+
             group = match.lastgroup
-            literal = match.group()
+            literal = match.group(0)
 
             if group is None:
-                # should not happen, but we have it here to shut the linter up.
-                raise AssertionError("Empty group")
+                raise AssertionError("Matched token has no named group")
 
             kind = self.rules[group]
 
             if kind.name not in self.blacklist:
-                yield Token(kind, literal.strip(), line, char)
+                # Do not strip the literal. Its contents and length must
+                # agree with its source position.
+                yield Token(
+                    kind=kind,
+                    literal=literal,
+                    line=line,
+                    char=char,
+                )
 
+            # This also handles multiline block comments correctly.
+            line, char = advance_position(
+                literal,
+                line,
+                char,
+            )
             pos = match.end()
-            char += len(literal)
-            
-        yield Token(GenericRules.EOF, r"\Z", line, char)
 
-
+        yield Token(
+            kind=GenericRules.EOF,
+            literal=r"\Z",
+            line=line,
+            char=char,
+        )
 # {"Whitespace", "Comment"}
 
 

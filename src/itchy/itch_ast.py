@@ -24,6 +24,10 @@ _SEMANTIC_TOKEN_SINK: contextvars.ContextVar[list[SemanticToken] | None] = conte
 )
 
 
+def utf16_length(text: str) -> int:
+    return len(text.encode("utf-16-le")) // 2
+
+
 def emit_token(
     token: Token[Definitions] | None,
     token_type: str,
@@ -36,19 +40,15 @@ def emit_token(
     if sink is None:
         return
 
-    start = token.span.start
-    end = token.span.end
-
-    if start.line != end.line:
-        raise ValueError(
-            f"Semantic token cannot span multiple lines: {token!r}"
-        )
+    # Assuming the tokenizer stores one-based positions.
+    line = token.line - 1
+    character = token.char - 1
 
     sink.append(
         SemanticToken(
-            line=start.line,
-            character=start.character,
-            length=end.character - start.character,
+            line=line,
+            character=character,
+            length=utf16_length(token.literal),
             token_type=token_type,
             modifiers=modifiers,
         )
@@ -543,7 +543,7 @@ def build_literals(node: ParsedNode) -> Expr:
     for child in children:
         if is_token(child, name="Bool"):
             assert isinstance(child, Token)
-            emit_token(child, "boolean")
+            # emit_token(child, "boolean")
             return BoolExpr(child.literal.lower() == "true", span=child.span)
 
         if is_token(child, name="Number"):
@@ -733,7 +733,7 @@ def build_vardefstat(node: ParsedNode) -> VarDefStmt:
     type_token = find_first_token(node, "Type")
     symbol_token = find_first_token(node, "Symbol")
 
-    # emit_token(type_token, "type")
+    emit_token(type_token, "type")
     emit_token(symbol_token, "variable", ("declaration",))
 
     start = type_token.span.start

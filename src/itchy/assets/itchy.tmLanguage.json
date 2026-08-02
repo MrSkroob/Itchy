@@ -52,7 +52,7 @@
       "match": "\\b(if)\\b"
     },
     {
-      "name": "keyword.operator.word.itchy",
+      "name": "keyword.control.conditional.itchy",
       "match": "\\b(in)\\b"
     },
     {

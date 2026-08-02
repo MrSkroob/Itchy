@@ -3,6 +3,7 @@ from itchy.itch_ast import build_ast, build_ast_with_semantic_tokens, Program
 # from tools.ast_printer import print_ast
 from itchy.errors import format_syntax_error, format_compiler_error
 from itchy.assembler import Assembler, CompilerError
+from itchy.tokenizer import Tokenizer, Definitions
 import argparse
 
 import os
@@ -33,7 +34,7 @@ def compile(file: str, output: str, target: str):
         except (ParseError, CompilerError) as e:
             if isinstance(e, ParseError):
                 fail_state = parser.fail_state
-                print(parser.deepest_partial.tree.name)
+                print(e.previous_valid_tree)
                 if fail_state is not None:
                     print(format_syntax_error(fail_state, source, file))
             else:
