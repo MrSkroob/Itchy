@@ -24,6 +24,10 @@ _SEMANTIC_TOKEN_SINK: contextvars.ContextVar[list[SemanticToken] | None] = conte
 )
 
 
+def get_semantic_tokens():
+    return _SEMANTIC_TOKEN_SINK.get()
+
+
 def utf16_length(text: str) -> int:
     return len(text.encode("utf-16-le")) // 2
 
