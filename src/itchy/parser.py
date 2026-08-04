@@ -1,5 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
+from typing import Callable
 from itchy.tokenizer import Definitions, GenericRules, Tokenizer, Token
 from itchy.tree import Rule, Terminal, NonTerminal, Alternative, OptionalNode, Repeat, Sequence, GrammarNode, build_parse_tree, get_root_node
 
@@ -23,8 +24,7 @@ class ExpectedState:
         if pos > self.pos:
             self.pos = pos
             self.items = {expectation}
-
-        elif pos == self.pos:
+        else:
             self.items.add(expectation)
 
 
@@ -59,10 +59,11 @@ class FailState():
 
 
 class ParseError(Exception):
-    def __init__(self, tokens: list[Token[Definitions]], pos: int, node: GrammarNode, previous_valid_tree: ParseResult | None=None) -> None:
+    def __init__(self, tokens: list[Token[Definitions]], pos: int, rule_start: int, node: GrammarNode, previous_valid_tree: ParseResult | None=None) -> None:
         self.tokens = tokens
         self.pos = pos
         self.node = node
+        self.rule_start = rule_start
         self.previous_valid_tree: ParseResult | None = previous_valid_tree
         super().__init__()
 
@@ -82,17 +83,14 @@ def print_token_safe(tokens: list[Token[Definitions]], pos: int):
     return tokens[min(pos, len(tokens) - 1)].literal
 
 
-class ASTNode():
-    node_type: str
-
-
 class Parser:
-    def __init__(self) -> None:
+    def __init__(self, skip_bad_tokens: bool=False) -> None:
         self.rules = build_parse_tree()
         self.tokenizer = Tokenizer(Definitions, {"Comment", "Whitespace", "Newline", "BlockComment"})
         self.furthest_error: ParseError | None = None
         self.expected = ExpectedState()
-        self.rule_stack: list[str] = [] 
+        self.rule_stack: list[str] = []
+        self.skip_bad_tokens: bool = skip_bad_tokens
         # furthest place we got before failing
 
         # best place to recover a tree from (a terminal isn't gonna be that helpful)
@@ -147,18 +145,51 @@ class Parser:
         if self.deepest_partial is None or result.pos >= self.deepest_partial.pos:
             self.deepest_partial = result
 
-    def make_error(self, tokens: list[Token[Definitions]], pos: int, node: GrammarNode, previous_valid_tree: ParseResult | None=None):
-        error = ParseError(tokens, pos, node, previous_valid_tree)
+    def skip_statement(self, tokens: list[Token[Definitions]], pos: int) -> tuple[int, bool]:
+        """
+        Returns: new position, whether it reaches the end of a chunk
+        """
+        depth = 0
+        while pos < len(tokens):
+            kind = tokens[pos].kind
+
+            if kind == GenericRules.EOF:
+                return pos, True
+
+            if kind == Definitions.OpenCurlyBracket:
+                depth += 1
+                pos += 1
+                continue
+
+            if kind == Definitions.CloseCurlyBracket:
+                if depth == 0:
+                    return pos, True
+
+                depth -= 1
+                pos += 1
+                continue
+
+            if kind in (GenericRules.StatementSeperator, Definitions.StatementSeperator) and depth == 0:
+                return pos + 1, False
+
+            pos += 1
+
+        return pos, True
+            
+
+    def make_error(self, tokens: list[Token[Definitions]], pos: int, rule_start: int, node: GrammarNode, previous_valid_tree: ParseResult | None=None):
+        error = ParseError(tokens, pos, rule_start, node, previous_valid_tree)
         
         if self.furthest_error is None or pos > self.furthest_error.pos:
             self.furthest_error = error
         
         return error
+    
 
     def parse_rule(self, rule: Rule, tokens: list[Token[Definitions]], pos: int) -> ParseResult:
         self.rule_stack.append(rule.name)
         try:
-            result = self.parse_node(rule.body, tokens, pos)
+            result = self.parse_node(rule, pos, rule.body, tokens, pos)
             self.rule_stack.pop()
         except ParseError as error:
             # On success this wraps the matched body in a ParsedNode named
@@ -178,7 +209,7 @@ class Parser:
 
         return ParseResult(ParsedNode(rule.name, (result.tree, )), result.pos)
 
-    def parse_node(self, node: GrammarNode, tokens: list[Token[Definitions]], pos: int) -> ParseResult:
+    def parse_node(self, current_rule: Rule, start_pos: int, node: GrammarNode, tokens: list[Token[Definitions]], pos: int) -> ParseResult:
         match node:
             case Terminal(value):
                 if pos < len(tokens) and value.name == tokens[pos].kind.name:
@@ -186,7 +217,7 @@ class Parser:
                     return ParseResult(tokens[pos], pos + 1)
                 self.record_expected(node.child, pos)
                 debug_print(f"{print_token_safe(tokens, pos)}. Terminal rule not matched {value.name}")
-                raise self.make_error(tokens, pos, node)
+                raise self.make_error(tokens, pos, start_pos, node)
             
             case NonTerminal(_, rule):
                 if rule is None:
@@ -200,7 +231,7 @@ class Parser:
                 result = None
                 for child in children:
                     try:
-                        result = self.parse_node(child, tokens, pos)
+                        result = self.parse_node(current_rule, start_pos, child, tokens, pos)
                             
                         parsed_children.append(result.tree)
                         pos = result.pos
@@ -211,7 +242,6 @@ class Parser:
                             partial_children.append(
                                 error.previous_valid_tree.tree
                             )
-                            
 
                         partial_result = ParseResult(
                             ParsedNode(
@@ -228,7 +258,7 @@ class Parser:
 
                         debug_print(f"{print_token_safe(tokens, pos)}. Sequence broken {node}.")
                         # propagate the error upwards
-                        raise self.make_error(tokens, pos, node, partial_result)
+                        raise self.make_error(tokens, pos, start_pos, node, partial_result)
                     
                 
                 if result is None:
@@ -244,7 +274,7 @@ class Parser:
 
                 for option in options:
                     try:
-                        result = self.parse_node(option, tokens, pos)
+                        result = self.parse_node(current_rule, start_pos, option, tokens, pos)
                         debug_print(f"{print_token_safe(tokens, pos)}. Matched {node}")
                         return ParseResult(
                             ParsedNode(Alternative.__name__, (result.tree,)),
@@ -253,7 +283,7 @@ class Parser:
                     except ParseError as error:
                         if best_error is None or error.pos > best_error.pos:
                             best_error = error
-                        self.make_error(tokens, pos, node)
+                        self.make_error(tokens, start_pos, pos, node)
                 debug_print(f"Nothing matched {node}. {print_token_safe(tokens, pos)}")
                 assert best_error is not None
                 raise best_error
@@ -261,7 +291,7 @@ class Parser:
             case OptionalNode(child):
                 start_pos = pos
                 try:
-                    result = self.parse_node(child, tokens, pos)
+                    result = self.parse_node(current_rule, start_pos, child, tokens, pos)
                     debug_print(f"{print_token_safe(tokens, pos)}. Matched {node}")
                     return ParseResult(
                         ParsedNode(
@@ -294,9 +324,9 @@ class Parser:
                         # lost, since it's still the best information we
                         # have about what the writer was trying to express
                         # at this point in the source.
-                        self._consider_partial(error.previous_valid_tree)
+                        # self._consider_partial(error.previous_valid_tree)
 
-                    # self.make_error(tokens, pos, node)
+                    self.make_error(tokens, pos, start_pos, node)
                     debug_print(f"{print_token_safe(tokens, pos)}. Skipping {node}")
                     return ParseResult(
                         ParsedNode(
@@ -310,7 +340,7 @@ class Parser:
 
                 while True:
                     try:
-                        result = self.parse_node(child, tokens, pos)
+                        result = self.parse_node(current_rule, start_pos, child, tokens, pos)
                     except ParseError as error:
                         partial_result = ParseResult(
                             ParsedNode(
@@ -344,6 +374,7 @@ class Parser:
                         # self.make_error(tokens, pos, node, partial_result)
                         debug_print(f"{print_token_safe(tokens, pos)}. Skipping {node}")
                         break
+                            
 
                     if result.pos == pos:
                         break
@@ -365,17 +396,51 @@ class Parser:
         raise NotImplementedError()
 
 
-    def read(self, text: str) -> ParseResult:
-        # Reset per-parse state so a Parser instance can be reused across
-        # multiple `read()` calls without leaking stale error/recovery info
-        # from a previous file into the next one.
+    def parse(self, root: Rule, tokens: list[Token[Definitions]]) -> ParseResult:
         self.furthest_error = None
         self.deepest_partial = None
         self.reset_expected()
         self.rule_stack.clear()
 
+        result = self.parse_rule(root, tokens, 0)
+        return result
+
+
+    def try_deletion(self, root: Rule, tokens: list[Token[Definitions]], delete_pos: int, 
+                     delete_backward: int,
+                     delete_forward: int):
+
+        candidate = tokens[:delete_pos - delete_backward] + tokens[delete_pos + delete_forward:]
+
+        try:
+            result = self.parse(root, candidate)
+            return len(candidate), result, candidate
+        except ParseError as error:
+            return error.pos, error, candidate
+
+
+    def read(self, text: str) -> ParseResult:
+        # Reset per-parse state so a Parser instance can be reused across
+        # multiple `read()` calls without leaking stale error/recovery info
+        # from a previous file into the next one.
+
         root = get_root_node(self.rules)
         tokens = list(self.tokenizer.read(text))
-        result = self.parse_rule(root, tokens, 0)
 
-        return result
+        if not self.skip_bad_tokens:
+            return self.parse(root, tokens)
+        else:
+            print("try fixing file")
+            max_tries = 8
+            tries = 0
+            while True:
+                try:
+                    result = self.parse(root, tokens)
+                    return result
+                except ParseError as error:
+                    tokens = tokens[:error.rule_start] + tokens[error.pos - 1:]
+                    if tries > max_tries:
+                        raise
+                tries += 1 
+
+            
