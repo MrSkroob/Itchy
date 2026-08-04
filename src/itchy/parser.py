@@ -1,6 +1,5 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import Callable
 from itchy.tokenizer import Definitions, GenericRules, Tokenizer, Token
 from itchy.tree import Rule, Terminal, NonTerminal, Alternative, OptionalNode, Repeat, Sequence, GrammarNode, build_parse_tree, get_root_node
 
@@ -24,7 +23,7 @@ class ExpectedState:
         if pos > self.pos:
             self.pos = pos
             self.items = {expectation}
-        else:
+        elif pos == self.pos:
             self.items.add(expectation)
 
 
@@ -434,9 +433,6 @@ class Parser:
         if not self.skip_bad_tokens:
             return self.parse(root, tokens)
         else:
-            print("try fixing file")
-            # index 0: rule start
-            # index 1: error location
             """
             We slowly remove characters starting from the error location to the start of the rule until things work.
             """
@@ -447,28 +443,31 @@ class Parser:
             shift = 0
             offset = 1
             working_tokens = tokens.copy()
-            print(len(tokens))
             while True:
                 try:
                     result = self.parse(root, working_tokens)
                     print(len(working_tokens), shift)
                     return result
                 except ParseError as e:
+                    if len(tokens) == 0:
+                        raise
                     error = self.furthest_error or e
 
+                    error_pos = max(len(tokens) - 1, error.pos)
+
                     if progress is None:
-                        progress = error.pos
+                        progress = error_pos
 
                     # we made more progress, try to delete current line.
-                    if error.pos > progress:
-                        progress = error.pos
+                    if error_pos > progress:
+                        progress = error_pos
                         tokens = working_tokens.copy()
-                        line = error.tokens[error.pos].line - offset
+                        line = error.tokens[error_pos].line - offset
                         shift = 0
                         tries = 0
                     else:
                         # delete the line above until something works.
-                        line = (error.tokens[error.pos].line - offset) + shift
+                        line = (error.tokens[error_pos].line - offset) + shift
                         shift -= 1
 
                     working_tokens = [i for i in working_tokens if i.line != line]
