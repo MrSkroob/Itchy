@@ -453,7 +453,7 @@ class Parser:
                         raise
                     error = self.furthest_error or e
 
-                    error_pos = max(len(error.tokens) - 1, error.pos)
+                    error_pos = min(len(error.tokens) - 1, error.pos)
 
                     if progress is None:
                         progress = error_pos
