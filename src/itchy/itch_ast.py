@@ -1012,7 +1012,7 @@ def build_ifstat(node: ParsedNode):
 
 
 def build_whilestat(node: ParsedNode):
-    while_token = find_first_token(node, "while")
+    while_token = find_first_token(node, Definitions.While.name)
     # emit_token(while_token, "keyword")
     condition = find_first_node(node, "equation")
     body = find_first_node(node, "wrap")

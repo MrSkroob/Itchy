@@ -59,10 +59,12 @@ class FailState():
 
 
 class ParseError(Exception):
-    def __init__(self, tokens: list[Token[Definitions]], pos: int, rule_start: int, node: GrammarNode, previous_valid_tree: ParseResult | None=None) -> None:
+    def __init__(self, tokens: list[Token[Definitions]], pos: int, rule_start: int, failed_rule: Rule, node: GrammarNode, 
+                 previous_valid_tree: ParseResult | None=None) -> None:
         self.tokens = tokens
         self.pos = pos
         self.node = node
+        self.rule = failed_rule
         self.rule_start = rule_start
         self.previous_valid_tree: ParseResult | None = previous_valid_tree
         super().__init__()
@@ -177,8 +179,9 @@ class Parser:
         return pos, True
             
 
-    def make_error(self, tokens: list[Token[Definitions]], pos: int, rule_start: int, node: GrammarNode, previous_valid_tree: ParseResult | None=None):
-        error = ParseError(tokens, pos, rule_start, node, previous_valid_tree)
+    def make_error(self, tokens: list[Token[Definitions]], pos: int, rule_start: int, failed_rule: Rule,
+                    node: GrammarNode, previous_valid_tree: ParseResult | None=None):
+        error = ParseError(tokens, pos, rule_start, failed_rule, node, previous_valid_tree)
         
         if self.furthest_error is None or pos > self.furthest_error.pos:
             self.furthest_error = error
@@ -190,6 +193,7 @@ class Parser:
         self.rule_stack.append(rule.name)
         try:
             result = self.parse_node(rule, pos, rule.body, tokens, pos)
+            debug_print(f"Rule completed: {rule.name}")
             self.rule_stack.pop()
         except ParseError as error:
             # On success this wraps the matched body in a ParsedNode named
@@ -217,7 +221,7 @@ class Parser:
                     return ParseResult(tokens[pos], pos + 1)
                 self.record_expected(node.child, pos)
                 debug_print(f"{print_token_safe(tokens, pos)}. Terminal rule not matched {value.name}")
-                raise self.make_error(tokens, pos, start_pos, node)
+                raise self.make_error(tokens, pos, start_pos, current_rule, node)
             
             case NonTerminal(_, rule):
                 if rule is None:
@@ -258,7 +262,7 @@ class Parser:
 
                         debug_print(f"{print_token_safe(tokens, pos)}. Sequence broken {node}.")
                         # propagate the error upwards
-                        raise self.make_error(tokens, pos, start_pos, node, partial_result)
+                        raise self.make_error(tokens, pos, start_pos, current_rule, node, partial_result)
                     
                 
                 if result is None:
@@ -283,7 +287,7 @@ class Parser:
                     except ParseError as error:
                         if best_error is None or error.pos > best_error.pos:
                             best_error = error
-                        self.make_error(tokens, start_pos, pos, node)
+                        self.make_error(tokens, start_pos, pos, current_rule, node)
                 debug_print(f"Nothing matched {node}. {print_token_safe(tokens, pos)}")
                 assert best_error is not None
                 raise best_error
@@ -326,7 +330,7 @@ class Parser:
                         # at this point in the source.
                         # self._consider_partial(error.previous_valid_tree)
 
-                    self.make_error(tokens, pos, start_pos, node)
+                    self.make_error(tokens, pos, start_pos, current_rule, node)
                     debug_print(f"{print_token_safe(tokens, pos)}. Skipping {node}")
                     return ParseResult(
                         ParsedNode(
@@ -431,16 +435,40 @@ class Parser:
             return self.parse(root, tokens)
         else:
             print("try fixing file")
+            # index 0: rule start
+            # index 1: error location
+            """
+            We slowly remove characters starting from the error location to the start of the rule until things work.
+            """
+            progress = 0
+            shift = 1
             max_tries = 8
             tries = 0
+            working_tokens = tokens.copy()
             while True:
                 try:
-                    result = self.parse(root, tokens)
+                    result = self.parse(root, working_tokens)
                     return result
-                except ParseError as error:
-                    tokens = tokens[:error.rule_start] + tokens[error.pos - 1:]
+                except ParseError as e:
+                    error = self.furthest_error or e
+                    if error.pos > progress:
+                        progress = error.pos
+                        tokens = working_tokens.copy()
+                        start = error.pos
+                        end = error.pos + 1
+                        shift = 0
+                    else:
+                        start = error.pos - shift
+                        end = error.pos + 1
+                        shift += 1
+
+                    start = min(len(tokens) - 1, start)
+                    end = max(0, end)
+
+                    working_tokens = tokens[:start] + tokens[end:]
                     if tries > max_tries:
                         raise
                 tries += 1 
+            
 
             
