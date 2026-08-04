@@ -440,32 +440,47 @@ class Parser:
             """
             We slowly remove characters starting from the error location to the start of the rule until things work.
             """
-            progress = 0
-            shift = 1
-            max_tries = 8
+            progress = None
+            offset_tries = 8
+            max_tries = offset_tries * 2
             tries = 0
+            shift = 0
+            offset = 1
             working_tokens = tokens.copy()
+            print(len(tokens))
             while True:
                 try:
                     result = self.parse(root, working_tokens)
+                    print(len(working_tokens), shift)
                     return result
                 except ParseError as e:
                     error = self.furthest_error or e
+
+                    if progress is None:
+                        progress = error.pos
+
+                    # we made more progress, try to delete current line.
                     if error.pos > progress:
                         progress = error.pos
                         tokens = working_tokens.copy()
-                        start = error.pos
-                        end = error.pos + 1
+                        line = error.tokens[error.pos].line - offset
                         shift = 0
+                        tries = 0
                     else:
-                        start = error.pos - shift
-                        end = error.pos + 1
-                        shift += 1
+                        # delete the line above until something works.
+                        line = (error.tokens[error.pos].line - offset) + shift
+                        shift -= 1
 
-                    start = min(len(tokens) - 1, start)
-                    end = max(0, end)
+                    working_tokens = [i for i in working_tokens if i.line != line]
 
-                    working_tokens = tokens[:start] + tokens[end:]
+                    # bad hack :(
+                    # the error reporter sometimes reports the incorrect line by 1, so we need to test
+                    # offsets both 1 and 0.
+                    if tries == offset_tries:
+                        shift = 0
+                        offset = 0
+                        working_tokens = tokens.copy()
+
                     if tries > max_tries:
                         raise
                 tries += 1 

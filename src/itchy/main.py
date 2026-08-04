@@ -17,7 +17,7 @@ ROOT = Path(__file__).parent.parent
 parser = Parser(skip_bad_tokens=True)
 assembler = Assembler()
 
-
+   
 def compile(file: str, output: str, target: str):
     """
     Compiles code to an existing output .sb3 file, targetting a specific sprite/stage
