@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Generic, Iterator, TypeVar
 from enum import StrEnum
-from itchy.shared_templates import SourceSpan, SourcePosition
+from itchy.shared_templates import SourceSpan, SourcePosition, VariableTypes
 import re
 
 # these tend to be treated specially other than the other rules below:
@@ -94,7 +94,7 @@ class Definitions(StrEnum):
     If = r"\b(if)\b"
     In = r"\b(in)\b"
     Number = r"[0-9][_0-9]*(\.[0-9][_0-9]*)?"
-    Type = r"\b(?:var|bool|list)\b"
+    Type = fr"\b(?:{"|".join([i.value for i in VariableTypes])})\b"
     Bool = r"\b(?:true|false)\b"
     Assign = r"\*=|\+=|-=|/=|=(?!=)"
     Binop = r"\.\.|<=|>=|==|!=|\+|-|\*|/|<|>|\b(?:and|or)\b|\b(not)\b"

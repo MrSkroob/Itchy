@@ -62,8 +62,35 @@ class DataType(Enum):
     LIST = 13
 
 
+# some of these types are used internally and are not accessible to the user
+# they help with function signature suggestions
+# but users can't declare variables using some of these types.
 class VariableTypes(StrEnum):
     VAR = "var"
+    STRING = "string"
+    NUMBER = "number"
     BOOL = "bool"
     LIST = "list"
     UNKNOWN = "unknown"
+
+
+# 
+VARIABLE_TYPE_TO_USER_TYPES: dict[VariableTypes, VariableTypes] = {
+    VariableTypes.VAR: VariableTypes.VAR,
+    VariableTypes.STRING: VariableTypes.VAR,
+    VariableTypes.NUMBER: VariableTypes.VAR
+}
+
+
+DATA_TO_VARIABLE_TYPE: dict[DataType, VariableTypes] = {
+    DataType.NUMBER: VariableTypes.NUMBER,
+    DataType.POSITIVE_NUMBER: VariableTypes.NUMBER,
+    DataType.POSITIVE_INTEGER: VariableTypes.NUMBER,
+    DataType.INTEGER: VariableTypes.NUMBER,
+    DataType.ANGLE: VariableTypes.NUMBER,
+    DataType.COLOR: VariableTypes.STRING,
+    DataType.STRING: VariableTypes.STRING,
+    DataType.BROADCAST: VariableTypes.STRING,
+    DataType.VARIABLE: VariableTypes.VAR,
+    DataType.LIST: VariableTypes.LIST
+}

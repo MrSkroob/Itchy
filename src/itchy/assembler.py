@@ -13,7 +13,7 @@ from enum import Enum
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
-from itchy.shared_templates import VariableTypes, DataType, SPRITE_TEMPLATE, COSTUME_TEMPLATE
+from itchy.shared_templates import VariableTypes, DataType, SPRITE_TEMPLATE, COSTUME_TEMPLATE, VARIABLE_TYPE_TO_USER_TYPES
 from itchy.scratch_blocks import SCRATCH_BLOCKS, Block, Reporter, Event, Menu
 from itchy.itch_ast import \
     ASTNode, Param, \
@@ -213,6 +213,7 @@ class Assembler:
         You may also use this if you're okay with the variable not existing beforehand (typically for loop variables and other compiler-defined, single use variables.)
         """
         # shared defines if the variable can be accessible to all sprites
+
         is_list = type_name == "list"
         if is_list:
             default_value = []
@@ -359,6 +360,8 @@ class Assembler:
             case BlockStmt(body=body):
                 return self.emit_sequence(body, parent, context)
             case VarDefStmt(shared=shared, type_name=type_name, name=name):
+                if type_name not in {VariableTypes.VAR.value, VariableTypes.LIST.value, VariableTypes.BOOL.value}:
+                    raise InvalidTypeError(f"Invalid variable type: {type_name}. Scratch only permits var, list and bool.", stmt)
                 self.define_variable(shared, type_name, name, context)
                 return BlockRange(None, None)
             case AssignStmt(target=target, value=value):
@@ -582,8 +585,11 @@ class Assembler:
                 block_id,
             )
 
-            if arg_type != emitted_arg.return_type:
-                raise InvalidTypeError(f"{stmt.callee}: argument {index} expected {arg_type} not {emitted_arg.return_type}", arg_expr)
+            arg_type = VARIABLE_TYPE_TO_USER_TYPES.get(arg_type, arg_type)
+            user_arg_type = VARIABLE_TYPE_TO_USER_TYPES.get(emitted_arg.return_type, emitted_arg.return_type)
+
+            if arg_type != user_arg_type:
+                raise InvalidTypeError(f"{stmt.callee}: argument {index} expected {arg_type} not {user_arg_type}", arg_expr)
             
             inputs[arg_id] = emitted_arg.value
             index += 1
@@ -1145,12 +1151,12 @@ class Assembler:
         
         match expr:
             case NumberExpr(value=value):
-                return ScratchInput((InputType.SHADOW_ONLY, (DataType.NUMBER, str(value))), VariableTypes.VAR)
+                return ScratchInput((InputType.SHADOW_ONLY, (DataType.NUMBER, str(value))), VariableTypes.NUMBER)
             case StringExpr(value=value):
                 if re.match(HEXCODE, value) is not None:
-                    return ScratchInput((InputType.SHADOW_ONLY, (DataType.COLOR, value)), VariableTypes.VAR)
+                    return ScratchInput((InputType.SHADOW_ONLY, (DataType.COLOR, value)), VariableTypes.STRING)
                 else:
-                    return ScratchInput((InputType.SHADOW_ONLY, (DataType.STRING, value)), VariableTypes.VAR)
+                    return ScratchInput((InputType.SHADOW_ONLY, (DataType.STRING, value)), VariableTypes.STRING)
             case BoolExpr(value=value):
                 # in scratch:
                 # if (0 == 0) == "true" is true, so we can just use strings without any fancy conversion
@@ -1518,7 +1524,7 @@ class Assembler:
                         "NUM2": self.emit_expr(value, context, block_parent, block_id).value,
                     },
                 )
-                return ScratchInput((InputType.BLOCK_ONLY, block_id), VariableTypes.VAR)
+                return ScratchInput((InputType.BLOCK_ONLY, block_id), VariableTypes.NUMBER)
 
         raise NotImplementedError(f"Unsupported unary operator: {op}")
     
@@ -1677,7 +1683,7 @@ class Assembler:
                         (
                             InputType.BLOCK_ONLY,
                             operator_id
-                        ), VariableTypes.VAR
+                        ), VariableTypes.STRING
                     )
 
             else:
