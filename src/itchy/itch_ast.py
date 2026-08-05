@@ -375,6 +375,7 @@ class ASTBuilder:
         self.semantic_tokens: list[SemanticToken] = []
         self.function_scope: str | None = None
         self.called_function: str | None = None
+        self.argument_index: int = 0
 
     def reset(self) -> None:
         self.semantic_tokens = []
@@ -664,12 +665,16 @@ class ASTBuilder:
     
     def build_varlist1(self, node: ParsedNode) -> tuple[Expr, ...]:
         values: list[Expr] = []
-    
+        index = 0
+        self.argument_index = 0
         for child in flat_children(node):
             if isinstance(child, ParsedNode) and child.name == "equation":
                 values.append(self.build_equation(child))
+                index += 1
             elif isinstance(child, ParsedNode) and child.name == "varlist1":
                 values.extend(self.build_varlist1(child))
+                index += 1
+            self.argument_index = index
     
         return tuple(values)
     
