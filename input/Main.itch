@@ -1,35 +1,28 @@
-var alphabet
-list test
+var y
+var normalised
+var degrees
 
 
-define len(variable: var) {
-    return operator_length(variable)
+define f(x: var) {
+    return operator_mathop(x, "sin")
 }
 
 
-define main() {
-    alphabet = "abcdefghijklmnopqrstuvwxyz"
+define warp main() {
+    pen_clear()
+    motion_gotoxy(-240, 0)
+    pen_penDown()
 
-    looks_sayforsecs(len(alphabet), 2)
-
-    for i in alphabet {
-        looks_say(i)
-        control_wait(0.1)
+    for x = -240, 240, 1 {
+        normalised = ((x + 240) / 480) * 180
+        y = (f(normalised) * 180)
+        motion_gotoxy(x, y)
     }
+
+    pen_penUp()
 }
 
 
 event event_whenflagclicked() {
-    if "a" in test {
-        looks_say("oh noes!")
-    }
     main()
-}
-
-event event_whenbackdropswitchesto() {
-    while true {
-        for i = 1, 10, 1 {
-            
-        }
-    }
 }
