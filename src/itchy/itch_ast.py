@@ -19,9 +19,17 @@ class SemanticToken:
     modifiers: tuple[str, ...] = ()
 
 
+_FUNCTION_SCOPE: contextvars.ContextVar[str | None] = contextvars.ContextVar("function_scope", default=None)
 _SEMANTIC_TOKEN_SINK: contextvars.ContextVar[list[SemanticToken] | None] = contextvars.ContextVar(
     "semantic_token_sink", default=None
 )
+
+
+def get_function_scope():
+    """
+    Returns the function scope that the ast was at before it raised an error (usually due to an incomplete parse tree)
+    """
+    return _FUNCTION_SCOPE.get()
 
 
 def get_semantic_tokens():
@@ -590,8 +598,9 @@ def build_literals(node: ParsedNode) -> Expr:
         if isinstance(child, ParsedNode) and child.name == "functioncall":
             func_name = find_first_token(child, Definitions.Symbol.name)
             emit_token(func_name, "function")
+            reset_token = _FUNCTION_SCOPE.set(func_name.literal)
             arg_list = build_varlist1(find_first_node(child, "args"))
-
+            _FUNCTION_SCOPE.reset(reset_token)
             return FunctionCallExpr(
                 func_name.literal,
                 arg_list,
@@ -680,7 +689,10 @@ def build_namelist(node: ParsedNode) -> tuple[str, ...]:
 def build_functioncall(node: ParsedNode) -> Stmt:
     function_name = find_first_token(node, Definitions.Symbol.name)
     emit_token(function_name, "function")
+    reset_token = _FUNCTION_SCOPE.set(function_name.literal)
     args = build_varlist1(find_first_node(node, "args"))
+    _FUNCTION_SCOPE.reset(reset_token)
+
     return FunctionCallStmt(
         function_name.literal,
         args,
@@ -689,7 +701,6 @@ def build_functioncall(node: ParsedNode) -> Stmt:
             args[-1].span.end if len(args) > 0 else function_name.span.end
         )
     )
-
 
 def build_varassignstat(node: ParsedNode) -> Stmt:
     var_node = find_first_node(node, "var")

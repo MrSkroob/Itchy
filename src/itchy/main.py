@@ -34,6 +34,7 @@ def compile(file: str, output: str, target: str):
         except (ParseError, CompilerError) as e:
             if isinstance(e, ParseError):
                 fail_state = parser.fail_state
+                print(parser.expected_items)
                 if fail_state is not None:
                     print(format_syntax_error(fail_state, source, file))
             else:
