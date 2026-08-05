@@ -45,6 +45,8 @@ def _format_ast(node: Any, lines: list[str], indent: int) -> None:
         lines.append(prefix + f"{cls_name}(")
 
         for field in fields(node):
+            if field.name == "span":
+                continue
             value = getattr(node, field.name)
             field_prefix = "  " * (indent + 1)
 

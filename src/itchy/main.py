@@ -1,6 +1,6 @@
 from itchy.parser import Parser, ParseError
-from itchy.itch_ast import build_ast, build_ast_with_semantic_tokens, Program
-# from tools.ast_printer import print_ast
+from itchy.itch_ast import ASTBuilder, Program
+from tools.ast_printer import print_ast
 from itchy.errors import format_syntax_error, format_compiler_error
 from itchy.assembler import Assembler, CompilerError
 from itchy.tokenizer import Tokenizer, Definitions
@@ -14,7 +14,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
 
-parser = Parser(skip_bad_tokens=True)
+parser = Parser(skip_bad_tokens=False)
+ast_builder = ASTBuilder()
 assembler = Assembler()
 
    
@@ -27,14 +28,15 @@ def compile(file: str, output: str, target: str):
         try:
             assembler.prepare(output)
             parsed = parser.read(source)
-            tree, _ = build_ast_with_semantic_tokens(parsed.tree, source)
+            tree = ast_builder.build(parsed.tree)
             # tree = build_ast(parsed.tree)
             assembler.assemble(tree, output, target)
             # print_ast(tree)
         except (ParseError, CompilerError) as e:
             if isinstance(e, ParseError):
                 fail_state = parser.fail_state
-                print(parser.expected_items)
+                print(ast_builder.argument_index)
+                # print(parser.expected_items)
                 if fail_state is not None:
                     print(format_syntax_error(fail_state, source, file))
             else:

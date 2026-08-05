@@ -592,10 +592,8 @@ class ASTBuilder:
             if isinstance(child, ParsedNode) and child.name == "functioncall":
                 func_name = find_first_token(child, Definitions.Symbol.name)
                 self.emit_token(func_name, "function")
-                previous_call = self.called_function
                 self.called_function = func_name.literal
                 arg_list = self.build_varlist1(find_first_node(child, "args"))
-                self.called_function = previous_call
                 return FunctionCallExpr(
                     func_name.literal,
                     arg_list,
@@ -665,17 +663,15 @@ class ASTBuilder:
     
     def build_varlist1(self, node: ParsedNode) -> tuple[Expr, ...]:
         values: list[Expr] = []
-        index = 0
-        self.argument_index = 0
-        for child in flat_children(node):
+        children = flat_children(node)
+
+        for child in children:
             if isinstance(child, ParsedNode) and child.name == "equation":
+                self.argument_index += 1
                 values.append(self.build_equation(child))
-                index += 1
             elif isinstance(child, ParsedNode) and child.name == "varlist1":
                 values.extend(self.build_varlist1(child))
-                index += 1
-            self.argument_index = index
-    
+                
         return tuple(values)
     
     
@@ -688,10 +684,9 @@ class ASTBuilder:
     def build_functioncall(self, node: ParsedNode) -> Stmt:
         function_name = find_first_token(node, Definitions.Symbol.name)
         self.emit_token(function_name, "function")
-        previous_call = self.called_function
         self.called_function = function_name.literal
+        self.argument_index = 0
         args = self.build_varlist1(find_first_node(node, "args"))
-        self.called_function = previous_call
     
         return FunctionCallStmt(
             function_name.literal,
@@ -1110,6 +1105,7 @@ class ASTBuilder:
     
     def build_stat(self, node: ParsedNode) -> Stmt:
         for child in flat_children(node):
+            self.called_function = None
             if not isinstance(child, ParsedNode):
                 continue
     

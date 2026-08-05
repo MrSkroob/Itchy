@@ -1,28 +1,6 @@
-var y
-var normalised
-var degrees
+define foo(a: var, b: list, c: bool) {
 
-
-define f(x: var) {
-    return operator_mathop(x, "sin")
 }
 
 
-define warp main() {
-    pen_clear()
-    motion_gotoxy(-240, 0)
-    pen_penDown()
-
-    for x = -240, 240, 1 {
-        normalised = ((x + 240) / 480) * 180
-        y = (f(normalised) * 180)
-        motion_gotoxy(x, y)
-    }
-
-    pen_penUp()
-}
-
-
-event event_whenflagclicked() {
-    main()
-}
+foo(a, b,
