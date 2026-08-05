@@ -101,11 +101,13 @@ def build_ast_with_semantic_tokens(tree: ParsedChild, source: str | None = None)
     """
     tokens: list[SemanticToken] = []
     reset_token = _SEMANTIC_TOKEN_SINK.set(tokens)
+    scope_reset_token = _FUNCTION_SCOPE.set(None)
 
     try:
         program = build_ast(tree)
     finally:
         _SEMANTIC_TOKEN_SINK.reset(reset_token)
+        _FUNCTION_SCOPE.reset(scope_reset_token)
 
     # if source is not None:
         # tokens.extend(collect_comment_tokens(source))
@@ -806,10 +808,12 @@ def build_funcbody(node: ParsedNode) -> tuple[tuple[Param, ...], tuple[Stmt, ...
 def build_function(node: ParsedNode) -> FunctionParts:
     children = flat_children(node)
     name = expect_token(children[0], Definitions.Symbol.name)
+    reset_token = _FUNCTION_SCOPE.set(name.literal)
     emit_token(name, "function", ("declaration",))
     funcbody = expect_node(children[1], "funcbody")
 
     params, body = build_funcbody(funcbody)
+    _FUNCTION_SCOPE.reset(reset_token)
 
     if len(body) > 0:
         end = body[-1].span.end
