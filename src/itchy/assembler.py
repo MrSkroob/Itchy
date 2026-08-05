@@ -870,7 +870,7 @@ class Assembler:
         return BlockRange(set_range.first, repeat_id)
     
     def emit_for_in(self, stmt: ForInStmt, parent: StrOptional, context: StrOptional):
-        list_variable_name = "list_getter" + self.new_id()
+        list_variable_name = "compiler:" + self.new_id()
         try:
             iterable_id = self.get_variable(stmt.iterable.root)
         except NameError:
