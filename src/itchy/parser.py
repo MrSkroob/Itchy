@@ -92,21 +92,11 @@ class Parser:
         self.expected = ExpectedState()
         self.rule_stack: list[str] = []
         self.skip_bad_tokens: bool = skip_bad_tokens
-        self.halt: bool = False
         # furthest place we got before failing
 
         # best place to recover a tree from (a terminal isn't gonna be that helpful)
         # we want to basically go back to the last valid rule we fulfilled. 
         self.deepest_partial: ParseResult | None = None
-
-        # True if the ParseResult returned by the most recent `read()` call
-        # is a best-effort recovered tree (i.e. the source had a syntax
-        # error and `read()` fell back to `deepest_partial`) rather than a
-        # clean, complete parse. Callers can check this -- together with
-        # `fail_state`/`furthest_error` -- to still report the syntax error
-        # even though `read()` itself no longer raises for recoverable
-        # failures.
-        self.recovered_from_error: bool = False
 
 
     def reset_expected(self):
@@ -117,8 +107,6 @@ class Parser:
                              definition=token_kind,
                              rule_path=tuple(self.rule_stack))
 
-    def cancel(self):
-        self.halt = True
 
     @property
     def expected_items(self):
@@ -201,9 +189,6 @@ class Parser:
     
 
     def parse_rule(self, rule: Rule, tokens: list[Token[Definitions]], pos: int) -> ParseResult:
-        if self.halt:
-            return ParseResult(ParsedNode("", ()), pos)
-        
         self.rule_stack.append(rule.name)
         try:
             result = self.parse_node(rule, pos, rule.body, tokens, pos)
@@ -342,7 +327,7 @@ class Parser:
                         # lost, since it's still the best information we
                         # have about what the writer was trying to express
                         # at this point in the source.
-                        self._consider_partial(error.previous_valid_tree)
+                        # self._consider_partial(error.previous_valid_tree)
 
                     self.make_error(tokens, pos, start_pos, current_rule, node)
                     debug_print(f"{print_token_safe(tokens, pos)}. Skipping {node}")
@@ -357,27 +342,39 @@ class Parser:
                 parsed_children: list[ParsedNode | Token[Definitions]] = []  # type: ignore[no-redef]
 
                 while True:
-                    attempt_pos = pos
                     try:
                         result = self.parse_node(current_rule, start_pos, child, tokens, pos)
                     except ParseError as error:
-                        """
-                        dying here could mean one of two things:
+                        partial_result = ParseResult(
+                            ParsedNode(
+                                Repeat.__name__,
+                                tuple(parsed_children),
+                            ),
+                            pos
+                        )
 
-                        1. repetition is supposed to stop here (i.e. it's the end of a recursive rule)
-                        2. repetition is half finished and stopping here is a syntax error (does not match any rules later)
+                        if error.previous_valid_tree is None:
+                            error.previous_valid_tree = partial_result
 
-                        if 1 occured, that's okay.
+                        # The failed final attempt is about to be dropped on
+                        # the floor (Repeat always "succeeds" with whatever
+                        # it matched so far). For recovery purposes, also
+                        # register a combined view -- everything matched by
+                        # earlier repetitions *plus* the partially-parsed
+                        # failing one -- so an error deep inside e.g. the
+                        # third statement of a block doesn't lose the first
+                        # two statements from the recovered fragment.
+                        combined = ParseResult(
+                            ParsedNode(
+                                Repeat.__name__,
+                                tuple(parsed_children) + (error.previous_valid_tree.tree,),
+                            ),
+                            error.previous_valid_tree.pos,
+                        )
+                        self._consider_partial(partial_result)
+                        self._consider_partial(combined)
 
-                        if 2 occured, we want the tree to not be discarded.
-                        """
-                        if (
-                            error.previous_valid_tree is not None
-                            and error.previous_valid_tree.pos > attempt_pos
-                        ):
-                            parsed_children.append(error.previous_valid_tree.tree)
-                            pos = error.previous_valid_tree.pos
-
+                        # self.make_error(tokens, pos, node, partial_result)
                         debug_print(f"{print_token_safe(tokens, pos)}. Skipping {node}")
                         break
                             
@@ -412,33 +409,29 @@ class Parser:
         return result
 
 
+    def try_deletion(self, root: Rule, tokens: list[Token[Definitions]], delete_pos: int, 
+                     delete_backward: int,
+                     delete_forward: int):
+
+        candidate = tokens[:delete_pos - delete_backward] + tokens[delete_pos + delete_forward:]
+
+        try:
+            result = self.parse(root, candidate)
+            return len(candidate), result, candidate
+        except ParseError as error:
+            return error.pos, error, candidate
+
+
     def read(self, text: str) -> ParseResult:
         # Reset per-parse state so a Parser instance can be reused across
         # multiple `read()` calls without leaking stale error/recovery info
         # from a previous file into the next one.
-        self.halt = False
-        self.recovered_from_error = False
+
         root = get_root_node(self.rules)
         tokens = list(self.tokenizer.read(text))
 
         if not self.skip_bad_tokens:
-            try:
-                return self.parse(root, tokens)
-            except ParseError:
-                # A clean parse wasn't possible. Rather than bubble the
-                # ParseError all the way up (which leaves the caller with
-                # nothing to work with), fall back to the deepest partial
-                # tree the recovery machinery in `parse_node` managed to
-                # assemble on the way down. It has the same node shape
-                # (Sequence/Repeat/OptionalNode/Alternative wrappers around
-                # rule nodes) as a clean parse, just truncated wherever the
-                # syntax error was hit -- so `build_ast` can still walk it
-                # the same way it walks a full tree. It's expected that
-                # `build_ast` may itself raise once it reaches the missing
-                # tail of the tree; that's fine, the point here is just to
-                # get as far as possible instead of stopping at the parser.
-
-                raise
+            return self.parse(root, tokens)
         else:
             """
             We slowly remove characters starting from the error location to the start of the rule until things work.
@@ -456,8 +449,6 @@ class Parser:
                     print(len(working_tokens), shift)
                     return result
                 except ParseError as e:
-                    if self.halt:
-                        raise
                     if len(tokens) == 0:
                         raise
                     error = self.furthest_error or e
@@ -491,5 +482,7 @@ class Parser:
 
                     if tries > max_tries:
                         raise
-                tries += 1
+                tries += 1 
+            
+
             
