@@ -374,7 +374,7 @@ class ASTBuilder:
     def __init__(self) -> None:
         self.semantic_tokens: list[SemanticToken] = []
         self.function_scope: str | None = None
-        self.called_function: str | None = None
+        self.called_function: FunctionCallStmt | FunctionCallExpr | None = None
         self.argument_index: int = 0
 
     def reset(self) -> None:
@@ -593,9 +593,8 @@ class ASTBuilder:
             if isinstance(child, ParsedNode) and child.name == "functioncall":
                 func_name = find_first_token(child, Definitions.Symbol.name)
                 self.emit_token(func_name, "function")
-                self.called_function = func_name.literal
                 arg_list = self.build_varlist1(find_first_node(child, "args"))
-                return FunctionCallExpr(
+                stmt = FunctionCallExpr(
                     func_name.literal,
                     arg_list,
                     span=SourceSpan(
@@ -603,6 +602,9 @@ class ASTBuilder:
                         arg_list[-1].span.end if len(arg_list) > 0 else func_name.span.end
                     )
                 )
+                print(stmt)
+                self.called_function = stmt
+                return stmt
     
         raise ValueError(f"this ain't a literal g: {node.children}")
     
@@ -690,11 +692,9 @@ class ASTBuilder:
     def build_functioncall(self, node: ParsedNode) -> FunctionCallStmt:
         function_name = find_first_token(node, Definitions.Symbol.name)
         self.emit_token(function_name, "function")
-        self.called_function = function_name.literal
         self.argument_index = 0
         args = self.build_varlist1(find_first_node(node, "args"))
-    
-        return FunctionCallStmt(
+        stmt = FunctionCallStmt(
             function_name.literal,
             args,
             span=SourceSpan(
@@ -702,6 +702,9 @@ class ASTBuilder:
                 args[-1].span.end if len(args) > 0 else function_name.span.end
             )
         )
+        print(stmt)
+        self.called_function = stmt
+        return stmt 
     
     def build_varassignstat(self, node: ParsedNode) -> AssignStmt:
         var_node = find_first_node(node, "var")
@@ -836,25 +839,19 @@ class ASTBuilder:
     def build_functionstat(self, node: ParsedNode) -> FunctionDefStmt:
         warp = has_token(node, Definitions.Warp.name)
     
-        find_first_token(node, Definitions.Define.name)
+        define = find_first_token(node, Definitions.Define.name)
         # self.emit_token(define_token, "keyword")
     
         function = find_first_node(node, "function")
         parts = self.build_function(function)
-    
-        start = None
-    
-        if warp:
-            start = find_first_token(node, Definitions.Warp.name)
-            # self.emit_token(start, "keyword")
-    
+        
         return FunctionDefStmt(
             parts.name,
             parts.params,
             parts.body,
             warp,
             span=SourceSpan(
-                start=start.span.start if start else parts.span.start,
+                start=define.span.start,
                 end=parts.span.end
             )
         )
@@ -1113,7 +1110,7 @@ class ASTBuilder:
         for child in flat_children(node):
             if not isinstance(child, ParsedNode):
                 continue
-    
+            
             match child.name:
                 case "wrap":
                     wrap = self.build_wrap(child)

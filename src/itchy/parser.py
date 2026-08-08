@@ -223,25 +223,53 @@ class Parser:
                         parsed_children.append(result.tree)
                         pos = result.pos
                     except ParseError as error:      
-                        partial_children = parsed_children.copy()
+                        partial = error.previous_valid_tree
 
-                        if error.previous_valid_tree is not None:
-                            partial_children.append(
-                                error.previous_valid_tree.tree
+                        if partial is not None:
+                            partial_result = ParseResult(
+                                ParsedNode(
+                                    Sequence.__name__,
+                                    (
+                                        *parsed_children,
+                                        partial.tree
+                                    )
+                                ),
+                                partial.pos
                             )
 
-                        partial_result = ParseResult(
-                            ParsedNode(
-                                Sequence.__name__,
-                                tuple(partial_children)
-                            ),
-                            error.previous_valid_tree.pos
-                            if error.previous_valid_tree is not None
-                            else pos
-                        )
+                            self._consider_partial(partial_result)
+                            error.previous_valid_tree = partial_result
+                        else:
+                            partial_result = ParseResult(
+                                ParsedNode(
+                                    Sequence.__name__,
+                                    (
+                                        *parsed_children,
+                                    )
+                                ),
+                                pos
+                            )
+                            self._consider_partial(partial_result)
 
-                        error.previous_valid_tree = partial_result
-                        self._consider_partial(partial_result)
+                        # partial_children = parsed_children.copy()
+
+                        # if error.previous_valid_tree is not None:
+                        #     partial_children.append(
+                        #         error.previous_valid_tree.tree
+                        #     )
+
+                        # partial_result = ParseResult(
+                        #     ParsedNode(
+                        #         Sequence.__name__,
+                        #         tuple(partial_children)
+                        #     ),
+                        #     error.previous_valid_tree.pos
+                        #     if error.previous_valid_tree is not None
+                        #     else pos
+                        # )
+
+                        # error.previous_valid_tree = partial_result
+                        # self._consider_partial(partial_result)
 
                         debug_print(f"{print_token_safe(tokens, pos)}. Sequence broken {node}.")
                         # propagate the error upwards
@@ -258,6 +286,7 @@ class Parser:
 
             case Alternative(options):
                 best_error: ParseError | None = None
+                # best_progress = -1
 
                 for option in options:
                     try:
@@ -268,11 +297,31 @@ class Parser:
                             result.pos
                         )
                     except ParseError as error:
+                        partial = error.previous_valid_tree
+
+                        # progress = partial.pos if partial is not None else error.pos
+
                         if best_error is None or error.pos > best_error.pos:
                             best_error = error
+                            # best_progress = progress
                         self.make_error(tokens, start_pos, pos, current_rule, node)
                 debug_print(f"Nothing matched {node}. {print_token_safe(tokens, pos)}")
                 assert best_error is not None
+
+                partial = best_error.previous_valid_tree
+
+                if partial is not None:
+                    partial_result = ParseResult(
+                        ParsedNode(
+                            Alternative.__name__,
+                            (partial.tree,)
+                        ),
+                        partial.pos
+                    )
+
+                    best_error.previous_valid_tree = partial_result
+                    self._consider_partial(partial_result)
+
                 raise best_error
         
             case OptionalNode(child):
@@ -344,20 +393,19 @@ class Parser:
                             error.previous_valid_tree is not None 
                             and error.previous_valid_tree.pos > attempt_pos
                         ):
-                            recovery_children = [
-                                *parsed_children,
-                                error.previous_valid_tree.tree
-                            ]
-
-                            recovery_result = ParseResult(
+                            partial = error.previous_valid_tree
+                            recovered_repeat = ParseResult(
                                 ParsedNode(
                                     Repeat.__name__,
-                                    tuple(recovery_children),
+                                    (
+                                        *parsed_children,
+                                        partial.tree,
+                                    ),
                                 ),
-                                error.previous_valid_tree.pos
+                                partial.pos,
                             )
 
-                            self._consider_partial(recovery_result)
+                            self._consider_partial(recovered_repeat)
 
                         debug_print(f"{print_token_safe(tokens, pos)}. Skipping {node}")
                         break

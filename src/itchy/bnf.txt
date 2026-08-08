@@ -29,7 +29,7 @@
 <literals> ::= <functioncall> | <tableconstructor> | <var> | <Bool> | <Number> | <String> 
 // <explist1> ::= <equation> {<FieldSeperator> <explist1>}
 <laststat> ::= <Return> [<equation>]
-<varlist1> ::= <equation> {<FieldSeperator> <equation>}
+<varlist1> ::= <equation> {<FieldSeperator> <equation>} [<FieldSeperator>]
 <args> ::= "(" [<varlist1>] ")"
 <argtype> ::= <Symbol> <Colon> <Type>
 <paramlist> ::= <argtype> {<FieldSeperator> <argtype>}
