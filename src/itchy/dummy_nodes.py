@@ -83,7 +83,7 @@ def make_wrap(line: int = 1, char: int = 1):
     )
 
 
-RECOVERY_STRATEGIES: dict[str, Callable[[], tuple[ParsedNode]]] = {
-    "primary": make_dummy_primary,
-    "args": make_args
+RECOVERY_STRATEGIES: dict[str, tuple[ParsedNode]] = {
+    "primary": make_dummy_primary(),
+    "args": make_args()
 }
