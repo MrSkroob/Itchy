@@ -1,9 +1,10 @@
+from typing import Callable
 from itchy.tokenizer import Definitions, Token
 from itchy.tree import ParsedNode, Alternative, Sequence, OptionalNode
 
 
 
-def make_dummy_primary(line: int = 1, char: int = 1) -> ParsedNode:
+def make_dummy_primary(line: int = 1, char: int = 1) -> tuple[ParsedNode]:
     """
     A literal 0.
     """
@@ -19,7 +20,7 @@ def make_dummy_primary(line: int = 1, char: int = 1) -> ParsedNode:
         ),
     )
 
-    return ParsedNode(
+    return (ParsedNode(
         "primary",
         (
             ParsedNode(
@@ -27,7 +28,7 @@ def make_dummy_primary(line: int = 1, char: int = 1) -> ParsedNode:
                 (literals,),
             ),
         ),
-    )
+    ),)
 
 
 def make_var(line: int = 1, char: int = 1):
@@ -86,3 +87,8 @@ def make_wrap(line: int = 1, char: int = 1):
         ),
     )
 
+
+RECOVERY_STRATEGIES: dict[str, Callable[[], tuple[ParsedNode]]] = {
+    "primary": make_dummy_primary,
+    "args": make_args
+}
