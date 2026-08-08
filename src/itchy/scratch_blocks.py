@@ -22,6 +22,7 @@ class Menu:
     opcode: str
     name: str
     field_name: str | None=None
+    expected: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -78,12 +79,12 @@ SCRATCH_BLOCKS: dict[str, Block | Reporter | Event] = {
     "motion_movesteps": Block((ReturnType("STEPS"),)),
     "motion_turnright": Block((ReturnType("DEGREES"),)),
     "motion_turnleft": Block((ReturnType("DEGREES"),)),
-    "motion_goto": Block((Menu("motion_goto_menu", "TO"),)),
-    "motion_glideto": Block((ReturnType("SECS"), Menu("motion_glideto_menu", "TO"))),
+    "motion_goto": Block((Menu("motion_goto_menu", "TO", expected=("_mouse_", "_random_")),)),
+    "motion_glideto": Block((ReturnType("SECS"), Menu("motion_glideto_menu", "TO", expected=("_mouse_", "_random_")))),
     "motion_gotoxy": Block((ReturnType("X"), ReturnType("Y"))),
     "motion_glidesecstoxy": Block((ReturnType("SECS"), ReturnType("X"), ReturnType("Y"))),
     "motion_pointindirection": Block((ReturnType("DIRECTION", DataType.ANGLE),)),
-    "motion_pointtowards": Block((Menu("motion_pointtowards_menu", "TOWARDS"),)),
+    "motion_pointtowards": Block((Menu("motion_pointtowards_menu", "TOWARDS", expected=("_mouse_",)),)),
     "motion_changexby": Block((ReturnType("DX"),)),
     "motion_setx": Block((ReturnType("X"),)),
     "motion_changeyby": Block((ReturnType("DY"),)),
@@ -102,7 +103,7 @@ SCRATCH_BLOCKS: dict[str, Block | Reporter | Event] = {
     "looks_think": Block((ReturnType("MESSAGE", DataType.STRING),)),
     "looks_switchcostumeto": Block((Menu("looks_costume", "COSTUME"),)),
     "looks_nextcostume": Block(()),
-    "looks_switchbackdropto": Block((Menu("looks_backdrops", "BACKDROP"),)),
+    "looks_switchbackdropto": Block((Menu("looks_backdrops", "BACKDROP", expected=("next backdrop", "previous backdrop")),)),
     "looks_nextbackdrop": Block(()),
     "looks_show": Block(()),
     "looks_hide": Block(()),
@@ -188,6 +189,7 @@ SCRATCH_BLOCKS: dict[str, Block | Reporter | Event] = {
     "control_wait": Block((ReturnType("DURATION", DataType.POSITIVE_NUMBER),)),
     "control_wait_until": Block((ReturnType("CONDITION"),)),
     "control_stop": Block(fields=(Field("STOP_OPTION", ("this script", "all", "other scripts in sprite")),)), # this is basically the return block. though we'll need to figure out how to return variables.
+    "control_create_clone_of": Block((Menu("control_create_clone_of_menu", "CLONE_OPTION", expected=("_myself_",)),)),
     "control_delete_this_clone": Block(()),
 
     "event_broadcast": Block((ReturnType("BROADCAST_INPUT", DataType.STRING),), broadcasts=("BROADCAST_INPUT",)),
