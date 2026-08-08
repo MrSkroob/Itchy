@@ -21,13 +21,8 @@ def make_dummy_primary(line: int = 1, char: int = 1) -> tuple[ParsedNode]:
     )
 
     return (ParsedNode(
-        "primary",
-        (
-            ParsedNode(
-                Alternative.__name__,
-                (literals,),
-            ),
-        ),
+        Alternative.__name__,
+        (literals,),
     ),)
 
 
