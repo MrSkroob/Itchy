@@ -32,7 +32,7 @@
 <varlist1> ::= <equation> {<FieldSeperator> <equation>} [<FieldSeperator>]
 <args> ::= "(" [<varlist1>] ")"
 <argtype> ::= <Symbol> <Colon> <Type>
-<paramlist> ::= <argtype> {<FieldSeperator> <argtype>}
+<paramlist> ::= <argtype> {<FieldSeperator> <argtype>} [<FieldSeperator>]
 
 // note that rules are evaluated left to right
 // for performance, it's better to have non-terminators at the end. 
