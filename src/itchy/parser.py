@@ -72,7 +72,7 @@ def print_token_safe(tokens: list[Token[Definitions]], pos: int):
 
 
 class Parser:
-    def __init__(self, *, skip_bad_tokens: bool=False, skip_rules_on_fail: dict[str, tuple[ParsedNode | Token[Definitions], ...]]=dict()) -> None:
+    def __init__(self, *, skip_bad_tokens: bool=False, skip_rules_on_fail: dict[str, tuple[(ParsedNode | Token[Definitions]), ...]]=dict()) -> None:
         """
         skip_rules_on_fail makes the parser skip the rule entirely if that rule fails.
         rule_blacklist makes the parser not evaluate the rule at all.
