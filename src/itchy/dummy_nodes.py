@@ -1,4 +1,3 @@
-from typing import Callable
 from itchy.tokenizer import Definitions, Token
 from itchy.tree import ParsedNode, Alternative, Sequence, OptionalNode
 
@@ -83,7 +82,7 @@ def make_wrap(line: int = 1, char: int = 1):
     )
 
 
-RECOVERY_STRATEGIES: dict[str, tuple[ParsedNode]] = {
+RECOVERY_STRATEGIES: dict[str, tuple[ParsedNode | Token[Definitions], ...]] = {
     "primary": make_dummy_primary(),
     "args": make_args()
 }
