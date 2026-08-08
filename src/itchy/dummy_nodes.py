@@ -2,6 +2,18 @@ from itchy.tokenizer import Definitions, Token
 from itchy.tree import ParsedNode, Alternative, Sequence, OptionalNode
 
 
+def find_node(node: ParsedNode, name: str) -> ParsedNode | None:
+    if node.name == name:
+        return node
+
+    for child in node.children:
+        if isinstance(child, ParsedNode):
+            result = find_node(child, name)
+            if result is not None:
+                return result
+
+    return None
+
 
 def make_dummy_primary(line: int = 1, char: int = 1) -> tuple[ParsedNode]:
     """

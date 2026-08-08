@@ -39,7 +39,6 @@ class Block:
     broadcasts: tuple[str, ...] = ()
     variables: tuple[str, ...] = ()
 
-
 """
 motion_movesteps(10)
 """
@@ -52,6 +51,7 @@ class Reporter:
     fields: tuple[Field, ...] = ()
     return_type: VariableTypes = VariableTypes.UNKNOWN
     variables: tuple[str, ...] = ()
+
  
 @dataclass(frozen=True)
 class Event:
@@ -72,6 +72,17 @@ EFFECT_FIELD = Field("EFFECT", (
     "color", "fisheye", "whirl", "pixelate", "mosaic", "brightness", "ghost"
 ))
 SOUND_EFFECT_FIELD = Field("EFFECT", ("PITCH", "PAN LEFT/RIGHT"))
+
+SPRITE_OPTIONS = (
+    "x position",
+    "y position",
+    ""
+)
+STAGE_OPTIONS = (
+    "backdrop #",
+    "backdrop name",
+    "volume",
+)
 
 # opcode -> ordered slots.
 SCRATCH_BLOCKS: dict[str, Block | Reporter | Event] = {
@@ -204,7 +215,7 @@ SCRATCH_BLOCKS: dict[str, Block | Reporter | Event] = {
     "sensing_askandwait": Block((ReturnType("QUESTION", DataType.STRING),)),
     "sensing_answer": Reporter(return_type=VariableTypes.STRING),
 
-    "sensing_keypressed": Reporter((Menu("sensing_keyoptions", "KEY_OPTION"),), return_type=VariableTypes.BOOL),
+    "sensing_keypressed": Reporter((Menu("sensing_keyoptions", "KEY_OPTION", expected=VALID_KEYS),), return_type=VariableTypes.BOOL),
     "sensing_mousedown": Reporter(return_type=VariableTypes.BOOL),
     "sensing_mousex": Reporter(return_type=VariableTypes.NUMBER),
     "sensing_mousey": Reporter(return_type=VariableTypes.NUMBER),
@@ -214,7 +225,7 @@ SCRATCH_BLOCKS: dict[str, Block | Reporter | Event] = {
     "sensing_timer": Reporter(return_type=VariableTypes.NUMBER),
     "sensing_resettimer": Block(),
 
-    "sensing_of": Reporter((Menu("sensing_of_object_menu", "OBJECT"),), (Field("PROPERTY", ()),)),
+    "sensing_of": Reporter((Menu("sensing_of_object_menu", "OBJECT", expected=("_stage_",)),), (Field("PROPERTY", ()),)),
     "sensing_current": Reporter(fields=(Field("CURRENTMENU", (
         "year",
         "month",
@@ -254,8 +265,8 @@ SCRATCH_BLOCKS: dict[str, Block | Reporter | Event] = {
     "pen_penDown": Block(),
     "pen_penUp": Block(),
     "pen_setPenColorToColor": Block((ReturnType("COLOR", DataType.COLOR),)),
-    "pen_changePenColorParamBy": Block((Menu("COLOR_PARAM", "pen_menu_colorParam", "colorParam"), ReturnType("VALUE"))),
-    "pen_setPenColorParamTo": Block((Menu("COLOR_PARAM", "pen_menu_colorParam", "colorParam"), ReturnType("VALUE"))),
+    "pen_changePenColorParamBy": Block((Menu("COLOR_PARAM", "pen_menu_colorParam", "colorParam", ("color", "saturation", "brightness", "transparency")), ReturnType("VALUE"))),
+    "pen_setPenColorParamTo": Block((Menu("COLOR_PARAM", "pen_menu_colorParam", "colorParam", ("color", "saturation", "brightness", "transparency")), ReturnType("VALUE"))),
     "pen_changePenSizeBy": Block((ReturnType("SIZE"),)),
     "pen_setPenSizeTo": Block((ReturnType("SIZE"),))
 }
