@@ -341,11 +341,23 @@ class Parser:
                         if 2 occured, we want the tree to not be discarded.
                         """
                         if (
-                            error.previous_valid_tree is not None
+                            error.previous_valid_tree is not None 
                             and error.previous_valid_tree.pos > attempt_pos
                         ):
-                            # parsed_children.append(error.previous_valid_tree.tree)
-                            pos = error.previous_valid_tree.pos
+                            recovery_children = [
+                                *parsed_children,
+                                error.previous_valid_tree.tree
+                            ]
+
+                            recovery_result = ParseResult(
+                                ParsedNode(
+                                    Repeat.__name__,
+                                    tuple(recovery_children),
+                                ),
+                                error.previous_valid_tree.pos
+                            )
+
+                            self._consider_partial(recovery_result)
 
                         debug_print(f"{print_token_safe(tokens, pos)}. Skipping {node}")
                         break

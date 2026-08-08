@@ -378,6 +378,7 @@ class ASTBuilder:
         self.argument_index: int = 0
 
     def reset(self) -> None:
+        self.argument_index = 0
         self.semantic_tokens = []
         self.function_scope = None
         self.called_function = None
@@ -665,13 +666,18 @@ class ASTBuilder:
         values: list[Expr] = []
         children = flat_children(node)
 
+        index = 0
+
         for child in children:
             if isinstance(child, ParsedNode) and child.name == "equation":
-                self.argument_index += 1
+                index += 1
+                self.argument_index = index
                 values.append(self.build_equation(child))
             elif isinstance(child, ParsedNode) and child.name == "varlist1":
                 values.extend(self.build_varlist1(child))
-                
+
+        self.argument_index = index
+        
         return tuple(values)
     
     
@@ -681,7 +687,7 @@ class ASTBuilder:
         )
     
     
-    def build_functioncall(self, node: ParsedNode) -> Stmt:
+    def build_functioncall(self, node: ParsedNode) -> FunctionCallStmt:
         function_name = find_first_token(node, Definitions.Symbol.name)
         self.emit_token(function_name, "function")
         self.called_function = function_name.literal
@@ -697,7 +703,7 @@ class ASTBuilder:
             )
         )
     
-    def build_varassignstat(self, node: ParsedNode) -> Stmt:
+    def build_varassignstat(self, node: ParsedNode) -> AssignStmt:
         var_node = find_first_node(node, "var")
         operation = find_first_token(node, Definitions.Assign.name)
         action_node = find_first_node(node, "equation")
@@ -1056,7 +1062,7 @@ class ASTBuilder:
         return chunk
     
     
-    def build_laststat(self, node: ParsedNode) -> Stmt:
+    def build_laststat(self, node: ParsedNode) -> ReturnStmt:
         children = flat_children(node)
     
         # if has_token(node, Definitions.Break.name, children):
@@ -1105,7 +1111,6 @@ class ASTBuilder:
     
     def build_stat(self, node: ParsedNode) -> Stmt:
         for child in flat_children(node):
-            self.called_function = None
             if not isinstance(child, ParsedNode):
                 continue
     
