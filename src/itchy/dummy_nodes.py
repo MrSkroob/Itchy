@@ -30,7 +30,7 @@ def make_dummy_primary(line: int = 1, char: int = 1) -> ParsedNode:
     )
 
 
-def recover_var(line: int = 1, char: int = 1):
+def make_var(line: int = 1, char: int = 1):
     """
     
     """
@@ -45,7 +45,7 @@ def recover_var(line: int = 1, char: int = 1):
     )
 
 
-def recover_args(line: int = 1, char: int = 1):
+def make_args(line: int = 1, char: int = 1):
     """Recover a broken argument list as an empty ``()`` argument list."""
     return (
         ParsedNode(
@@ -59,19 +59,19 @@ def recover_args(line: int = 1, char: int = 1):
     )
 
 
-def recover_paramlist(line: int = 1, char: int = 1):
+def make_paramlist(line: int = 1, char: int = 1):
     """
     Recover a malformed function parameter list as empty.
     """
     return ()
 
 
-def recover_chunk(line: int = 1, char: int = 1):
+def make_chunk(line: int = 1, char: int = 1):
     """Recover a malformed statement sequence as an empty chunk."""
     return ()
 
 
-def recover_wrap(line: int = 1, char: int = 1):
+def make_wrap(line: int = 1, char: int = 1):
     """
     Recover a malformed block as ``{}``.
     """
