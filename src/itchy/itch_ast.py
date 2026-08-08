@@ -542,7 +542,6 @@ class ASTBuilder:
             if isinstance(child, ParsedNode) and child.name == "equation":
                 return self.build_equation(child)
 
-        print(node.children[0].name)
         raise ValueError(f"this ain't a primary g: {node!r}")
     
     
