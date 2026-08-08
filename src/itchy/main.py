@@ -1,4 +1,4 @@
-from itchy.parser import Parser, ParseError
+from itchy.parser import Parser, ParseError, make_dummy_primary
 from itchy.itch_ast import ASTBuilder, Program
 from tools.ast_printer import print_ast
 from itchy.errors import format_syntax_error, format_compiler_error
@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
+
 
 parser = Parser(skip_bad_tokens=False)
 ast_builder = ASTBuilder()
@@ -35,8 +36,6 @@ def compile(file: str, output: str, target: str):
         except (ParseError, CompilerError) as e:
             if isinstance(e, ParseError):
                 fail_state = parser.fail_state
-                print_ast(parser.deepest_partial)
-                # print_ast(ast_builder.build(parser.deepest_partial.tree))
 
                 if fail_state is not None:
                     print(format_syntax_error(fail_state, source, file))

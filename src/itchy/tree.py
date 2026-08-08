@@ -1,3 +1,4 @@
+from __future__ import annotations
 # special multi node tree for easier traversal
 from dataclasses import dataclass
 # from tokenizer import *
@@ -9,6 +10,22 @@ from typing import Any, Iterable
 from pathlib import Path
 
 BNF_PATH = Path(__file__).parent / "bnf.txt"
+
+
+
+@dataclass(frozen=True)
+class ParsedNode():
+    name: str
+    children: tuple[ParsedNode | Token[Definitions], ...]
+
+    def __repr__(self) -> str:
+        output: list[str] = []
+
+        for i in self.children:
+            output.append(str(i))
+
+        return f"[{', '.join(output)}]"
+
 
 class GrammarNode():
     pass

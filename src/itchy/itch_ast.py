@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
-from itchy.parser import ParsedNode, Token, Sequence, Repeat, OptionalNode, Alternative
+from itchy.tree import ParsedNode
+from itchy.parser import Token, Sequence, Repeat, OptionalNode, Alternative
 from itchy.tokenizer import GenericRules, Definitions, Tokenizer
 from itchy.shared_templates import SourceSpan, SourcePosition
 from typing import Callable
@@ -540,7 +541,8 @@ class ASTBuilder:
     
             if isinstance(child, ParsedNode) and child.name == "equation":
                 return self.build_equation(child)
-    
+
+        print(node.children[0].name)
         raise ValueError(f"this ain't a primary g: {node!r}")
     
     
@@ -602,7 +604,6 @@ class ASTBuilder:
                         arg_list[-1].span.end if len(arg_list) > 0 else func_name.span.end
                     )
                 )
-                print(stmt)
                 self.called_function = stmt
                 return stmt
     
@@ -702,7 +703,6 @@ class ASTBuilder:
                 args[-1].span.end if len(args) > 0 else function_name.span.end
             )
         )
-        print(stmt)
         self.called_function = stmt
         return stmt 
     

@@ -1,10 +1,40 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 from itchy.tokenizer import Definitions, GenericRules, Tokenizer, Token
-from itchy.tree import Rule, Terminal, NonTerminal, Alternative, OptionalNode, Repeat, Sequence, GrammarNode, build_parse_tree, get_root_node
+from itchy.tree import Rule, Terminal, NonTerminal, Alternative, OptionalNode, Repeat, Sequence, GrammarNode, ParsedNode, build_parse_tree, get_root_node
 
 
 DEBUG = False
+
+
+def make_dummy_primary(line: int=1, char: int=1) -> ParsedNode:
+    number = Token(
+        Definitions.Number,
+        "0",
+        line,
+        char
+    )
+
+    literals = ParsedNode(
+        "literals",
+        (
+            ParsedNode(
+                Alternative.__name__,
+                (number,)
+            ),
+        )
+    )
+
+    return ParsedNode(
+        "primary",
+        (
+            ParsedNode(
+                Alternative.__name__,
+                (literals,)
+            ),
+        )
+    )
+
 
 @dataclass(frozen=True)
 class ExpectedToken:
@@ -25,20 +55,6 @@ class ExpectedState:
             self.items = {expectation}
         elif pos == self.pos:
             self.items.add(expectation)
-
-
-@dataclass(frozen=True)
-class ParsedNode():
-    name: str
-    children: tuple[ParsedNode | Token[Definitions], ...]
-
-    def __repr__(self) -> str:
-        output: list[str] = []
-
-        for i in self.children:
-            output.append(str(i))
-
-        return f"[{', '.join(output)}]"
 
 
 @dataclass
@@ -85,13 +101,19 @@ def print_token_safe(tokens: list[Token[Definitions]], pos: int):
 
 
 class Parser:
-    def __init__(self, skip_bad_tokens: bool=False) -> None:
+    def __init__(self, *, skip_bad_tokens: bool=False, skip_rules_on_fail: dict[str, tuple[ParsedNode | Token[Definitions], ...]]=dict()) -> None:
+        """
+        skip_rules_on_fail makes the parser skip the rule entirely if that rule fails.
+        rule_blacklist makes the parser not evaluate the rule at all.
+        """
+
         self.rules = build_parse_tree()
         self.tokenizer = Tokenizer(Definitions, {"Comment", "Whitespace", "Newline", "BlockComment"})
         self.furthest_error: ParseError | None = None
         self.expected = ExpectedState()
         self.rule_stack: list[str] = []
         self.skip_bad_tokens: bool = skip_bad_tokens
+        self.skip_rules_on_fail = skip_rules_on_fail
         self.halt: bool = False
         # furthest place we got before failing
 
@@ -172,27 +194,36 @@ class Parser:
     def parse_rule(self, rule: Rule, tokens: list[Token[Definitions]], pos: int) -> ParseResult:
         if self.halt:
             return ParseResult(ParsedNode("", ()), pos)
-        
+
+  
         self.rule_stack.append(rule.name)
         try:
             result = self.parse_node(rule, pos, rule.body, tokens, pos)
             debug_print(f"Rule completed: {rule.name}")
             self.rule_stack.pop()
         except ParseError as error:
-            # On success this wraps the matched body in a ParsedNode named
-            # after the rule (e.g. "ifstat", "wrap"). Do the same for a
-            # partial match, so a recovered tree looks the same shape-wise
-            # as a fully successful one, and downstream code (e.g.
-            # find_first_node(node, "wrap")) can still recognise it.
-            if error.previous_valid_tree is not None:
-                wrapped = ParseResult(
-                    ParsedNode(rule.name, (error.previous_valid_tree.tree,)),
-                    error.previous_valid_tree.pos,
+            if rule.name not in self.skip_rules_on_fail:
+
+                # On success this wraps the matched body in a ParsedNode named
+                # after the rule (e.g. "ifstat", "wrap"). Do the same for a
+                # partial match, so a recovered tree looks the same shape-wise
+                # as a fully successful one, and downstream code (e.g.
+                # find_first_node(node, "wrap")) can still recognise it.
+                if error.previous_valid_tree is not None:
+                    wrapped = ParseResult(
+                        ParsedNode(rule.name, (error.previous_valid_tree.tree,)),
+                        error.previous_valid_tree.pos,
+                    )
+                    error.previous_valid_tree = wrapped
+                    self._consider_partial(wrapped)
+                self.rule_stack.pop()
+                raise error
+            else:
+                self.rule_stack.pop()
+                return ParseResult(
+                    ParsedNode(rule.name, self.skip_rules_on_fail[rule.name]),
+                    error.pos
                 )
-                error.previous_valid_tree = wrapped
-                self._consider_partial(wrapped)
-            self.rule_stack.pop()
-            raise error
 
         return ParseResult(ParsedNode(rule.name, (result.tree, )), result.pos)
 
