@@ -15,6 +15,8 @@ https://en.scratch-wiki.info/wiki/Blocks <br />
 https://github.com/scratchfoundation/scratch-vm <br />
 https://github.com/scratchfoundation/scratch-editor  <br />
 
+Find the LSP here: https://github.com/MrSkroob/Itchy-LSP
+
 There's *some* abstractions like for loops, while loops, for *in* loops and return statements.
 Return statements use a stack, so they'll work for recursive calls and nested calls like `variable = foo(foo(variable))`
 
