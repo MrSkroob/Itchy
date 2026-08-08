@@ -94,7 +94,14 @@ def make_wrap(line: int = 1, char: int = 1):
     )
 
 
-RECOVERY_STRATEGIES: dict[str, tuple[ParsedNode | Token[Definitions], ...]] = {
+Strategy = dict[str, tuple[ParsedNode | Token[Definitions], ...]]
+RECOVERY_STRATEGIES: Strategy = {
     "primary": make_dummy_primary(),
     "args": make_args()
+}
+
+
+AGGRESSIVE_STRATEGIES: Strategy = {
+    **RECOVERY_STRATEGIES,
+    "wrap": make_wrap()
 }
