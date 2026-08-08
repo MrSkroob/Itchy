@@ -38,6 +38,7 @@ def compile(file: str, output: str, target: str):
                 print(ast_builder.argument_index)
                 # print(parser.expected_items)
                 if fail_state is not None:
+                    # ast_builder.build(parser.deepest_partial.tree)
                     print(format_syntax_error(fail_state, source, file))
             else:
                 print(format_compiler_error(e, source, file))

@@ -157,37 +157,6 @@ class Parser:
 
         if self.deepest_partial is None or result.pos >= self.deepest_partial.pos:
             self.deepest_partial = result
-
-    def skip_statement(self, tokens: list[Token[Definitions]], pos: int) -> tuple[int, bool]:
-        """
-        Returns: new position, whether it reaches the end of a chunk
-        """
-        depth = 0
-        while pos < len(tokens):
-            kind = tokens[pos].kind
-
-            if kind == GenericRules.EOF:
-                return pos, True
-
-            if kind == Definitions.OpenCurlyBracket:
-                depth += 1
-                pos += 1
-                continue
-
-            if kind == Definitions.CloseCurlyBracket:
-                if depth == 0:
-                    return pos, True
-
-                depth -= 1
-                pos += 1
-                continue
-
-            if kind in (GenericRules.StatementSeperator, Definitions.StatementSeperator) and depth == 0:
-                return pos + 1, False
-
-            pos += 1
-
-        return pos, True
             
 
     def make_error(self, tokens: list[Token[Definitions]], pos: int, rule_start: int, failed_rule: Rule,
@@ -375,7 +344,7 @@ class Parser:
                             error.previous_valid_tree is not None
                             and error.previous_valid_tree.pos > attempt_pos
                         ):
-                            parsed_children.append(error.previous_valid_tree.tree)
+                            # parsed_children.append(error.previous_valid_tree.tree)
                             pos = error.previous_valid_tree.pos
 
                         debug_print(f"{print_token_safe(tokens, pos)}. Skipping {node}")
