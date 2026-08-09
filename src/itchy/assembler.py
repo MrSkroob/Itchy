@@ -146,6 +146,7 @@ class Assembler:
         """
         if self.is_strict:
             raise error
+        self.errors.append(error)
         return return_value
     
     def new_id(self) -> str:
