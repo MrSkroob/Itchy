@@ -2,6 +2,22 @@ from itchy.tokenizer import Definitions, Token
 from itchy.tree import ParsedNode, Alternative, Sequence, OptionalNode
 
 
+def find_token(node: ParsedNode, kind: Definitions) -> Token[Definitions] | None:
+    for token in node.children:
+        if not isinstance(token, Token):
+            continue
+        if token.kind == kind:
+            return token
+
+    for child in node.children:
+        if isinstance(child, ParsedNode):
+            result = find_token(child, kind)
+            if result is not None:
+                return result
+
+    return None
+
+
 def find_node(node: ParsedNode, name: str) -> ParsedNode | None:
     if node.name == name:
         return node

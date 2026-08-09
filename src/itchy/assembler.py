@@ -45,6 +45,8 @@ ScratchFieldRaw = tuple[str, None] | tuple[str, str]
 class ScratchInput:
     value: ScratchInputRaw
     return_type: VariableTypes = VariableTypes.UNKNOWN
+    manufactured: bool=False # tells code that this input was automatically generated (not by the user) 
+    # so should be ignored in subsequent error collection.
 
 # serialisable json
 JSONValue = int | str | float | bool | None | list["JSONValue"] | dict[str, "JSONValue"]
@@ -59,7 +61,7 @@ class InputType(Enum):
     BLOCK_AND_SHADOW = 3 # do not use - because compiler does not have default values.
 
 
-PLACE_HOLDER_0 = ScratchInput((InputType.SHADOW_ONLY, (DataType.NUMBER, "0")), VariableTypes.NUMBER)
+PLACE_HOLDER_0 = ScratchInput((InputType.SHADOW_ONLY, (DataType.NUMBER, "0")), VariableTypes.NUMBER, True)
 
 
 class CompilerError(Exception):
@@ -88,6 +90,7 @@ class SyntaxError(CompilerError):
 class BlockRange:
     first: StrOptional
     last: StrOptional
+    manufactured: bool=False
 
 
 @dataclass(frozen=True)
@@ -132,11 +135,12 @@ class Assembler:
         self.messages: dict[str, str] = {}
 
         self.costumes: set[str] = set()
+        self.errors: list[CompilerError] = []
 
         # for debugging/error messages
         self.current_token = None
 
-    def raise_or_return(self, error: CompilerError, return_value: T=BlockRange(None, None)) -> T:
+    def raise_or_return(self, error: CompilerError, return_value: T=BlockRange(None, None, True)) -> T:
         """
         Raises an error if strict mode is on (default) or returns a value.
         """
@@ -1814,6 +1818,7 @@ class Assembler:
             del self.variable_map[variable_data.name]
             del self.variables[variable_id]
 
+        self.errors.clear()
         self.blocks.clear()
         self.procedures.clear()
         self.current_token = None
