@@ -4,6 +4,7 @@ from tools.ast_printer import print_ast
 from itchy.errors import format_syntax_error, format_compiler_error
 from itchy.assembler import Assembler, CompilerError
 from itchy.tokenizer import Tokenizer, Definitions
+from itchy.dummy_nodes import find_node, RECOVERY_STRATEGIES
 import argparse
 
 import os
@@ -15,7 +16,7 @@ from pathlib import Path
 ROOT = Path(__file__).parent.parent
 
 
-parser = Parser(skip_bad_tokens=False)
+parser = Parser(skip_bad_tokens=False, skip_rules_on_fail=RECOVERY_STRATEGIES)
 ast_builder = ASTBuilder()
 assembler = Assembler()
 
@@ -36,7 +37,8 @@ def compile(file: str, output: str, target: str):
         except (ParseError, CompilerError) as e:
             if isinstance(e, ParseError):
                 fail_state = parser.fail_state
-                print_ast(parser.deepest_partial.tree)
+                tree = ast_builder.build_eventstat(find_node(parser.deepest_partial.tree, "eventstat"))
+                print(tree.name, tree.params)
 
                 if fail_state is not None:
                     print(format_syntax_error(fail_state, source, file))

@@ -864,7 +864,7 @@ class ASTBuilder:
         self.emit_token(name, "event")
         eventbody = expect_node(children[2], "args")
         wrap = expect_node(children[3], "wrap")
-    
+        
         args = self.build_varlist1(eventbody)
         wrap_nodes = self.build_wrap(wrap)
     

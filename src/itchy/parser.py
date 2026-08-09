@@ -69,6 +69,8 @@ def debug_print(message: str):
 
 
 def print_token_safe(tokens: list[Token[Definitions]], pos: int):
+    if len(tokens) == 0:
+        return ""
     return tokens[min(pos, len(tokens) - 1)].literal
 
 
@@ -479,23 +481,24 @@ class Parser:
                     error = self.furthest_error or e
 
                     error_pos = min(len(error.tokens) - 1, error.pos)
-
+                    
                     if progress is None:
                         progress = error_pos
 
-                    # we made more progress, try to delete current line.
-                    if error_pos > progress:
-                        progress = error_pos
-                        tokens = working_tokens.copy()
-                        line = error.tokens[error_pos].line - offset
-                        shift = 0
-                        tries = 0
-                    else:
-                        # delete the line above until something works.
-                        line = (error.tokens[error_pos].line - offset) + shift
-                        shift -= 1
+                    if len(error.tokens) > 0:
+                        # we made more progress, try to delete current line.
+                        if error_pos > progress:
+                            progress = error_pos
+                            tokens = working_tokens.copy()
+                            line = error.tokens[error_pos].line - offset
+                            shift = 0
+                            tries = 0
+                        else:
+                            # delete the line above until something works.
+                            line = (error.tokens[error_pos].line - offset) + shift
+                            shift -= 1
 
-                    working_tokens = [i for i in working_tokens if i.line != line]
+                        working_tokens = [i for i in working_tokens if i.line != line]
 
                     # bad hack :(
                     # the error reporter sometimes reports the incorrect line by 1, so we need to test

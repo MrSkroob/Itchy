@@ -7,6 +7,7 @@ import zipfile
 import tempfile
 import os
 
+from typing import TypeVar
 from dataclasses import dataclass
 from enum import Enum
 
@@ -21,6 +22,7 @@ from itchy.itch_ast import \
     IfBranch, Expr, NumberExpr, BoolExpr, StringExpr, VarExpr, UnaryOpExpr, BinaryOpExpr, TableExpr, FunctionCallExpr, Program
 
 
+T = TypeVar("T")
 ScratchBlock = dict[str, Any]
 StrOptional = str | None
 
@@ -44,7 +46,6 @@ class ScratchInput:
     value: ScratchInputRaw
     return_type: VariableTypes = VariableTypes.UNKNOWN
 
-
 # serialisable json
 JSONValue = int | str | float | bool | None | list["JSONValue"] | dict[str, "JSONValue"]
 
@@ -56,6 +57,9 @@ class InputType(Enum):
     SHADOW_ONLY = 1
     BLOCK_ONLY = 2
     BLOCK_AND_SHADOW = 3 # do not use - because compiler does not have default values.
+
+
+PLACE_HOLDER_0 = ScratchInput((InputType.SHADOW_ONLY, (DataType.NUMBER, "0")), VariableTypes.NUMBER)
 
 
 class CompilerError(Exception):
@@ -111,11 +115,15 @@ class ProcedureInfo:
 
 
 class Assembler:
-    def __init__(self) -> None:
+    def __init__(self, is_strict: bool=True) -> None:
+        """
+        is_strict: whether the compiler should halt on error. Enabling this option will also disable any write to the .sb3 file.
+        """
         self.variables: dict[str, VariableData] = {} # includes lists.
         self.blocks: dict[str, ScratchBlock] = {}
         self.procedures: dict[str, ProcedureInfo] = {}
 
+        self.is_strict = is_strict
         # we don't need to worry about function "variables" since they are arguments.
         # i.e. they are not treated as variables and are treated as read-only.
         # variable name -> id
@@ -127,6 +135,14 @@ class Assembler:
 
         # for debugging/error messages
         self.current_token = None
+
+    def raise_or_return(self, error: CompilerError, return_value: T=BlockRange(None, None)) -> T:
+        """
+        Raises an error if strict mode is on (default) or returns a value.
+        """
+        if self.is_strict:
+            raise error
+        return return_value
     
     def new_id(self) -> str:
         return uuid.uuid4().hex[:20]
@@ -361,7 +377,8 @@ class Assembler:
                 return self.emit_sequence(body, parent, context)
             case VarDefStmt(shared=shared, type_name=type_name, name=name):
                 if type_name not in {VariableTypes.VAR.value, VariableTypes.LIST.value, VariableTypes.BOOL.value}:
-                    raise InvalidTypeError(f"Invalid variable type: {type_name}. Scratch only permits var, list and bool.", stmt)
+                    return self.raise_or_return(InvalidTypeError(f"Invalid variable type: {type_name}.\
+                                                                 Scratch only permits var, list and bool.", stmt))
                 self.define_variable(shared, type_name, name, context)
                 return BlockRange(None, None)
             case AssignStmt(target=target, value=value):
@@ -390,7 +407,7 @@ class Assembler:
 
     def emit_return(self, stmt: ReturnStmt, parent: StrOptional, context: StrOptional) -> BlockRange:
         if context is None:
-            raise SyntaxError("'return' outside of function", stmt)
+            return self.raise_or_return(SyntaxError("'return' outside of function", stmt))
 
         proc_data = self.procedures[context]
         return_variable = proc_data.name + ":return"
@@ -441,9 +458,11 @@ class Assembler:
         block_data = SCRATCH_BLOCKS[stmt.callee]
 
         if not isinstance(block_data, Block):
-            raise InvalidTypeError(
-                f"{stmt.callee} should be a stack block",
-                stmt
+            return self.raise_or_return(
+                InvalidTypeError(
+                    f"{stmt.callee} should be a stack block",
+                    stmt
+                )
             )
 
         expected_args = len(block_data.inputs) + len(block_data.fields)
@@ -490,7 +509,7 @@ class Assembler:
                         inputs[arg.name] = (InputType.SHADOW_ONLY,
                                             (DataType.VARIABLE, arg_expr.ref.root, var_id))
                     except NameError:
-                        raise NotDefinedError(f"{arg_expr.ref.root} not defined.", arg_expr)
+                        return self.raise_or_return(NotDefinedError(f"{arg_expr.ref.root} not defined.", arg_expr))
             else:
                 if isinstance(arg_expr, StringExpr):
                     if isinstance(arg, Menu):
@@ -517,27 +536,29 @@ class Assembler:
         for field, arg_expr in zip(block_data.fields, stmt.args[len(block_data.inputs):]):
             if field.name in block_data.variables:
                 if not isinstance(arg_expr, VarExpr):
-                    raise InvalidTypeError(
+                    return self.raise_or_return(InvalidTypeError(
                         f"{stmt.callee}: argument for {index} must be a variable", arg_expr
-                    )
+                    ))
                 try:
                     fields[field.name] = (arg_expr.ref.root, self.get_variable(arg_expr.ref.root))
                 except NameError:
-                    raise NotDefinedError(f"{arg_expr.ref.root} not defined.", arg_expr)
+                    return self.raise_or_return(NotDefinedError(f"{arg_expr.ref.root} not defined.", arg_expr))
             elif field.name in block_data.broadcasts:
                 if not isinstance(arg_expr, StringExpr):
-                    raise InvalidTypeError(
+                    return self.raise_or_return(InvalidTypeError(
                         f"{stmt.callee}: argument {index} must be a string literal", arg_expr
-                    )
+                    ))
                 fields[field.name] = (arg_expr.value, self.define_broadcast(arg_expr.value))
             else:
                 if not isinstance(arg_expr, StringExpr):
-                    raise InvalidTypeError(
+                    return self.raise_or_return(InvalidTypeError(
                         f"{stmt.callee}: argument {index} must be a string literal", arg_expr
-                    )
+                    ))
                 
                 if arg_expr.value not in field.expected and len(field.expected) > 0:
-                    raise ArgumentError(f"{arg_expr.value} is not one of {field.expected}", arg_expr)
+                    return self.raise_or_return(
+                        ArgumentError(f"{arg_expr.value} is not one of {field.expected}", arg_expr)
+                    )
 
                 fields[field.name] = (arg_expr.value, None)
 
@@ -553,17 +574,17 @@ class Assembler:
             # is either a custom scratch block or a hallucination :v
             block_range = self.emit_scratch_block(stmt, parent, context)
             if block_range is None:
-                raise NotDefinedError(f"Procedure {stmt.callee} is not defined and is not a valid scratch block.", stmt)
+                return self.raise_or_return(NotDefinedError(f"Procedure {stmt.callee} is not defined and is not a valid scratch block.", stmt))
             return block_range
 
         info = self.procedures[stmt.callee]
         
         if len(stmt.args) != len(info.argument_ids):
-            raise ArgumentError(
+            return self.raise_or_return(ArgumentError(
                 f"Function {stmt.callee} expects {len(info.argument_ids)} arguments, "
                 f"got {len(stmt.args)}",
                 stmt
-            )
+            ))
 
         inputs: dict[str, ScratchInputRaw] = {}
         block_id = self.new_id()
@@ -589,7 +610,7 @@ class Assembler:
             user_arg_type = VARIABLE_TYPE_TO_USER_TYPES.get(emitted_arg.return_type, emitted_arg.return_type)
 
             if arg_type != user_arg_type:
-                raise InvalidTypeError(f"{stmt.callee}: argument {index} expected {arg_type} not {user_arg_type}", arg_expr)
+                return self.raise_or_return(InvalidTypeError(f"{stmt.callee}: argument {index} expected {arg_type} not {user_arg_type}", arg_expr))
             
             inputs[arg_id] = emitted_arg.value
             index += 1
@@ -606,17 +627,17 @@ class Assembler:
     
     def emit_event_handler(self, stmt: EventHandlerStmt, context: StrOptional) -> BlockRange:
         if context is not None:
-            raise CompilerError(f"Cannot start a new thread while inside a function/event", stmt)
+            return self.raise_or_return(CompilerError(f"Cannot start a new thread while inside a function/event", stmt))
 
         if stmt.name not in SCRATCH_BLOCKS:
-            raise NotDefinedError(f"{stmt.name} is not a known event", stmt)
+            return self.raise_or_return(NotDefinedError(f"{stmt.name} is not a known event", stmt))
 
         block_data = SCRATCH_BLOCKS[stmt.name]
 
         if not isinstance(block_data, Event):
-            raise CompilerError(
+            return self.raise_or_return(CompilerError(
                 f"{stmt.name} should be a hat/event block", stmt
-            )
+            ))
 
         # unlike Block/Reporter, an Event's `broadcasts` entries are not a
         # subset of `inputs` -- they're their own trailing group of
@@ -625,10 +646,10 @@ class Assembler:
         expected_args = len(block_data.inputs) + len(block_data.fields)
 
         if len(stmt.params) != expected_args:
-            raise ArgumentError(
+            return self.raise_or_return(ArgumentError(
                 f"Event {stmt.name} expects {expected_args} argument(s), got {len(stmt.params)}",
                 stmt
-            )
+            ))
 
         inputs: dict[str, ScratchInputRaw] = {}
         fields: dict[str, ScratchFieldRaw] = {}
@@ -672,13 +693,13 @@ class Assembler:
 
         for field, arg_expr in zip(block_data.fields, field_args):
             if not isinstance(arg_expr, StringExpr):
-                raise InvalidTypeError(f"{stmt.name}: argument {index} must be a string literal", arg_expr)
+                return self.raise_or_return(InvalidTypeError(f"{stmt.name}: argument {index} must be a string literal", arg_expr))
             
             if field.name in block_data.broadcasts:
                 fields[field.name] = (arg_expr.value, self.define_broadcast(arg_expr.value))
             else:
                 if arg_expr.value not in field.expected and len(field.expected) > 0:
-                    raise ArgumentError(f"{arg_expr.value} is not one of {field.expected}", arg_expr)
+                    return self.raise_or_return(ArgumentError(f"{arg_expr.value} is not one of {field.expected}", arg_expr))
                 fields[field.name] = (arg_expr.value, None)
             index += 1
 
@@ -699,7 +720,7 @@ class Assembler:
             
     def emit_function_def(self, stmt: FunctionDefStmt, parent: StrOptional) -> BlockRange:
         if parent is not None:
-            raise SyntaxError("Cannot define function inside of another", stmt)
+            return self.raise_or_return(SyntaxError("Cannot define function inside of another", stmt))
 
         self.define_variable(False, "var", stmt.name + ":return", None)
 
@@ -790,7 +811,7 @@ class Assembler:
         try:
             self.assert_writable_name(stmt.variable, context)
         except NameError:
-            raise CompilerError(f"Cannot override read only argument {stmt.variable}", stmt.start)
+            return self.raise_or_return(CompilerError(f"Cannot override read only argument {stmt.variable}", stmt.start))
 
         var_id = self.define_variable(False, "var", stmt.variable, context)
         set_id = self.new_id()
@@ -880,7 +901,7 @@ class Assembler:
         try:
             iterable_id = self.get_variable(stmt.iterable.root)
         except NameError:
-            raise NotDefinedError(f"{stmt.iterable.root} not defined.", stmt.iterable)
+            return self.raise_or_return(NotDefinedError(f"{stmt.iterable.root} not defined.", stmt.iterable))
 
         self.assert_writable_name(stmt.variable, context)
         # we *still* need this id to be unique, because even if it's in a for loop, scratch considers it global.
@@ -1085,7 +1106,7 @@ class Assembler:
     
     def emit_assignment(self, target: VarRef, value: Expr, parent: StrOptional, context: StrOptional) -> BlockRange:
         if context in self.procedures and target.root in self.procedures[context].argument_names:
-            raise CompilerError(f"Cannot assign read only argument {target.root}", target)
+            return self.raise_or_return(CompilerError(f"Cannot assign read only argument {target.root}", target))
 
         inputs: dict[str, ScratchInputRaw] = {}
         
@@ -1093,7 +1114,7 @@ class Assembler:
             try:
                 var_id = self.get_variable(target.root)
             except NameError:
-                raise NotDefinedError(f"{target.root} not defined.", target)
+                return self.raise_or_return(NotDefinedError(f"{target.root} not defined.", target))
             
             variable = self.variables[var_id]
 
@@ -1119,13 +1140,13 @@ class Assembler:
 
                 return block_range
             else:
-                raise TypeError("Strings do not support item assignment")
+                return self.raise_or_return(InvalidTypeError("Strings do not support item assignment", target))
         else:
             # if 
             try:
                 var_id = self.get_variable(target.root) 
             except NameError:
-                raise NotDefinedError(f"{target.root} not defined.", target)
+                return self.raise_or_return(NotDefinedError(f"{target.root} not defined.", target))
             
             block_id = self.new_id()
             self.make_block(
@@ -1407,18 +1428,18 @@ class Assembler:
             block_data = SCRATCH_BLOCKS[expr.callee]
 
             if not isinstance(block_data, Reporter):
-                raise CompilerError(
+                return self.raise_or_return(CompilerError(
                     f"{expr.callee} does not return anything.",
                     expr
-                )
+                ), PLACE_HOLDER_0)
         
             expected_args = len(block_data.inputs) + len(block_data.fields)
 
             if len(expr.args) != expected_args:
-                raise ArgumentError(
+                return self.raise_or_return(ArgumentError(
                     f"Block {expr.callee} expects {expected_args} argument(s), got {len(expr.args)}",
                     expr
-                )
+                ), PLACE_HOLDER_0)
             
             block_id = self.make_block(
                 opcode=expr.callee,
@@ -1439,7 +1460,7 @@ class Assembler:
                         try:
                             var_id = self.get_variable(arg_expr.ref.root)
                         except NameError:
-                            raise NotDefinedError(f"{arg_expr.ref.root} not defined.", arg_expr)
+                            return self.raise_or_return(NotDefinedError(f"{arg_expr.ref.root} not defined.", arg_expr), PLACE_HOLDER_0)
                         inputs[arg.name] = (InputType.SHADOW_ONLY,
                                             (DataType.VARIABLE, arg_expr.ref.root, var_id))
                 else:
@@ -1467,23 +1488,27 @@ class Assembler:
             for field, arg_expr in zip(block_data.fields, expr.args[len(block_data.inputs):]):
                 if field.name in block_data.variables:
                     if not isinstance(arg_expr, VarExpr):
-                        raise InvalidTypeError(
+                        return self.raise_or_return(InvalidTypeError(
                             f"{expr.callee}: argument {index} must be a variable",
                             arg_expr
-                        )
+                        ), PLACE_HOLDER_0)
                     try:
                         fields[field.name] = (arg_expr.ref.root, self.get_variable(arg_expr.ref.root))
                     except NameError:
-                        raise NotDefinedError(f"{arg_expr.ref.root} not defined.", arg_expr)
+                        return self.raise_or_return(
+                            NotDefinedError(f"{arg_expr.ref.root} not defined.", arg_expr),
+                            PLACE_HOLDER_0
+                        )
                 else:
                     if not isinstance(arg_expr, StringExpr):
-                        raise InvalidTypeError(
+                        return self.raise_or_return(InvalidTypeError(
                             f"{expr.callee}: argument {index} must be a string literal",
                             arg_expr
-                        )
+                        ), PLACE_HOLDER_0)
 
                     if arg_expr.value not in field.expected and len(field.expected) > 0:
-                        raise ArgumentError(f"{arg_expr.value} is not one of {field.expected}", arg_expr)
+                        return self.raise_or_return(ArgumentError(f"{arg_expr.value} is not one of {field.expected}", arg_expr),
+                                                    PLACE_HOLDER_0)
 
                     fields[field.name] = (arg_expr.value, None)
                 index += 1
@@ -1537,12 +1562,12 @@ class Assembler:
         if op == "in":
             if right_expr.return_type is VariableTypes.LIST:
                 if not isinstance(right, VarExpr):
-                    raise InvalidTypeError(f"Right expression must be a list", right)
+                    return self.raise_or_return(InvalidTypeError(f"Right expression must be a list", right), PLACE_HOLDER_0)
 
                 try:
                     list_id = self.get_variable(right.ref.root)
                 except NameError:
-                    raise NotDefinedError(f"{right.ref.root} is not defined", right)
+                    return self.raise_or_return(NotDefinedError(f"{right.ref.root} is not defined", right), PLACE_HOLDER_0)
 
                 self.make_block(
                     opcode="data_listcontainsitem",
@@ -1606,7 +1631,7 @@ class Assembler:
             try:
                 arg_index = procedure_info.argument_names.index(ref.root)
             except ValueError:
-                raise ArgumentError(f"Argument {ref.root} doesn't exist.", ref)
+                return self.raise_or_return(ArgumentError(f"Argument {ref.root} doesn't exist.", ref), PLACE_HOLDER_0)
             
             _, *arg_types = procedure_info.proccode.split(" %")
             arg_type = arg_types[arg_index]
@@ -1641,7 +1666,7 @@ class Assembler:
             try:
                 var_id = self.get_variable(ref.root)
             except NameError:
-                raise NotDefinedError(f"{ref.root} not defined.", ref)
+                return self.raise_or_return(NotDefinedError(f"{ref.root} not defined.", ref), PLACE_HOLDER_0)
             
             var_type = self.variables[var_id].var_type
             if ref.slice_expr is not None:
@@ -1806,6 +1831,8 @@ class Assembler:
         forwarded to the emitter to establish variable scoping and should be
         None for a normal top-level program.
         """
+        if not self.is_strict:
+            raise CompilerError(f"is_strict mode is False. Remove the parameter before continuing.", None)
         
         with zipfile.ZipFile(project_file, "r") as f:
             project = json.loads(f.read("project.json").decode("utf-8"))
