@@ -1669,8 +1669,10 @@ class Assembler:
 
             if len(procedure_info.return_types) == 1:
                 return_type = list(procedure_info.return_types)[0]
-            else:
+            elif len(procedure_info.return_types) > 0:
                 return_type = VariableTypes.VAR
+            else:
+                return_type = VariableTypes.UNKNOWN
 
             return ScratchInput(
                 (
