@@ -61,7 +61,7 @@
     },
     {
       "name": "storage.type.itchy",
-      "match": "\\b(?:var|bool|list)\\b"
+      "match": "\\b(?:var|bool|list|string|number)\\b"
     },
     {
       "name": "constant.language.boolean.itchy",
