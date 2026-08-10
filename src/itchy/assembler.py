@@ -484,6 +484,7 @@ class Assembler:
                 stmt
             )
 
+
         inputs: dict[str, ScratchInputRaw] = {}
         fields: dict[str, ScratchFieldRaw] = {}
 
@@ -500,7 +501,7 @@ class Assembler:
 
         for arg, arg_expr in zip(block_data.inputs, stmt.args):
             # arg.return_type
-            if arg in block_data.broadcasts:
+            if arg.name in block_data.broadcasts:
                 if not isinstance(arg_expr, StringExpr):
                     inputs[arg.name] = (
                         self.emit_expr(arg_expr, context, block_range, block_id).value
@@ -509,7 +510,7 @@ class Assembler:
                     broadcast_id = self.define_broadcast(arg_expr.value)
                     inputs[arg.name] = (InputType.SHADOW_ONLY,
                                         (DataType.BROADCAST, arg_expr.value, broadcast_id))
-            elif arg in block_data.variables:
+            elif arg.name in block_data.variables:
                 if not isinstance(arg_expr, VarExpr):
                     inputs[arg.name] = (
                         self.emit_expr(arg_expr, context, block_range, block_id).value
@@ -657,10 +658,18 @@ class Assembler:
         expected_args = len(block_data.inputs) + len(block_data.fields)
 
         if len(stmt.params) != expected_args:
-            return self.raise_or_return(ArgumentError(
+            # we don't want to halt here
+            error = ArgumentError(
                 f"Event {stmt.name} expects {expected_args} argument(s), got {len(stmt.params)}",
                 stmt
-            ))
+            )
+            if self.is_strict:
+                raise error
+
+            if len(stmt.params) < expected_args:
+                # but continuing if this is True is going to create additional errors.
+                return self.raise_or_return(error)
+            
 
         inputs: dict[str, ScratchInputRaw] = {}
         fields: dict[str, ScratchFieldRaw] = {}
