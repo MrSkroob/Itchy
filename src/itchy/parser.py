@@ -466,7 +466,7 @@ class Parser:
             max_tries = offset_tries * 2
             tries = 0
             shift = 0
-            offset = 1
+            offset = 0
             working_tokens = tokens.copy()
   
 
@@ -491,7 +491,7 @@ class Parser:
                     can_delete = len(error.tokens) > 0
                     line = 0
                     # we made more progress, try to delete current line.
-                    
+
                     if error_pos > progress:
                         progress = error_pos
                         tokens = working_tokens.copy()
@@ -513,7 +513,7 @@ class Parser:
                     # offsets both 1 and 0.
                     if tries == offset_tries:
                         shift = 0
-                        offset = 0
+                        offset = 1
                         working_tokens = tokens.copy()
 
                     if tries > max_tries:
