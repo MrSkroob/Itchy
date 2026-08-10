@@ -8,7 +8,7 @@ import tempfile
 import os
 
 from typing import TypeVar
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 
 from copy import deepcopy
@@ -104,7 +104,7 @@ class VariableData:
     initial_value: Any
 
 
-@dataclass(frozen=True)
+@dataclass
 class ProcedureInfo:
     name: str
     prototype_id: str
@@ -115,6 +115,9 @@ class ProcedureInfo:
 
     # compiler only. does not get serialised
     argument_types: tuple[VariableTypes, ...]
+
+    # if applicable
+    return_types: set[VariableTypes]=field(default_factory=set[VariableTypes])
 
 
 class Assembler:
@@ -421,6 +424,9 @@ class Assembler:
         body: list[Stmt] = []
 
         if len(stmt.values) > 0:
+            # technically it's always 1 or 0, but this was left over for future where we might support more than one
+            # return expressions (tuples)
+            proc_data.return_types.add(self.emit_expr(stmt.values[0], context, BlockRange(None, None), None).return_type)
             for value in stmt.values:
                 body.append(
                     FunctionCallStmt(SET_RETURN_VALUE, (value,))

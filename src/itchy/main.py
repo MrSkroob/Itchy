@@ -37,8 +37,8 @@ def compile(file: str, output: str, target: str):
         except (ParseError, CompilerError) as e:
             if isinstance(e, ParseError):
                 fail_state = parser.fail_state
-                tree = ast_builder.build_eventstat(find_node(parser.deepest_partial.tree, "eventstat"))
-                print(tree.name, tree.params)
+                # tree = ast_builder.build_eventstat(find_node(parser.deepest_partial.tree, "eventstat"))
+                # print(tree.name, tree.params)
 
                 if fail_state is not None:
                     print(format_syntax_error(fail_state, source, file))
