@@ -1821,6 +1821,8 @@ class Assembler:
         1. Clears blocks, variables, lists, etc. that are local to the sprite
         2. *Keeps* stage/global data
         """
+        self.messages.clear()
+
         if target is not None:
             with zipfile.ZipFile(target, "r") as f:
                 stage = self.get_stage(f)
