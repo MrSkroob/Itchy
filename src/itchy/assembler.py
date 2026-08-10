@@ -1667,11 +1667,17 @@ class Assembler:
                 }
             )
 
+            if len(procedure_info.return_types) == 1:
+                return_type = list(procedure_info.return_types)[0]
+            else:
+                return_type = VariableTypes.VAR
+
             return ScratchInput(
                 (
                     InputType.BLOCK_ONLY,
                     reporter_id
-                )
+                ),
+                return_type=return_type
             )
         else:
             try:
