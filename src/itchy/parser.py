@@ -468,6 +468,8 @@ class Parser:
             shift = 0
             offset = 1
             working_tokens = tokens.copy()
+  
+
             while True:
                 try:
                     result = self.parse(root, working_tokens)
@@ -478,6 +480,7 @@ class Parser:
                         raise
                     if len(tokens) == 0:
                         raise
+
                     error = self.furthest_error or e
 
                     error_pos = min(len(error.tokens) - 1, error.pos)
@@ -485,19 +488,24 @@ class Parser:
                     if progress is None:
                         progress = error_pos
 
-                    if len(error.tokens) > 0:
-                        # we made more progress, try to delete current line.
-                        if error_pos > progress:
-                            progress = error_pos
-                            tokens = working_tokens.copy()
+                    can_delete = len(error.tokens) > 0
+                    line = 0
+                    # we made more progress, try to delete current line.
+                    
+                    if error_pos > progress:
+                        progress = error_pos
+                        tokens = working_tokens.copy()
+                        if can_delete:
                             line = error.tokens[error_pos].line - offset
-                            shift = 0
-                            tries = 0
-                        else:
-                            # delete the line above until something works.
+                        shift = 0
+                        tries = 0
+                    else:
+                        # delete the line above until something works.
+                        if can_delete:
                             line = (error.tokens[error_pos].line - offset) + shift
-                            shift -= 1
+                        shift -= 1
 
+                    if can_delete:
                         working_tokens = [i for i in working_tokens if i.line != line]
 
                     # bad hack :(

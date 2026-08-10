@@ -110,6 +110,44 @@ def make_wrap(line: int = 1, char: int = 1):
     )
 
 
+def make_stat(line: int=1, char: int=1):
+    """
+    soooo don't use this normally, but this might work for the semantic parser in order to not die when you
+    make an unfinished statement
+    """
+
+    wrap = ParsedNode(
+        "wrap",
+        (
+            ParsedNode(
+                Sequence.__name__,
+                (
+                    Token(
+                        Definitions.OpenCurlyBracket,
+                        "{",
+                        line,
+                        char,
+                    ),
+                    ParsedNode("chunk", ()),
+                    Token(
+                        Definitions.CloseCurlyBracket,
+                        "}",
+                        line,
+                        char,
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    return (
+        ParsedNode(
+            Alternative.__name__,
+            (wrap,),
+        ),
+    )
+
+
 Strategy = dict[str, tuple[ParsedNode | Token[Definitions], ...]]
 
 
@@ -119,7 +157,8 @@ RECOVERY_STRATEGIES: Strategy = {
 }
 
 
-FUNC_SIGNATURE_STRATEGIES: Strategy = {
+AGGRESSIVE_STRATEGIES: Strategy = {
     **RECOVERY_STRATEGIES,
-    "wrap": make_wrap()
+    "wrap": make_wrap(),
+    "stat": make_stat()
 }
