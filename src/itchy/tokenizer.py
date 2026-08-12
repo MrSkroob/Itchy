@@ -79,7 +79,7 @@ class Token(Generic[TokenRule]):
 # your BNF file. 
 # typically, they'd be rules that are too generic or simple to warrant a rule, like numbers and symbols and keywords.
 class Definitions(StrEnum):
-    Comment = r"//.*"
+    Comment = r"//[^\r\n]*"
     BlockComment = r"/\*[\s\S]*?\*/"
     Define = r"\b(define)\b"
     ElseIf = r"\b(elseif)\b"
@@ -115,7 +115,7 @@ class Definitions(StrEnum):
 
 # regex that is vital in interpreting bnf. 
 class BNFRules(StrEnum):
-    Comment = r"//.*"
+    Comment = r"//[^\r\n]*"
     Assign = "::="
     # CurlyBrackets = r"(?<!\")\{(.*?)\}(?!\")"
     # SquareBrackets = r"(?<!\")\[(.*?)\](?!\")"
