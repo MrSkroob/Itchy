@@ -202,7 +202,14 @@ class Assembler:
             block["y"] = y if y is not None else 100
         
         return self.add_block(block, id)
-    
+
+    def count_args(self, args: tuple[Expr | Stmt, ...]):
+        length = 0
+        for i in args:
+            if i.dummy:
+                continue
+            length += 1
+        return length
 
     def get_variable(self, name: str) -> str:
         """
@@ -425,7 +432,7 @@ class Assembler:
 
         body: list[Stmt] = []
 
-        if len(stmt.values) > 0:
+        if self.count_args(stmt.values) > 0:
             # technically it's always 1 or 0, but this was left over for future where we might support more than one
             # return expressions (tuples)
             proc_data.return_types.add(self.emit_expr(stmt.values[0], context, BlockRange(None, None), None).return_type)
@@ -440,7 +447,7 @@ class Assembler:
 
         body.append(control_stop)
 
-        if len(stmt.values) > 0:
+        if self.count_args(stmt.values) > 0:
             return self.emit_if(
                 IfStmt(
                     branches=(IfBranch(
@@ -480,9 +487,9 @@ class Assembler:
 
         expected_args = len(block_data.inputs) + len(block_data.fields)
 
-        if len(stmt.args) != expected_args:
+        if self.count_args(stmt.args) != expected_args:
             return self.raise_or_return(ArgumentError(
-                f"Block {stmt.callee} expects {expected_args} argument(s), got {len(stmt.args)}",
+                f"Block {stmt.callee} expects {expected_args} argument(s), got {self.count_args(stmt.args)}",
                 stmt
             ))
 
@@ -593,10 +600,10 @@ class Assembler:
 
         info = self.procedures[stmt.callee]
         
-        if len(stmt.args) != len(info.argument_ids):
+        if self.count_args(stmt.args) != len(info.argument_ids):
             return self.raise_or_return(ArgumentError(
                 f"Function {stmt.callee} expects {len(info.argument_ids)} arguments, "
-                f"got {len(stmt.args)}",
+                f"got {self.count_args(stmt.args)}",
                 stmt
             ))
 
@@ -659,7 +666,7 @@ class Assembler:
         # get counted on top of inputs and fields rather than overlapping.
         expected_args = len(block_data.inputs) + len(block_data.fields)
 
-        if len(stmt.params) != expected_args:
+        if self.count_args(stmt.params) != expected_args:
             # we don't want to halt here
             error = ArgumentError(
                 f"Event {stmt.name} expects {expected_args} argument(s), got {len(stmt.params)}",
@@ -1457,9 +1464,9 @@ class Assembler:
         
             expected_args = len(block_data.inputs) + len(block_data.fields)
 
-            if len(expr.args) != expected_args:
+            if self.count_args(expr.args) != expected_args:
                 return self.raise_or_return(ArgumentError(
-                    f"Block {expr.callee} expects {expected_args} argument(s), got {len(expr.args)}",
+                    f"Block {expr.callee} expects {expected_args} argument(s), got {self.count_args(expr.args)}",
                     expr
                 ), PLACE_HOLDER_0)
             
