@@ -149,7 +149,8 @@ class Assembler:
         """
         if self.is_strict:
             raise error
-        self.errors.append(error)
+        if error.error_node and error.error_node.dummy:
+            self.errors.append(error)
         return return_value
     
     def new_id(self) -> str:

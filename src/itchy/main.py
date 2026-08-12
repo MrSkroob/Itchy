@@ -16,9 +16,9 @@ from pathlib import Path
 ROOT = Path(__file__).parent.parent
 
 
-parser = Parser(skip_bad_tokens=False, skip_rules_on_fail=RECOVERY_STRATEGIES)
+parser = Parser(skip_bad_tokens=False)
 ast_builder = ASTBuilder()
-assembler = Assembler()
+assembler = Assembler(is_strict=False)
 
    
 def compile(file: str, output: str, target: str):
@@ -32,11 +32,12 @@ def compile(file: str, output: str, target: str):
             parsed = parser.read(source)
             tree = ast_builder.build(parsed.tree)
             # tree = build_ast(parsed.tree)
-            assembler.assemble(tree, output, target)
+            assembler.emit_program(tree)
             # print_ast(tree)
         except (ParseError, CompilerError) as e:
             if isinstance(e, ParseError):
                 fail_state = parser.fail_state
+                print_ast(parser.deepest_partial)
                 # tree = ast_builder.build_eventstat(find_node(parser.deepest_partial.tree, "eventstat"))
                 # print(tree.name, tree.params)
 
@@ -46,6 +47,7 @@ def compile(file: str, output: str, target: str):
                 print(format_compiler_error(e, source, file))
 
             return False
+    print(assembler.messages)
     return True
 
 

@@ -1,6 +1,11 @@
-define foo(a: var, b: list, c: bool) {
+var stink
 
+
+event event_whenflagclicked() {
+    event_broadcast("message1")
 }
 
 
-foo(a, b,
+event event_whenbroadcastreceived("message1") {
+    event_broadcast(
+}

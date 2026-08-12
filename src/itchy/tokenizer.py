@@ -49,6 +49,7 @@ class Token(Generic[TokenRule]):
     literal: str
     line: int
     char: int
+    dummy_token: bool=False
 
     @property
     def span(self) -> SourceSpan:

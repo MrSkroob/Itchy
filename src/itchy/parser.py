@@ -103,6 +103,7 @@ class Parser:
         # even though `read()` itself no longer raises for recoverable
         # failures.
         self.recovered_from_error: bool = False
+        self.accumulated_errors: list[ParseError] = []
 
 
     def reset_expected(self):
@@ -451,6 +452,7 @@ class Parser:
         # multiple `read()` calls without leaking stale error/recovery info
         # from a previous file into the next one.
         self.halt = False
+        self.accumulated_errors = []
         self.recovered_from_error = False
         root = get_root_node(self.rules)
         tokens = list(self.tokenizer.read(text))
@@ -461,7 +463,7 @@ class Parser:
             """
             We slowly remove characters starting from the error location to the start of the rule until things work.
             """
-            progress = None
+            progress = -1
             offset_tries = 8
             max_tries = offset_tries * 2
             tries = 0
@@ -484,9 +486,6 @@ class Parser:
                     error = self.furthest_error or e
 
                     error_pos = min(len(error.tokens) - 1, error.pos)
-                    
-                    if progress is None:
-                        progress = error_pos
 
                     can_delete = len(error.tokens) > 0
                     line = 0
@@ -496,6 +495,10 @@ class Parser:
                         progress = error_pos
                         tokens = working_tokens.copy()
                         if can_delete:
+                            # don't record error if it's a dummy token
+                            if not e.tokens[error_pos].dummy_token:
+                                self.accumulated_errors.append(e)
+
                             line = error.tokens[error_pos].line - offset
                         shift = 0
                         tries = 0

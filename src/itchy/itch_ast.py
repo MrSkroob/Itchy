@@ -46,6 +46,7 @@ def collect_comment_tokens(source: str) -> list[SemanticToken]:
 @dataclass(frozen=True, kw_only=True)
 class ASTNode:
     span: SourceSpan = field(default=SourceSpan(SourcePosition(0, 0), SourcePosition(0, 0)), kw_only=True, repr=False)
+    dummy: bool=False
 
 class Stmt(ASTNode):
     pass
@@ -377,12 +378,16 @@ class ASTBuilder:
         self.function_scope: str | None = None
         self.called_function: FunctionCallStmt | FunctionCallExpr | None = None
         self.argument_index: int = 0
+        self.function_definitions: dict[FunctionDefStmt, SourceSpan] = {}
+        self.var_definitions: dict[VarDefStmt, SourceSpan] = {}
 
     def reset(self) -> None:
         self.argument_index = 0
         self.semantic_tokens = []
         self.function_scope = None
         self.called_function = None
+        self.function_definitions = {}
+        self.var_definitions = {}
 
     def emit_token(
         self,
@@ -497,7 +502,8 @@ class ASTBuilder:
                 span=SourceSpan(
                     start=expr.span.start,
                     end=right.span.end
-                )
+                ), 
+                dummy=node.dummy_node
             )
     
         return expr
@@ -529,7 +535,7 @@ class ASTBuilder:
                            span=SourceSpan(
                                start=SourcePosition(op.line, op.char),
                                end=expr.span.end
-                           ))
+                           ), dummy=node.dummy_node)
     
     
     def build_primary(self, node: ParsedNode) -> Expr:
@@ -552,17 +558,17 @@ class ASTBuilder:
             if is_token(child, name="Bool"):
                 assert isinstance(child, Token)
                 # self.emit_token(child, "boolean")
-                return BoolExpr(child.literal.lower() == "true", span=child.span)
+                return BoolExpr(child.literal.lower() == "true", span=child.span, dummy=node.dummy_node)
     
             if is_token(child, name="Number"):
                 assert isinstance(child, Token)
                 # self.emit_token(child, "number")
-                return NumberExpr(parse_number(child.literal), span=child.span)
+                return NumberExpr(parse_number(child.literal), span=child.span, dummy=node.dummy_node)
     
             if is_token(child, name="String"):
                 assert isinstance(child, Token)
                 # self.emit_token(child, "string")
-                return StringExpr(parse_string(child.literal), span=child.span)
+                return StringExpr(parse_string(child.literal), span=child.span, dummy=node.dummy_node)
     
             if isinstance(child, ParsedNode) and child.name == "tableconstructor":
                 return self.build_tableconstructor(child)
@@ -583,13 +589,15 @@ class ASTBuilder:
                     return VarExpr(VarRef(
                         var_name.literal,
                         slice_expr,
-                        span=span
-                    ), span=span)
+                        span=span,
+                        dummy=var_name.dummy_token
+                    ), span=span, dummy=node.dummy_node)
                 else:
                     return VarExpr(VarRef(
                         var_name.literal,
-                        span = var_name.span
-                    ), span=var_name.span)
+                        span = var_name.span,
+                        dummy=var_name.dummy_token
+                    ), span=var_name.span, dummy=node.dummy_node)
             
             if isinstance(child, ParsedNode) and child.name == "functioncall":
                 func_name = find_first_token(child, Definitions.Symbol.name)
@@ -601,7 +609,7 @@ class ASTBuilder:
                     span=SourceSpan(
                         func_name.span.start,
                         arg_list[-1].span.end if len(arg_list) > 0 else func_name.span.end
-                    )
+                    ), dummy=node.dummy_node
                 )
                 self.called_function = stmt
                 return stmt
@@ -629,7 +637,7 @@ class ASTBuilder:
             span=SourceSpan(
                 symbol.span.start,
                 slice_expr.span.end if slice_expr is not None else symbol.span.end
-            )
+            ), dummy=node.dummy_node
         )
     
     
@@ -657,11 +665,11 @@ class ASTBuilder:
             if isinstance(child, ParsedNode) and child.name == "varlist1":
                 args = self.build_varlist1(child)
                 if len(args) > 0:
-                    return TableExpr(args, span=span)
+                    return TableExpr(args, span=span, dummy=node.dummy_node)
                 else:
-                    return TableExpr(args, span=span)
+                    return TableExpr(args, span=span, dummy=node.dummy_node)
     
-        return TableExpr((), span=span)
+        return TableExpr((), span=span, dummy=node.dummy_node)
     
     
     def build_varlist1(self, node: ParsedNode) -> tuple[Expr, ...]:
@@ -700,7 +708,7 @@ class ASTBuilder:
             span=SourceSpan(
                 function_name.span.start,
                 args[-1].span.end if len(args) > 0 else function_name.span.end
-            )
+            ), dummy=node.dummy_node
         )
         self.called_function = stmt
         return stmt 
@@ -721,7 +729,7 @@ class ASTBuilder:
                 span=SourceSpan(
                     target.span.start,
                     action.span.end
-                )
+                ), dummy=node.dummy_node
             )
         else:
             OPERATION_TO_BINOP = {
@@ -735,13 +743,14 @@ class ASTBuilder:
     
             return AssignStmt(
                 target,
-                BinaryOpExpr(VarExpr(target, span=target.span), 
-                             OPERATION_TO_BINOP[operation.literal], action, 
-                             span=SourceSpan(target.span.start, SourcePosition(target.span.end.line, target.span.end.character + 2))),
+                BinaryOpExpr(VarExpr(target, span=target.span, dummy=target.dummy), 
+                            OPERATION_TO_BINOP[operation.literal], action, 
+                            span=SourceSpan(target.span.start, SourcePosition(target.span.end.line, target.span.end.character + 2)), 
+                            dummy=node.dummy_node),
                 span=SourceSpan(
                     target.span.start,
                     action.span.end
-                )
+                ), dummy=node.dummy_node
             )
     
     def build_vardefstat(self, node: ParsedNode) -> VarDefStmt:
@@ -760,16 +769,20 @@ class ASTBuilder:
             shared_token = find_first_token(node, "Shared")
             # self.emit_token(shared_token, "keyword")
             start = shared_token.span.start
-    
-        return VarDefStmt(
+
+        stmt = VarDefStmt(
             type_token.literal,
             symbol_token.literal,
             shared,
             span=SourceSpan(
                 start=start,
                 end=symbol_token.span.end
-            )
+            ), dummy=node.dummy_node
         )
+
+        self.var_definitions[stmt] = stmt.span
+    
+        return stmt
     
     
     def build_paramlist(self, node: ParsedNode) -> tuple[Param, ...]:
@@ -789,7 +802,7 @@ class ASTBuilder:
         self.emit_token(name, "parameter", ("declaration", "readonly"))
         self.emit_token(type_name, "type")
     
-        return Param(name.literal, type_name.literal, span=SourceSpan(name.span.start, type_name.span.end))
+        return Param(name.literal, type_name.literal, span=SourceSpan(name.span.start, type_name.span.end), dummy=node.dummy_node)
     
     
     def build_funcbody(self, node: ParsedNode) -> tuple[tuple[Param, ...], tuple[Stmt, ...]]:
@@ -843,8 +856,8 @@ class ASTBuilder:
     
         function = find_first_node(node, "function")
         parts = self.build_function(function)
-        
-        return FunctionDefStmt(
+
+        stmt = FunctionDefStmt(
             parts.name,
             parts.params,
             parts.body,
@@ -852,8 +865,12 @@ class ASTBuilder:
             span=SourceSpan(
                 start=define.span.start,
                 end=parts.span.end
-            )
+            ), dummy=node.dummy_node
         )
+
+        self.function_definitions[stmt] = stmt.span
+        
+        return stmt
     
     
     def build_eventstat(self, node: ParsedNode) -> EventHandlerStmt:
@@ -882,7 +899,7 @@ class ASTBuilder:
             span=SourceSpan(
                 start=name.span.start,
                 end=end
-            )
+            ), dummy=node.dummy_node
         )
     
     
@@ -956,7 +973,7 @@ class ASTBuilder:
                 span=SourceSpan(
                     start=for_token.span.start,
                     end=end
-                )
+                ), dummy=node.dummy_node
             )
         else:
             
@@ -967,7 +984,7 @@ class ASTBuilder:
                 span=SourceSpan(
                     start=for_token.span.start,
                     end=end
-                )
+                ), dummy=node.dummy_node
             )
     
     
@@ -984,7 +1001,9 @@ class ASTBuilder:
         body = self.build_wrap(expect_node(children[2], "wrap"))
         i = 3
     
-        branches.append(IfBranch(condition, body, span=SourceSpan(if_token.span.start, body[-1].span.end if len(body) > 0 else condition.span.end)))
+        branches.append(IfBranch(condition, body, 
+                                 span=SourceSpan(if_token.span.start, body[-1].span.end if len(body) > 0 else condition.span.end), 
+                                 dummy=node.dummy_node))
     
         while i < len(children) and is_token(children[i], "ElseIf"):
             elseif_token = children[i]
@@ -999,7 +1018,9 @@ class ASTBuilder:
             body = self.build_wrap(expect_node(children[i], "wrap"))
             i += 1
     
-            branches.append(IfBranch(condition, body, span=SourceSpan(elseif_token.span.start, body[-1].span.end if len(body) > 0 else condition.span.end)))
+            branches.append(IfBranch(condition, body, 
+                                     span=SourceSpan(elseif_token.span.start, body[-1].span.end if len(body) > 0 else condition.span.end),
+                                     dummy=node.dummy_node))
         
         if i < len(children) and is_token(children[i], "Else"):
             else_token = children[i]
@@ -1018,7 +1039,8 @@ class ASTBuilder:
         return IfStmt(
             tuple(branches),
             else_body,
-            span=SourceSpan(if_token.span.start, end)
+            span=SourceSpan(if_token.span.start, end),
+            dummy=node.dummy_node
         ) 
     
     
@@ -1037,7 +1059,8 @@ class ASTBuilder:
             span=SourceSpan(
                 while_token.span.start,
                 wrap[-1].span.end if len(wrap) > 0 else equation.span.end
-            )
+            ),
+            dummy=node.dummy_node
         )
     
     
@@ -1091,6 +1114,7 @@ class ASTBuilder:
                 return ReturnStmt(
                     (),
                     span=return_token.span,
+                    dummy=node.dummy_node
                 )
     
             value = self.build_equation(equation_node)
@@ -1101,6 +1125,7 @@ class ASTBuilder:
                     start=return_token.span.start,
                     end=value.span.end,
                 ),
+                dummy=node.dummy_node
             )
     
         raise ValueError("that's not good :[")
@@ -1124,7 +1149,7 @@ class ASTBuilder:
                         }
                     ]
                     
-                    return BlockStmt(wrap, span=SourceSpan(bracket_tokens[0].span.start, bracket_tokens[-1].span.end))
+                    return BlockStmt(wrap, span=SourceSpan(bracket_tokens[0].span.start, bracket_tokens[-1].span.end), dummy=node.dummy_node)
                 
                 case "whilestat":
                     return self.build_whilestat(child)
@@ -1201,7 +1226,7 @@ class ASTBuilder:
         else:
             end = SourcePosition(0, 0)
     
-        return Program(variable_definitions + chunk, span=SourceSpan(start, end))
+        return Program(variable_definitions + chunk, span=SourceSpan(start, end), dummy=node.dummy_node)
     
     
     def _build_ast(self, tree: ParsedChild) -> Program:

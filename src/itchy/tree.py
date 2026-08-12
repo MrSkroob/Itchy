@@ -17,6 +17,7 @@ BNF_PATH = Path(__file__).parent / "bnf.txt"
 class ParsedNode():
     name: str
     children: tuple[ParsedNode | Token[Definitions], ...]
+    dummy_node: bool=False
 
     def __repr__(self) -> str:
         output: list[str] = []
@@ -25,6 +26,7 @@ class ParsedNode():
             output.append(str(i))
 
         return f"[{', '.join(output)}]"
+
 
 
 class GrammarNode():

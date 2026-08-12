@@ -35,7 +35,7 @@ def make_dummy_primary(line: int = 1, char: int = 1) -> tuple[ParsedNode]:
     """
     A literal 0.
     """
-    number = Token(Definitions.Number, "0", line, char)
+    number = Token(Definitions.Number, "0", line, char, dummy_token=True)
 
     literals = ParsedNode(
         "literals",
@@ -43,13 +43,16 @@ def make_dummy_primary(line: int = 1, char: int = 1) -> tuple[ParsedNode]:
             ParsedNode(
                 Alternative.__name__,
                 (number,),
+                dummy_node=True
             ),
         ),
+        dummy_node=True
     )
 
     return (ParsedNode(
         Alternative.__name__,
         (literals,),
+        dummy_node=True
     ),)
 
 
@@ -61,9 +64,10 @@ def make_var(line: int = 1, char: int = 1):
         ParsedNode(
             Sequence.__name__,
             (
-                Token(Definitions.Symbol, "__error__", line, char),
+                Token(Definitions.Symbol, "__error__", line, char, dummy_token=True),
                 ParsedNode(OptionalNode.__name__, ()),
             ),
+            dummy_node=True
         ),
     )
 
@@ -74,10 +78,11 @@ def make_args(line: int = 1, char: int = 1):
         ParsedNode(
             Sequence.__name__,
             (
-                Token(Definitions.OpenBracket, "(", line, char),
+                Token(Definitions.OpenBracket, "(", line, char, dummy_token=True),
                 ParsedNode(OptionalNode.__name__, ()),
-                Token(Definitions.CloseBracket, ")", line, char),
+                Token(Definitions.CloseBracket, ")", line, char, dummy_token=True),
             ),
+            dummy_node=True
         ),
     )
 
@@ -102,10 +107,11 @@ def make_wrap(line: int = 1, char: int = 1):
         ParsedNode(
             Sequence.__name__,
             (
-                Token(Definitions.OpenCurlyBracket, "{", line, char),
-                ParsedNode("chunk", ()),
-                Token(Definitions.CloseCurlyBracket, "}", line, char),
+                Token(Definitions.OpenCurlyBracket, "{", line, char, dummy_token=True),
+                ParsedNode("chunk", (), dummy_node=True),
+                Token(Definitions.CloseCurlyBracket, "}", line, char, dummy_token=True),
             ),
+            dummy_node=True
         ),
     )
 
@@ -127,6 +133,7 @@ def make_stat(line: int=1, char: int=1):
                         "{",
                         line,
                         char,
+                        dummy_token=True
                     ),
                     ParsedNode("chunk", ()),
                     Token(
@@ -134,8 +141,10 @@ def make_stat(line: int=1, char: int=1):
                         "}",
                         line,
                         char,
+                        dummy_token=True
                     ),
                 ),
+                dummy_node=True
             ),
         ),
     )
@@ -144,6 +153,7 @@ def make_stat(line: int=1, char: int=1):
         ParsedNode(
             Alternative.__name__,
             (wrap,),
+            dummy_node=True
         ),
     )
 
