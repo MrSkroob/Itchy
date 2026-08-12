@@ -104,7 +104,7 @@ class Parser:
         # failures.
         self.recovered_from_error: bool = False
         self.accumulated_errors: list[ParseError] = []
-        self.speculative_errors: dict[int, ParseError] = {}
+        self.speculative_errors: dict[Token[Definitions], ParseError] = {}
 
 
     def reset_expected(self):
@@ -196,18 +196,14 @@ class Parser:
                 raise error
             else:
                 # this error might be raised in syntactically correct code. 
-                self.speculative_errors[error.pos] = error
+                self.speculative_errors[tokens[pos]] = error
+                print("token failing:", tokens[pos])
 
                 self.rule_stack.pop()
                 return ParseResult(
                     ParsedNode(rule.name, self.skip_rules_on_fail[rule.name]),
                     error.pos
                 )
-        if len(tokens) > 0:
-            # this means that a speculative error we added (for error recovery) 
-            # actually did not result in an error. 
-            if pos in self.speculative_errors:
-                del self.speculative_errors[pos]
 
         return ParseResult(ParsedNode(rule.name, (result.tree, )), result.pos)
 
@@ -217,8 +213,9 @@ class Parser:
                 if pos < len(tokens) and value.name == tokens[pos].kind.name:
                     debug_print(f"{print_token_safe(tokens, pos)}. Matched {value.name}")
 
-                    if pos in self.speculative_errors and not tokens[pos].dummy_token:
-                        del self.speculative_errors[pos]
+                    if tokens[pos] in self.speculative_errors and not tokens[pos].dummy_token:
+                        print("token passing:", tokens[pos])
+                        del self.speculative_errors[tokens[pos]]
 
                     return ParseResult(tokens[pos], pos + 1)
                 self.record_expected(node.child, pos)

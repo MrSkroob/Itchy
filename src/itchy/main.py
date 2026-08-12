@@ -16,7 +16,7 @@ from pathlib import Path
 ROOT = Path(__file__).parent.parent
 
 
-parser = Parser(skip_bad_tokens=False)
+parser = Parser(skip_bad_tokens=True, skip_rules_on_fail=AGGRESSIVE_STRATEGIES)
 ast_builder = ASTBuilder()
 assembler = Assembler(is_strict=False)
 
@@ -49,6 +49,8 @@ def compile(file: str, output: str, target: str):
                 print(format_compiler_error(e, source, file))
 
             return False
+    print([i for i in parser.speculative_errors])
+    print([i for i in assembler.errors])
     return True
 
 
