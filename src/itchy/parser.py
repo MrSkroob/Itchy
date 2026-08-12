@@ -197,7 +197,6 @@ class Parser:
             else:
                 # this error might be raised in syntactically correct code. 
                 self.speculative_errors[tokens[pos]] = error
-                print("token failing:", tokens[pos])
 
                 self.rule_stack.pop()
                 return ParseResult(
@@ -214,7 +213,6 @@ class Parser:
                     debug_print(f"{print_token_safe(tokens, pos)}. Matched {value.name}")
 
                     if tokens[pos] in self.speculative_errors and not tokens[pos].dummy_token:
-                        print("token passing:", tokens[pos])
                         del self.speculative_errors[tokens[pos]]
 
                     return ParseResult(tokens[pos], pos + 1)
@@ -465,7 +463,6 @@ class Parser:
             while True:
                 try:
                     result = self.parse(root, working_tokens)
-                    print(len(working_tokens), shift)
                     return result
                 except ParseError as e:
                     if self.halt:
