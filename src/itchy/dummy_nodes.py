@@ -79,7 +79,7 @@ def make_args(line: int = 1, char: int = 1):
             Sequence.__name__,
             (
                 Token(Definitions.OpenBracket, "(", line, char, dummy_token=True),
-                ParsedNode(OptionalNode.__name__, ()),
+                ParsedNode(OptionalNode.__name__, (), dummy_node=True),
                 Token(Definitions.CloseBracket, ")", line, char, dummy_token=True),
             ),
             dummy_node=True
