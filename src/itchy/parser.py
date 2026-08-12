@@ -4,7 +4,7 @@ from itchy.tokenizer import Definitions, GenericRules, Tokenizer, Token
 from itchy.tree import Rule, Terminal, NonTerminal, Alternative, \
     OptionalNode, Repeat, Sequence, GrammarNode, ParsedNode, build_parse_tree, get_root_node
 
-from dummy_nodes import Strategy
+from itchy.dummy_nodes import Strategy
 
 
 DEBUG = False
