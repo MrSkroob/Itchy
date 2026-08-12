@@ -830,9 +830,7 @@ class ASTBuilder:
         params, body = self.build_funcbody(funcbody)
         self.function_scope = previous_scope
     
-        if len(body) > 0:
-            end = body[-1].span.end
-        elif len(params) > 0:
+        if len(params) > 0:
             end = params[-1].span.end
         else:
             end = name.span.end
@@ -885,9 +883,7 @@ class ASTBuilder:
         args = self.build_varlist1(eventbody)
         wrap_nodes = self.build_wrap(wrap)
     
-        if len(wrap_nodes) > 0:
-            end = wrap_nodes[-1].span.end
-        elif len(args) > 0:
+        if len(args) > 0:
             end = args[-1].span.end
         else:
             end = name.span.end

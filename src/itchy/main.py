@@ -26,6 +26,9 @@ def compile(file: str, output: str, target: str):
     Compiles code to an existing output .sb3 file, targetting a specific sprite/stage
     """
     with open(file) as f:
+        for token in Tokenizer(Definitions, {"Comment", "BlockComment", "Newline", "Whitespace"}).read(f.read()):
+            print(token.literal)
+
         source = f.read()
         try:
             assembler.prepare(output)
@@ -50,6 +53,7 @@ def compile(file: str, output: str, target: str):
 
             return False
     print([i for i in parser.speculative_errors])
+    print([i for i in parser.accumulated_errors])
     print([i for i in assembler.errors])
     return True
 
@@ -65,6 +69,7 @@ def main():
     source_path = Path(args.source)
     if source_path.suffix != ".itch":
         print(f"provided file {source_path} is not a .itch file.")
+    
     compile(args.source, args.output, os.path.basename(str(source_path.with_suffix(''))))
 
 
