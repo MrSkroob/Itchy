@@ -26,9 +26,6 @@ def compile(file: str, output: str, target: str):
     Compiles code to an existing output .sb3 file, targetting a specific sprite/stage
     """
     with open(file) as f:
-        for token in Tokenizer(Definitions, {"Comment", "BlockComment", "Newline", "Whitespace"}).read(f.read()):
-            print(token.literal)
-
         source = f.read()
         try:
             assembler.prepare(output)
@@ -54,7 +51,7 @@ def compile(file: str, output: str, target: str):
             return False
     print([i for i in parser.speculative_errors])
     print([i for i in parser.accumulated_errors])
-    print([i for i in assembler.errors])
+    print([i.error_node.span.start.line for i in assembler.errors])
     return True
 
 

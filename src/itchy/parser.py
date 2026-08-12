@@ -1,8 +1,10 @@
 from __future__ import annotations
-from typing import Mapping
 from dataclasses import dataclass, field
 from itchy.tokenizer import Definitions, GenericRules, Tokenizer, Token
-from itchy.tree import Rule, Terminal, NonTerminal, Alternative, OptionalNode, Repeat, Sequence, GrammarNode, ParsedNode, build_parse_tree, get_root_node
+from itchy.tree import Rule, Terminal, NonTerminal, Alternative, \
+    OptionalNode, Repeat, Sequence, GrammarNode, ParsedNode, build_parse_tree, get_root_node
+
+from dummy_nodes import Strategy
 
 
 DEBUG = False
@@ -75,7 +77,7 @@ def print_token_safe(tokens: list[Token[Definitions]], pos: int):
 
 
 class Parser:
-    def __init__(self, *, skip_bad_tokens: bool=False, skip_rules_on_fail: dict[str, tuple[ParsedNode | Token[Definitions], ...]]=dict()) -> None:
+    def __init__(self, *, skip_bad_tokens: bool=False, skip_rules_on_fail: Strategy=dict()) -> None:
         """
         skip_rules_on_fail makes the parser skip the rule entirely if that rule fails.
         rule_blacklist makes the parser not evaluate the rule at all.
@@ -200,7 +202,7 @@ class Parser:
 
                 self.rule_stack.pop()
                 return ParseResult(
-                    ParsedNode(rule.name, self.skip_rules_on_fail[rule.name]),
+                    ParsedNode(rule.name, self.skip_rules_on_fail[rule.name](tokens[pos].line, tokens[pos].char)),
                     error.pos
                 )
 
