@@ -398,6 +398,9 @@ class ASTBuilder:
         if token is None:
             return
 
+        if token.dummy_token:
+            return
+
         # The tokenizer stores one-based positions; LSP positions are zero-based.
         self.semantic_tokens.append(
             SemanticToken(
@@ -873,7 +876,7 @@ class ASTBuilder:
     
     def build_eventstat(self, node: ParsedNode) -> EventHandlerStmt:
         children = flat_children(node)
-        expect_token(children[0], Definitions.Event.name)
+        event = expect_token(children[0], Definitions.Event.name)
         # self.emit_token(event_token, "keyword")
         name = expect_token(children[1], Definitions.Symbol.name)
         self.emit_token(name, "event")
@@ -893,7 +896,7 @@ class ASTBuilder:
             args,
             wrap_nodes,
             span=SourceSpan(
-                start=name.span.start,
+                start=event.span.start,
                 end=end
             ), dummy=node.dummy_node
         )
