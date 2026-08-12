@@ -67,6 +67,7 @@ PLACE_HOLDER_0 = ScratchInput((InputType.SHADOW_ONLY, (DataType.NUMBER, "0")), V
 class CompilerError(Exception):
     def __init__(self, message: str, error_node: ASTNode | None) -> None:
         self.error_node = error_node
+        self.message = message
         super().__init__(message)
 
 
@@ -149,7 +150,7 @@ class Assembler:
         """
         if self.is_strict:
             raise error
-        if error.error_node and error.error_node.dummy:
+        if error.error_node and not error.error_node.dummy:
             self.errors.append(error)
         return return_value
     
@@ -480,10 +481,10 @@ class Assembler:
         expected_args = len(block_data.inputs) + len(block_data.fields)
 
         if len(stmt.args) != expected_args:
-            raise ArgumentError(
+            return self.raise_or_return(ArgumentError(
                 f"Block {stmt.callee} expects {expected_args} argument(s), got {len(stmt.args)}",
                 stmt
-            )
+            ))
 
 
         inputs: dict[str, ScratchInputRaw] = {}

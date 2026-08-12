@@ -104,6 +104,7 @@ class Parser:
         # failures.
         self.recovered_from_error: bool = False
         self.accumulated_errors: list[ParseError] = []
+        self.speculative_errors: dict[int, ParseError] = {}
 
 
     def reset_expected(self):
@@ -194,11 +195,19 @@ class Parser:
                 self.rule_stack.pop()
                 raise error
             else:
+                # this error might be raised in syntactically correct code. 
+                self.speculative_errors[error.pos] = error
+
                 self.rule_stack.pop()
                 return ParseResult(
                     ParsedNode(rule.name, self.skip_rules_on_fail[rule.name]),
                     error.pos
                 )
+        if len(tokens) > 0:
+            # this means that a speculative error we added (for error recovery) 
+            # actually did not result in an error. 
+            if pos in self.speculative_errors:
+                del self.speculative_errors[pos]
 
         return ParseResult(ParsedNode(rule.name, (result.tree, )), result.pos)
 
@@ -207,6 +216,10 @@ class Parser:
             case Terminal(value):
                 if pos < len(tokens) and value.name == tokens[pos].kind.name:
                     debug_print(f"{print_token_safe(tokens, pos)}. Matched {value.name}")
+
+                    if pos in self.speculative_errors and not tokens[pos].dummy_token:
+                        del self.speculative_errors[pos]
+
                     return ParseResult(tokens[pos], pos + 1)
                 self.record_expected(node.child, pos)
                 debug_print(f"{print_token_safe(tokens, pos)}. Terminal rule not matched {value.name}")
@@ -256,26 +269,6 @@ class Parser:
                                 pos
                             )
                             self._consider_partial(partial_result)
-
-                        # partial_children = parsed_children.copy()
-
-                        # if error.previous_valid_tree is not None:
-                        #     partial_children.append(
-                        #         error.previous_valid_tree.tree
-                        #     )
-
-                        # partial_result = ParseResult(
-                        #     ParsedNode(
-                        #         Sequence.__name__,
-                        #         tuple(partial_children)
-                        #     ),
-                        #     error.previous_valid_tree.pos
-                        #     if error.previous_valid_tree is not None
-                        #     else pos
-                        # )
-
-                        # error.previous_valid_tree = partial_result
-                        # self._consider_partial(partial_result)
 
                         debug_print(f"{print_token_safe(tokens, pos)}. Sequence broken {node}.")
                         # propagate the error upwards

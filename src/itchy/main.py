@@ -4,7 +4,7 @@ from tools.ast_printer import print_ast
 from itchy.errors import format_syntax_error, format_compiler_error
 from itchy.assembler import Assembler, CompilerError
 from itchy.tokenizer import Tokenizer, Definitions
-from itchy.dummy_nodes import find_node, RECOVERY_STRATEGIES
+from itchy.dummy_nodes import find_node, AGGRESSIVE_STRATEGIES
 import argparse
 
 import os
@@ -32,12 +32,14 @@ def compile(file: str, output: str, target: str):
             parsed = parser.read(source)
             tree = ast_builder.build(parsed.tree)
             # tree = build_ast(parsed.tree)
+            assembler.prepare()
             assembler.emit_program(tree)
+            # assembler.assemble(tree, output, target)
             # print_ast(tree)
         except (ParseError, CompilerError) as e:
             if isinstance(e, ParseError):
                 fail_state = parser.fail_state
-                print_ast(parser.deepest_partial)
+                # print_ast(parser.deepest_partial)
                 # tree = ast_builder.build_eventstat(find_node(parser.deepest_partial.tree, "eventstat"))
                 # print(tree.name, tree.params)
 
@@ -47,7 +49,6 @@ def compile(file: str, output: str, target: str):
                 print(format_compiler_error(e, source, file))
 
             return False
-    print(assembler.messages)
     return True
 
 
