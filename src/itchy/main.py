@@ -32,7 +32,6 @@ def compile(file: str, output: str, target: str):
             parsed = parser.read(source)
             tree = ast_builder.build(parsed.tree)
             # tree = build_ast(parsed.tree)
-            assembler.prepare()
             assembler.emit_program(tree)
             # assembler.assemble(tree, output, target)
             # print_ast(tree)

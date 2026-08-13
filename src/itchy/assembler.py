@@ -75,11 +75,11 @@ class CompilerWarning(CompilerError):
     pass
 
 
-class ArgumentError(CompilerError):
+class UnboundError(CompilerWarning):
     pass
 
 
-class UnboundError(CompilerWarning):
+class ArgumentError(CompilerError):
     pass
 
 
@@ -695,6 +695,8 @@ class Assembler:
             )
             if self.is_strict:
                 raise error
+
+            self.errors.append(error)
 
             if len(stmt.params) < expected_args:
                 # but continuing if this is True is going to create additional errors.

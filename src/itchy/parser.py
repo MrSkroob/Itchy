@@ -198,13 +198,16 @@ class Parser:
                 raise error
             else:
                 # this error might be raised in syntactically correct code. 
-                self.speculative_errors[tokens[pos]] = error
-
                 self.rule_stack.pop()
-                return ParseResult(
-                    ParsedNode(rule.name, self.skip_rules_on_fail[rule.name](tokens[pos].line, tokens[pos].char)),
-                    error.pos
-                )
+                if 0 <= pos < len(tokens):
+                    self.speculative_errors[tokens[pos]] = error
+                    return ParseResult(
+                        ParsedNode(rule.name, self.skip_rules_on_fail[rule.name](tokens[pos].line, tokens[pos].char)),
+                        error.pos
+                    )
+                raise
+
+                
 
         return ParseResult(ParsedNode(rule.name, (result.tree, )), result.pos)
 
@@ -443,6 +446,7 @@ class Parser:
         # from a previous file into the next one.
         self.halt = False
         self.accumulated_errors = []
+        self.speculative_errors = {}
         self.recovered_from_error = False
         root = get_root_node(self.rules)
         tokens = list(self.tokenizer.read(text))
