@@ -71,15 +71,23 @@ class CompilerError(Exception):
         super().__init__(message)
 
 
+class CompilerWarning(CompilerError):
+    pass
+
+
+class ArgumentError(CompilerError):
+    pass
+
+
+class UnboundError(CompilerWarning):
+    pass
+
+
 class NotDefinedError(CompilerError):
     pass
 
 
 class InvalidTypeError(CompilerError):
-    pass
-
-
-class ArgumentError(CompilerError):
     pass
 
 
@@ -122,7 +130,7 @@ class ProcedureInfo:
 
 
 class Assembler:
-    def __init__(self, is_strict: bool=True) -> None:
+    def __init__(self, is_strict: bool=True, compile_with_warnings: bool=False) -> None:
         """
         is_strict: whether the compiler should halt on error. Enabling this option will also disable any write to the .sb3 file.
         """
@@ -131,6 +139,7 @@ class Assembler:
         self.procedures: dict[str, ProcedureInfo] = {}
 
         self.is_strict = is_strict
+        self.compile_with_warnings = compile_with_warnings
         # we don't need to worry about function "variables" since they are arguments.
         # i.e. they are not treated as variables and are treated as read-only.
         # variable name -> id
@@ -206,7 +215,7 @@ class Assembler:
     def count_args(self, args: tuple[Expr | Stmt, ...]):
         length = 0
         for i in args:
-            if i.dummy:
+            if i.dummy is True:
                 continue
             length += 1
         return length
@@ -489,9 +498,11 @@ class Assembler:
 
         if self.count_args(stmt.args) != expected_args:
             return self.raise_or_return(ArgumentError(
-                f"Block {stmt.callee} expects {expected_args} argument(s), got {self.count_args(stmt.args)}",
-                stmt
-            ))
+                    f"Block {stmt.callee} expects {expected_args} argument(s), got {self.count_args(stmt.args)}",
+                    stmt
+                ))
+
+
 
 
         inputs: dict[str, ScratchInputRaw] = {}
@@ -527,10 +538,15 @@ class Assembler:
                 else:
                     try:
                         var_id = self.get_variable(arg_expr.ref.root)
-                        inputs[arg.name] = (InputType.SHADOW_ONLY,
-                                            (DataType.VARIABLE, arg_expr.ref.root, var_id))
                     except NameError:
-                        return self.raise_or_return(NotDefinedError(f"{arg_expr.ref.root} not defined.", arg_expr))
+                        error = UnboundError(f"{arg_expr.ref.root} not defined.", arg_expr)
+                        if not self.compile_with_warnings:
+                            return self.raise_or_return(error)
+                        self.errors.append(error)
+                        var_id = self.define_variable(False, "var", arg_expr.ref.root, None)
+
+                    inputs[arg.name] = (InputType.SHADOW_ONLY,
+                                        (DataType.VARIABLE, arg_expr.ref.root, var_id))
             else:
                 if isinstance(arg_expr, StringExpr):
                     if isinstance(arg, Menu):
@@ -563,7 +579,12 @@ class Assembler:
                 try:
                     fields[field.name] = (arg_expr.ref.root, self.get_variable(arg_expr.ref.root))
                 except NameError:
-                    return self.raise_or_return(NotDefinedError(f"{arg_expr.ref.root} not defined.", arg_expr))
+                    error = UnboundError(f"{arg_expr.ref.root} not defined.", arg_expr)
+                    if not self.compile_with_warnings:
+                        return self.raise_or_return(error)
+                    self.errors.append(error)
+                    fields[field.name] = (arg_expr.ref.root, self.define_variable(False, "var", arg_expr.ref.root, None))
+                    
             elif field.name in block_data.broadcasts:
                 if not isinstance(arg_expr, StringExpr):
                     return self.raise_or_return(InvalidTypeError(
@@ -930,7 +951,11 @@ class Assembler:
         try:
             iterable_id = self.get_variable(stmt.iterable.root)
         except NameError:
-            return self.raise_or_return(NotDefinedError(f"{stmt.iterable.root} not defined.", stmt.iterable))
+            error = UnboundError(f"{stmt.iterable.root} not defined.", stmt.iterable)
+            if not self.compile_with_warnings:
+                return self.raise_or_return(error)
+            self.errors.append(error)
+            iterable_id = self.define_variable(False, "var", stmt.iterable.root, None)
 
         self.assert_writable_name(stmt.variable, context)
         # we *still* need this id to be unique, because even if it's in a for loop, scratch considers it global.
@@ -1143,7 +1168,11 @@ class Assembler:
             try:
                 var_id = self.get_variable(target.root)
             except NameError:
-                return self.raise_or_return(NotDefinedError(f"{target.root} not defined.", target))
+                error = UnboundError(f"{target.root} not defined.", target)
+                if not self.compile_with_warnings:
+                    return self.raise_or_return(error)
+                self.errors.append(error)
+                var_id = self.define_variable(False, "list", target.root, None)
             
             variable = self.variables[var_id]
 
@@ -1175,7 +1204,11 @@ class Assembler:
             try:
                 var_id = self.get_variable(target.root) 
             except NameError:
-                return self.raise_or_return(NotDefinedError(f"{target.root} not defined.", target))
+                error = UnboundError(f"{target.root} not defined.", target)
+                if not self.compile_with_warnings:
+                    return self.raise_or_return(error)
+                self.errors.append(error)
+                var_id = self.define_variable(False, "var", target.root, None)
             
             block_id = self.new_id()
             self.make_block(
@@ -1489,7 +1522,11 @@ class Assembler:
                         try:
                             var_id = self.get_variable(arg_expr.ref.root)
                         except NameError:
-                            return self.raise_or_return(NotDefinedError(f"{arg_expr.ref.root} not defined.", arg_expr), PLACE_HOLDER_0)
+                            error = UnboundError(f"{arg_expr.ref.root} not defined.", arg_expr)
+                            if not self.compile_with_warnings:
+                                return self.raise_or_return(error, PLACE_HOLDER_0)
+                            self.errors.append(error)
+                            var_id = self.define_variable(False, "var", arg_expr.ref.root, None)
                         inputs[arg.name] = (InputType.SHADOW_ONLY,
                                             (DataType.VARIABLE, arg_expr.ref.root, var_id))
                 else:
@@ -1524,10 +1561,14 @@ class Assembler:
                     try:
                         fields[field.name] = (arg_expr.ref.root, self.get_variable(arg_expr.ref.root))
                     except NameError:
-                        return self.raise_or_return(
-                            NotDefinedError(f"{arg_expr.ref.root} not defined.", arg_expr),
-                            PLACE_HOLDER_0
-                        )
+                        error = NotDefinedError(f"{arg_expr.ref.root} not defined.", arg_expr)
+                        if not self.compile_with_warnings:
+                            return self.raise_or_return(
+                                error,
+                                PLACE_HOLDER_0
+                            )
+                        self.errors.append(error)
+                        fields[field.name] = (arg_expr.ref.root, self.define_variable(False, "var", arg_expr.ref.root, None))
                 else:
                     if not isinstance(arg_expr, StringExpr):
                         return self.raise_or_return(InvalidTypeError(
@@ -1596,7 +1637,11 @@ class Assembler:
                 try:
                     list_id = self.get_variable(right.ref.root)
                 except NameError:
-                    return self.raise_or_return(NotDefinedError(f"{right.ref.root} is not defined", right), PLACE_HOLDER_0)
+                    error = UnboundError(f"{right.ref.root} is not defined", right)
+                    if not self.compile_with_warnings:
+                        return self.raise_or_return(error, PLACE_HOLDER_0)
+                    list_id = self.define_variable(False, "list", right.ref.root, None)
+                    self.errors.append(error)
 
                 self.make_block(
                     opcode="data_listcontainsitem",
@@ -1703,7 +1748,11 @@ class Assembler:
             try:
                 var_id = self.get_variable(ref.root)
             except NameError:
-                return self.raise_or_return(NotDefinedError(f"{ref.root} not defined.", ref), PLACE_HOLDER_0)
+                error = UnboundError(f"{ref.root} not defined.", ref)
+                if not self.compile_with_warnings:
+                    return self.raise_or_return(error, PLACE_HOLDER_0)
+                self.errors.append(error)
+                var_id = self.define_variable(False, "var" if ref.slice_expr is None else "list", ref.root, None)
             
             var_type = self.variables[var_id].var_type
             if ref.slice_expr is not None:
