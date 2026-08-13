@@ -19,17 +19,22 @@ def find_token(node: ParsedNode, kind: Definitions) -> Token[Definitions] | None
     return None
 
 
-def find_node(node: ParsedNode, name: str) -> ParsedNode | None:
+def find_nodes(node: ParsedNode, name: str) -> list[ParsedNode]:
+    result: list[ParsedNode] = []
+
     if node.name == name:
-        return node
+        result.append(node)
 
     for child in node.children:
         if isinstance(child, ParsedNode):
-            result = find_node(child, name)
-            if result is not None:
-                return result
+            result.extend(find_nodes(child, name))
 
-    return None
+    return result
+
+
+def find_last_node(node: ParsedNode, name: str) -> ParsedNode | None:
+    nodes = find_nodes(node, name)
+    return nodes[-1] if nodes else None
 
 
 def make_dummy_primary(line: int = 1, char: int = 1) -> tuple[ParsedNode]:
