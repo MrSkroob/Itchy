@@ -690,7 +690,7 @@ class Assembler:
         if self.count_args(stmt.params) != expected_args:
             # we don't want to halt here
             error = ArgumentError(
-                f"Event {stmt.name} expects {expected_args} argument(s), got {len(stmt.params)}",
+                f"Event {stmt.name} expects {expected_args} argument(s), got {self.count_args(stmt.params)}",
                 stmt
             )
             if self.is_strict:
