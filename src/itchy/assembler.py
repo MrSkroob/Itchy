@@ -1288,8 +1288,10 @@ class Assembler:
             return
 
         if block_range.first is None or block_range.last is None:
+            # this can also occur when we just want something to evaluate, and not necessarily want to generate
+            # any blocks.
             raise ValueError(
-                "Cannot add expression setup to an empty block range"
+                f"Cannot add expression setup to an empty block range: {block_range}"
             )
 
         assert setup.last is not None

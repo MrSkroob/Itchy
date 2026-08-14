@@ -16,9 +16,9 @@ from pathlib import Path
 ROOT = Path(__file__).parent.parent
 
 
-parser = Parser(skip_bad_tokens=False)
+parser = Parser()
 ast_builder = ASTBuilder()
-assembler = Assembler(is_strict=True)
+assembler = Assembler()
 
    
 def compile(file: str, output: str, target: str):
