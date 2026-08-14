@@ -432,7 +432,7 @@ class Assembler:
 
 
     def emit_return(self, stmt: ReturnStmt, parent: StrOptional, context: StrOptional) -> BlockRange:
-        if context is None:
+        if context is None or not self.procedures.get(context):
             return self.raise_or_return(SyntaxError("'return' outside of function", stmt))
 
         proc_data = self.procedures[context]

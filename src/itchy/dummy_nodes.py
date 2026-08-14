@@ -184,3 +184,10 @@ AGGRESSIVE_STRATEGIES: Strategy = {
     "wrap": make_wrap,
     "stat": make_stat
 }
+
+# strategies where we will try not to "add" syntax that changes meaning.
+ANALYSIS_STRATEGIES: Strategy = {
+    "primary": make_dummy_primary,
+    "stat": make_stat,
+    "wrap": make_wrap
+}
