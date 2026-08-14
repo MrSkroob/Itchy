@@ -18,7 +18,7 @@ ROOT = Path(__file__).parent.parent
 
 parser = Parser(skip_bad_tokens=False)
 ast_builder = ASTBuilder()
-assembler = Assembler(is_strict=False)
+assembler = Assembler(is_strict=True)
 
    
 def compile(file: str, output: str, target: str):
@@ -32,8 +32,8 @@ def compile(file: str, output: str, target: str):
             parsed = parser.read(source)
             tree = ast_builder.build(parsed.tree)
             # tree = build_ast(parsed.tree)
-            assembler.emit_program(tree)
-            # assembler.assemble(tree, output, target)
+            # assembler.emit_program(tree)
+            assembler.assemble(tree, output, target)
             # print_ast(tree)
         except (ParseError, CompilerError) as e:
             if isinstance(e, ParseError):
