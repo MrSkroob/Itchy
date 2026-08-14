@@ -444,7 +444,7 @@ class Assembler:
         if self.count_args(stmt.values) > 0:
             # technically it's always 1 or 0, but this was left over for future where we might support more than one
             # return expressions (tuples)
-            proc_data.return_types.add(self.emit_expr(stmt.values[0], context, BlockRange(None, None), None).return_type)
+            proc_data.return_types.add(self.emit_expr(stmt.values[0], context, BlockRange(None, None, True), None).return_type)
             for value in stmt.values:
                 body.append(
                     FunctionCallStmt(SET_RETURN_VALUE, (value,))
@@ -1284,6 +1284,9 @@ class Assembler:
         block_range: BlockRange,
         setup: BlockRange,
     ) -> None:
+        if block_range.manufactured:
+            return
+        
         if setup.first is None:
             return
 
