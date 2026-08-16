@@ -79,6 +79,7 @@ class Parser:
         self.rules = build_parse_tree()
         self.tokenizer = Tokenizer(Definitions, {"Comment", "Whitespace", "Newline", "BlockComment"})
         self.furthest_error: ParseError | None = None
+
         self.expected = ExpectedState()
         self.rule_stack: list[str] = []
         self.skip_bad_tokens: bool = skip_bad_tokens
@@ -99,7 +100,7 @@ class Parser:
         # failures.
         self.recovered_from_error: bool = False
         self.accumulated_errors: list[ParseError] = []
-        self.speculative_errors: dict[Token[Definitions], ParseError] = {}
+        self.speculative_errors: dict[int, ParseError] = {}
 
 
     def reset_expected(self):
@@ -182,7 +183,7 @@ class Parser:
                 # this error might be raised in syntactically correct code. 
                 self.rule_stack.pop()
                 if 0 <= pos < len(tokens):
-                    self.speculative_errors[tokens[pos]] = error
+                    self.speculative_errors[pos] = error
                     return ParseResult(
                         ParsedNode(rule.name, self.skip_rules_on_fail[rule.name](tokens[pos].line, tokens[pos].char)),
                         error.pos
@@ -199,8 +200,8 @@ class Parser:
                 if pos < len(tokens) and value.name == tokens[pos].kind.name:
                     debug_print(f"{print_token_safe(tokens, pos)}. Matched {value.name}")
 
-                    if tokens[pos] in self.speculative_errors and not tokens[pos].dummy_token:
-                        del self.speculative_errors[tokens[pos]]
+                    if pos in self.speculative_errors and not tokens[pos].dummy_token:
+                        del self.speculative_errors[pos]
 
                     return ParseResult(tokens[pos], pos + 1)
                 self.record_expected(node.child, pos)
@@ -415,6 +416,8 @@ class Parser:
     def parse(self, root: Rule, tokens: list[Token[Definitions]]) -> ParseResult:
         self.furthest_error = None
         self.deepest_partial = None
+        self.accumulated_errors = []
+        self.speculative_errors = {}
         self.reset_expected()
         self.rule_stack.clear()
 
@@ -427,8 +430,6 @@ class Parser:
         # multiple `read()` calls without leaking stale error/recovery info
         # from a previous file into the next one.
         self.halt = False
-        self.accumulated_errors = []
-        self.speculative_errors = {}
         self.recovered_from_error = False
         root = get_root_node(self.rules)
         tokens = list(self.tokenizer.read(text))

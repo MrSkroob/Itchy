@@ -37,11 +37,7 @@ def compile(file: str, output: str, target: str):
             # print_ast(tree)
         except (ParseError, CompilerError) as e:
             if isinstance(e, ParseError):
-                fail_state = parser.fail_state
-                # print_ast(parser.deepest_partial)
-
-                if fail_state is not None:
-                    print(format_syntax_error(fail_state, parser.expected, source, file))
+                print(format_syntax_error(e, parser.expected, source, file))
             else:
                 print(format_compiler_error(e, source, file))
 
