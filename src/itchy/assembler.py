@@ -15,7 +15,7 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 from itchy.shared_templates import VariableTypes, DataType, SourceSpan, SPRITE_TEMPLATE, COSTUME_TEMPLATE
-from itchy.errors import CompilerError, CompilerErrorCodes, UnboundError, NotReferencedError, ArgumentError, NotDefinedError, InvalidTypeError, SyntaxError
+from itchy.errors import CompilerError, CompilerErrorCodes, UnboundError, NotReferencedError, ArgumentError, NotDefinedError, InvalidTypeError, SyntaxError, TypeMismatchError
 from itchy.scratch_blocks import SCRATCH_BLOCKS, Block, Reporter, Event, Menu
 from itchy.itch_ast import \
     Param, \
@@ -704,6 +704,9 @@ class Assembler:
         block_range = BlockRange(block_id, block_id)
 
         index = 0
+
+        failure: InvalidTypeError | None = None
+
         for arg_id, arg_type, arg_expr in zip(info.argument_ids, info.argument_types, stmt.args):
             emitted_arg = self.emit_expr(
                 arg_expr,
@@ -715,11 +718,16 @@ class Assembler:
             user_arg_type = emitted_arg.return_type
 
             if not self.type_check(arg_type, user_arg_type):
-                return self.raise_or_return(
-                    InvalidTypeError(f"{stmt.callee}: argument {index} of type {arg_type} is not in ({", ".join([i.value for i in user_arg_type])})", arg_expr))
+                failure = InvalidTypeError(
+                    f"{stmt.callee}: not one of ({", ".join(i.value for i in user_arg_type)}) matches argument {index} of type {arg_type.value}", arg_expr)
+                # return self.raise_or_return(error)
+                self.errors.append(failure)
             
             inputs[arg_id] = emitted_arg.value
             index += 1
+
+        if failure is not None:
+            return self.raise_or_return(failure)
 
         self.blocks[block_id]["mutation"] = {
             "tagName": "mutation",
@@ -1312,9 +1320,20 @@ class Assembler:
             )
 
             block_range = BlockRange(block_id, block_id)
-            inputs["VALUE"] = self.emit_expr(
+
+            expr = self.emit_expr(
                 value, context, block_range, block_id
-            ).value
+            )
+
+            if not self.type_check(self.variables[var_id].var_type, expr.return_type):
+                error = TypeMismatchError(
+                    f"{target.root}: not one of ({", ".join(i.value for i in expr.return_type)}) matches {self.variables[var_id].var_type}", 
+                    value)
+                if not self.compile_with_warnings:
+                    return self.raise_or_return(error)
+                self.errors.append(error)
+
+            inputs["VALUE"] = expr.value
 
             return block_range
     
@@ -1550,7 +1569,7 @@ class Assembler:
                 block_parent,
                 setup,
             )
-            
+
             return_input = self.emit_var_ref(
                 VarRef(expr.callee + ":return"),
                 None,
