@@ -14,7 +14,7 @@ from enum import Enum, StrEnum
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
-from itchy.shared_templates import VariableTypes, DataType, SourceSpan, SPRITE_TEMPLATE, COSTUME_TEMPLATE
+from itchy.shared_templates import VariableTypes, DataType, SourceSpan, SPRITE_TEMPLATE, COSTUME_TEMPLATE, ASTNode
 from itchy.errors import CompilerError, CompilerErrorCodes, UnboundError, NotReferencedError, ArgumentError, NotDefinedError, InvalidTypeError, SyntaxError, TypeMismatchError
 from itchy.scratch_blocks import SCRATCH_BLOCKS, Block, Reporter, Event, Menu
 from itchy.itch_ast import \
@@ -390,6 +390,20 @@ class Assembler:
                     error_node=i
                 )
             )
+
+        # append all usages of a variable that's not referenced.
+
+        for symbol in self.symbols:
+            if symbol.symbol_type not in [SymbolType.PARAMETER, SymbolType.VARIABLE]:
+                continue
+            key = (symbol.name, symbol.context)
+            if key in self.non_referenced_variables:
+                self.errors.append(
+                    NotReferencedError(
+                        f"{symbol.name} is not referenced",
+                        error_node = ASTNode(span=symbol.span)
+                    )
+                )
     
     
     def emit_sequence(
