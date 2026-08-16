@@ -370,7 +370,7 @@ class ASTBuilder:
     """
 
     def __init__(self) -> None:
-        self.semantic_tokens: list[SemanticToken] = []
+        self.semantic_tokens: dict[SourceSpan, SemanticToken] = {}
         self.function_scope: str | None = None
         self.called_function: FunctionCallStmt | FunctionCallExpr | None = None
         self.argument_index: int = 0
@@ -381,7 +381,7 @@ class ASTBuilder:
 
     def reset(self) -> None:
         self.argument_index = 0
-        self.semantic_tokens = []
+        self.semantic_tokens = {}
         self.function_scope = None
         self.called_function = None
         self.function_definitions = {}
@@ -400,43 +400,34 @@ class ASTBuilder:
             return
 
         # The tokenizer stores one-based positions; LSP positions are zero-based.
-        self.semantic_tokens.append(
-            SemanticToken(
-                line=token.line - 1,
-                character=token.char - 1,
-                length=utf16_length(token.literal),
-                token_type=token_type,
-                modifiers=modifiers,
-            )
+        self.semantic_tokens[token.span] = SemanticToken(
+            line=token.line - 1,
+            character=token.char - 1,
+            length=utf16_length(token.literal),
+            token_type=token_type,
+            modifiers=modifiers,
         )
+            
 
     def build(
         self,
         tree: ParsedChild,
-        source: str | None = None,
-        *,
-        include_comments: bool = False,
     ) -> Program:
         self.reset()
         program = self._build_ast(tree)
 
-        if include_comments and source is not None:
-            self.semantic_tokens.extend(collect_comment_tokens(source))
+        # if include_comments and source is not None:
+        #     self.semantic_tokens.extend(collect_comment_tokens(source))
 
-        self.semantic_tokens.sort(key=lambda token: (token.line, token.character))
+        # self.semantic_tokens.sort(key=lambda token: (token.line, token.character))
         return program
 
     def build_with_semantic_tokens(
         self,
         tree: ParsedChild,
-        source: str | None = None,
-        *,
-        include_comments: bool = False,
-    ) -> tuple[Program, list[SemanticToken]]:
+    ) -> tuple[Program, dict[SourceSpan, SemanticToken]]:
         program = self.build(
             tree,
-            source,
-            include_comments=include_comments,
         )
         return program, self.semantic_tokens.copy()
 
@@ -706,10 +697,8 @@ class ASTBuilder:
         stmt = FunctionCallStmt(
             function_name.literal,
             args,
-            span=SourceSpan(
-                function_name.span.start,
-                args[-1].span.end if len(args) > 0 else function_name.span.end
-            ), dummy=node.dummy_node
+            span=function_name.span, 
+            dummy=node.dummy_node
         )
         self.called_function = stmt
         return stmt 
@@ -831,26 +820,18 @@ class ASTBuilder:
         params, body = self.build_funcbody(funcbody)
         self.function_scope = previous_scope
     
-        if len(params) > 0:
-            end = params[-1].span.end
-        else:
-            end = name.span.end
-    
         return FunctionParts(
             name.literal,
             params,
             body,
-            span=SourceSpan(
-                start=name.span.start,
-                end=end
-            )
+            span=name.span
         ) 
     
     
     def build_functionstat(self, node: ParsedNode) -> FunctionDefStmt:
         warp = has_token(node, Definitions.Warp.name)
     
-        define = find_first_token(node, Definitions.Define.name)
+        # define = find_first_token(node, Definitions.Define.name)
         # self.emit_token(define_token, "keyword")
     
         function = find_first_node(node, "function")
@@ -861,10 +842,8 @@ class ASTBuilder:
             parts.params,
             parts.body,
             warp,
-            span=SourceSpan(
-                start=define.span.start,
-                end=parts.span.end
-            ), dummy=node.dummy_node
+            span=parts.span, 
+            dummy=node.dummy_node
         )
 
         self.function_definitions[stmt] = stmt.span
@@ -874,7 +853,7 @@ class ASTBuilder:
     
     def build_eventstat(self, node: ParsedNode) -> EventHandlerStmt:
         children = flat_children(node)
-        event = expect_token(children[0], Definitions.Event.name)
+        # event = expect_token(children[0], Definitions.Event.name)
         # self.emit_token(event_token, "keyword")
         name = expect_token(children[1], Definitions.Symbol.name)
         self.emit_token(name, "event")
@@ -884,19 +863,13 @@ class ASTBuilder:
         args = self.build_varlist1(eventbody)
         wrap_nodes = self.build_wrap(wrap)
     
-        if len(args) > 0:
-            end = args[-1].span.end
-        else:
-            end = name.span.end
         
         return EventHandlerStmt(
             name.literal, 
             args,
             wrap_nodes,
-            span=SourceSpan(
-                start=event.span.start,
-                end=end
-            ), dummy=node.dummy_node
+            span=name.span, 
+            dummy=node.dummy_node
         )
     
     
@@ -1245,13 +1218,8 @@ def build_ast(tree: ParsedChild) -> Program:
 
 def build_ast_with_semantic_tokens(
     tree: ParsedChild,
-    source: str | None = None,
-    *,
-    include_comments: bool = False,
-) -> tuple[Program, list[SemanticToken]]:
+) -> tuple[Program, dict[SourceSpan, SemanticToken]]:
     """Compatibility wrapper that returns independently collected tokens."""
     return ASTBuilder().build_with_semantic_tokens(
         tree,
-        source,
-        include_comments=include_comments,
     )

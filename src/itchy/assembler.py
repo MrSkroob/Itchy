@@ -9,12 +9,12 @@ import os
 
 from typing import TypeVar
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import Enum, StrEnum
 
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
-from itchy.shared_templates import VariableTypes, DataType, SPRITE_TEMPLATE, COSTUME_TEMPLATE, VARIABLE_TYPE_TO_USER_TYPES
+from itchy.shared_templates import VariableTypes, DataType, SourceSpan, SPRITE_TEMPLATE, COSTUME_TEMPLATE, VARIABLE_TYPE_TO_USER_TYPES
 from itchy.errors import CompilerError, CompilerErrorCodes, UnboundError, NotReferencedError, ArgumentError, NotDefinedError, InvalidTypeError, SyntaxError
 from itchy.scratch_blocks import SCRATCH_BLOCKS, Block, Reporter, Event, Menu
 from itchy.itch_ast import \
@@ -64,6 +64,20 @@ class InputType(Enum):
 
 PLACE_HOLDER_0 = ScratchInput((InputType.SHADOW_ONLY, (DataType.NUMBER, "0")), VariableTypes.NUMBER, True)
 
+
+class SymbolType(StrEnum):
+    PARAMETER = "parameter"
+    VARIABLE = "variable"
+    FUNCTION = "function"
+    EVENT = "event"
+
+
+@dataclass(frozen=True)
+class SymbolOccurence:
+    span: SourceSpan
+    context: StrOptional
+    symbol_type: SymbolType
+    name: str
 
 
 @dataclass
@@ -122,6 +136,8 @@ class Assembler:
         self.errors: list[CompilerError] = []
 
         self.non_referenced_variables: dict[tuple[str, StrOptional], VarDefStmt | Param] = {}
+
+        self.symbols: list[SymbolOccurence] = []
 
         # for debugging/error messages
         self.current_token = None
@@ -193,13 +209,18 @@ class Assembler:
             length += 1
         return length
 
-    def get_variable(self, name: str, context: StrOptional) -> str:
+    def get_variable(self, stmt: VarRef, context: StrOptional) -> str:
         """
         Returns a variable ID without any extra functionality.
         Do this when you strictly expect the variable to exist, and want to error if it wasn't implicitly/explicitly defined previously.
         """
+        name = stmt.root
+
+        symbol_type = SymbolType.VARIABLE
         
         if (name, context) in self.variable_map:
+            if context is not None:
+                symbol_type = SymbolType.PARAMETER
             key = (name, context)
             # raise NameError(f"variable {name} is not defined!")
         elif (name, None) in self.variable_map:
@@ -209,6 +230,15 @@ class Assembler:
 
         if key in self.non_referenced_variables:
             del self.non_referenced_variables[key]
+
+        self.symbols.append(
+            SymbolOccurence(
+                stmt.span,
+                context,
+                symbol_type,
+                stmt.root
+            )
+        )
     
         return self.variable_map[key]
     
@@ -529,7 +559,7 @@ class Assembler:
                     )
                 else:
                     try:
-                        var_id = self.get_variable(arg_expr.ref.root, context)
+                        var_id = self.get_variable(arg_expr.ref, context)
                     except NameError:
                         error = UnboundError(f"{arg_expr.ref.root} is not defined.", arg_expr, data={"name": arg_expr.ref.root})
                         if not self.compile_with_warnings:
@@ -569,7 +599,7 @@ class Assembler:
                         f"{stmt.callee}: argument for {index} must be a variable", arg_expr
                     ))
                 try:
-                    fields[field.name] = (arg_expr.ref.root, self.get_variable(arg_expr.ref.root, context))
+                    fields[field.name] = (arg_expr.ref.root, self.get_variable(arg_expr.ref, context))
                 except NameError:
                     print(context)
                     error = UnboundError(f"{arg_expr.ref.root} is not defined.", arg_expr, data={"name": arg_expr.ref.root})
@@ -605,6 +635,15 @@ class Assembler:
         return block_range
             
     def emit_function_call(self, stmt: FunctionCallStmt, parent: StrOptional, context: StrOptional) -> BlockRange:
+        self.symbols.append(
+            SymbolOccurence(
+                stmt.span,
+                context,
+                SymbolType.FUNCTION,
+                stmt.callee
+            )
+        )
+
         if stmt.callee not in self.procedures:
             # is either a custom scratch block or a hallucination :v
             block_range = self.emit_scratch_block(stmt, parent, context)
@@ -613,7 +652,7 @@ class Assembler:
             return block_range
 
         info = self.procedures[stmt.callee]
-        
+
         if self.count_args(stmt.args) != len(info.argument_ids):
             return self.raise_or_return(ArgumentError(
                 f"Function {stmt.callee} expects {len(info.argument_ids)} arguments, "
@@ -641,10 +680,9 @@ class Assembler:
                 block_id,
             )
 
-            arg_type = VARIABLE_TYPE_TO_USER_TYPES.get(arg_type, arg_type)
-            user_arg_type = VARIABLE_TYPE_TO_USER_TYPES.get(emitted_arg.return_type, emitted_arg.return_type)
+            user_arg_type = emitted_arg.return_type
 
-            if arg_type != user_arg_type:
+            if arg_type != user_arg_type and arg_type != VARIABLE_TYPE_TO_USER_TYPES.get(user_arg_type, user_arg_type):
                 return self.raise_or_return(InvalidTypeError(f"{stmt.callee}: argument {index} expected {arg_type} not {user_arg_type}", arg_expr))
             
             inputs[arg_id] = emitted_arg.value
@@ -678,6 +716,16 @@ class Assembler:
         # subset of `inputs` -- they're their own trailing group of
         # field-shaped arguments (see event_whenbroadcastreceived), so they
         # get counted on top of inputs and fields rather than overlapping.
+
+        self.symbols.append(
+            SymbolOccurence(
+                stmt.span,
+                context,
+                SymbolType.EVENT,
+                stmt.name
+            )
+        )
+
         expected_args = len(block_data.inputs) + len(block_data.fields)
 
         if self.count_args(stmt.params) != expected_args:
@@ -767,6 +815,14 @@ class Assembler:
         if parent is not None:
             return self.raise_or_return(SyntaxError("Cannot define function inside of another", stmt, CompilerErrorCodes.REMOVE_RETURN))
 
+        self.symbols.append(
+            SymbolOccurence(
+                stmt.span,
+                None,
+                SymbolType.FUNCTION,
+                stmt.name
+            )
+        )
         self.define_variable(False, "var", stmt.name + ":return", None)
 
         definition_id = self.make_block(
@@ -804,6 +860,12 @@ class Assembler:
 
             self.non_referenced_variables[(param.name, stmt.name)] = param 
             self.define_variable(False, param.type_name, param.name, definition_id)
+            self.symbols.append(SymbolOccurence(
+                param.span,
+                stmt.name,
+                SymbolType.PARAMETER,
+                param.name
+            ))
 
         prototype = self.blocks[prototype_id]
 
@@ -944,7 +1006,7 @@ class Assembler:
     def emit_for_in(self, stmt: ForInStmt, parent: StrOptional, context: StrOptional):
         list_variable_name = "compiler:" + self.new_id()
         try:
-            iterable_id = self.get_variable(stmt.iterable.root, context)
+            iterable_id = self.get_variable(stmt.iterable, context)
         except NameError:
             error = UnboundError(f"{stmt.iterable.root} is not defined.", stmt.iterable, data={"name": stmt.iterable.root})
             if not self.compile_with_warnings:
@@ -1161,7 +1223,7 @@ class Assembler:
         
         if target.slice_expr is not None:
             try:
-                var_id = self.get_variable(target.root, context)
+                var_id = self.get_variable(target, context)
             except NameError:
                 error = UnboundError(f"{target.root} is not defined.", target, data={"name": target.root})
                 if not self.compile_with_warnings:
@@ -1197,7 +1259,7 @@ class Assembler:
         else:
             # if 
             try:
-                var_id = self.get_variable(target.root, context) 
+                var_id = self.get_variable(target, context) 
             except NameError:
                 error = UnboundError(f"{target.root} is not defined.", target, data={"name": target.root})
                 if not self.compile_with_warnings:
@@ -1382,6 +1444,15 @@ class Assembler:
         #         f"{expr.callee} is not a valid scratch block",
         #         expr
         #     )
+        
+        self.symbols.append(
+            SymbolOccurence(
+                expr.span,
+                context,
+                SymbolType.FUNCTION,
+                expr.callee
+            )
+        )
         if expr.callee not in SCRATCH_BLOCKS:
             setup = BlockRange(None, None)
 
@@ -1488,7 +1559,8 @@ class Assembler:
                         )
                     else:
                         try:
-                            var_id = self.get_variable(arg_expr.ref.root, context)
+                            var_id = self.get_variable(arg_expr.ref, context)
+
                         except NameError:
                             error = UnboundError(f"{arg_expr.ref.root} is not defined.", arg_expr, data={"name": arg_expr.ref.root})
                             if not self.compile_with_warnings:
@@ -1527,7 +1599,7 @@ class Assembler:
                             arg_expr
                         ), PLACE_HOLDER_0)
                     try:
-                        fields[field.name] = (arg_expr.ref.root, self.get_variable(arg_expr.ref.root, context))
+                        fields[field.name] = (arg_expr.ref.root, self.get_variable(arg_expr.ref, context))
                     except NameError:
                         error = UnboundError(f"{arg_expr.ref.root} is not defined.", arg_expr, data={"name": arg_expr.ref.root})
                         if not self.compile_with_warnings:
@@ -1603,7 +1675,7 @@ class Assembler:
                     return self.raise_or_return(InvalidTypeError(f"Right expression must be a list", right), PLACE_HOLDER_0)
 
                 try:
-                    list_id = self.get_variable(right.ref.root, context)
+                    list_id = self.get_variable(right.ref, context)
                 except NameError:
                     error = UnboundError(f"{right.ref.root} is not defined", right, data={"name": right})
                     if not self.compile_with_warnings:
@@ -1685,6 +1757,15 @@ class Assembler:
             if (ref.root, context) in self.non_referenced_variables:
                 del self.non_referenced_variables[ref.root, context]
 
+            self.symbols.append(
+                SymbolOccurence(
+                    ref.span,
+                    context,
+                    SymbolType.PARAMETER,
+                    ref.root
+                )
+            )
+
             reporter_id = self.make_block(
                 opcode=opcode,
                 parent=parent,
@@ -1705,13 +1786,22 @@ class Assembler:
             )
         else:
             try:
-                var_id = self.get_variable(ref.root, context)
+                var_id = self.get_variable(ref, context)
             except NameError:
                 error = UnboundError(f"{ref.root} is not defined.", ref, data={"name": ref.root})
                 if not self.compile_with_warnings:
                     return self.raise_or_return(error, PLACE_HOLDER_0)
                 self.errors.append(error)
                 var_id = self.define_variable(False, "var" if ref.slice_expr is None else "list", ref.root, context)
+
+            self.symbols.append(
+                SymbolOccurence(
+                    ref.span,
+                    context,
+                    SymbolType.VARIABLE,
+                    ref.root
+                )
+            )
             
             var_type = self.variables[var_id].var_type
             if ref.slice_expr is not None:
@@ -1867,6 +1957,7 @@ class Assembler:
         self.errors = []
         self.blocks = {}
         self.procedures = {}
+        self.symbols = []
         self.current_token = None
 
 
