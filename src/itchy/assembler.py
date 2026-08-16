@@ -859,7 +859,7 @@ class Assembler:
                 argument_defaults.append("")
 
             self.non_referenced_variables[(param.name, stmt.name)] = param 
-            self.define_variable(False, param.type_name, param.name, definition_id)
+            self.define_variable(False, param.type_name, param.name, stmt.name)
             self.symbols.append(SymbolOccurence(
                 param.span,
                 stmt.name,
