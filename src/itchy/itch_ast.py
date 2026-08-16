@@ -4,7 +4,6 @@ from itchy.parser import Token, Sequence, Repeat, OptionalNode, Alternative
 from itchy.shared_templates import ASTNode
 from itchy.tokenizer import GenericRules, Definitions, Tokenizer
 from itchy.shared_templates import SourceSpan, SourcePosition
-from itchy.errors import CompilerWarning
 from typing import Callable
 import ast
 
@@ -378,9 +377,9 @@ class ASTBuilder:
         self.function_definitions: dict[FunctionDefStmt, SourceSpan] = {}
         self.var_definitions: dict[VarDefStmt, SourceSpan] = {}
 
-        self.warnings = {}
 
     def reset(self) -> None:
+        self.warnings = []
         self.argument_index = 0
         self.semantic_tokens = []
         self.function_scope = None

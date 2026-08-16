@@ -14,8 +14,8 @@ from enum import Enum
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
-from itchy.shared_templates import VariableTypes, DataType, SPRITE_TEMPLATE, COSTUME_TEMPLATE, VARIABLE_TYPE_TO_USER_TYPES
-from itchy.errors import CompilerError, CompilerErrorCodes, UnboundError, ArgumentError, NotDefinedError, InvalidTypeError, SyntaxError
+from itchy.shared_templates import VariableTypes, DataType, SPRITE_TEMPLATE, COSTUME_TEMPLATE, VARIABLE_TYPE_TO_USER_TYPES, ASTNode
+from itchy.errors import CompilerError, CompilerErrorCodes, UnboundError, NotReferencedError, ArgumentError, NotDefinedError, InvalidTypeError, SyntaxError
 from itchy.scratch_blocks import SCRATCH_BLOCKS, Block, Reporter, Event, Menu
 from itchy.itch_ast import \
     Param, \
@@ -121,6 +121,8 @@ class Assembler:
         self.costumes: set[str] = set()
         self.errors: list[CompilerError] = []
 
+        self.non_referenced_variables: dict[tuple[str, StrOptional], VarDefStmt | Param] = {}
+
         # for debugging/error messages
         self.current_token = None
 
@@ -204,6 +206,9 @@ class Assembler:
             key = (name, None)
         else:
             raise NameError(f"variable {name} is not defined!")
+
+        if key in self.non_referenced_variables:
+            del self.non_referenced_variables[key]
     
         return self.variable_map[key]
     
@@ -345,6 +350,14 @@ class Assembler:
 
         emit_statements(pre_defines)
         emit_statements(program.body)
+
+        for i in self.non_referenced_variables.values():
+            self.errors.append(
+                NotReferencedError(
+                    f"{i.name}",
+                    error_node=i
+                )
+            )
     
     
     def emit_sequence(
@@ -383,7 +396,8 @@ class Assembler:
                 if type_name not in {VariableTypes.VAR.value, VariableTypes.LIST.value, VariableTypes.BOOL.value}:
                     return self.raise_or_return(InvalidTypeError(f"Invalid variable type: {type_name}.\
                                                                  Scratch only permits var, list and bool.", stmt))
-                self.define_variable(shared, type_name, name, context)
+                self.non_referenced_variables[(name, None)] = stmt 
+                self.define_variable(shared, type_name, name, None)
                 return BlockRange(None, None)
             case AssignStmt(target=target, value=value):
                 return self.emit_assignment(target, value, parent, context)
@@ -791,6 +805,7 @@ class Assembler:
                 proccode_parts.append("%s")
                 argument_defaults.append("")
 
+            self.non_referenced_variables[(param.name, stmt.name)] = param 
             self.define_variable(False, param.type_name, param.name, definition_id)
 
         prototype = self.blocks[prototype_id]
@@ -1834,7 +1849,7 @@ class Assembler:
         1. Clears blocks, variables, lists, etc. that are local to the sprite
         2. *Keeps* stage/global data
         """
-        self.messages.clear()
+        self.messages = {}
 
         if target is not None:
             with zipfile.ZipFile(target, "r") as f:
@@ -1857,9 +1872,10 @@ class Assembler:
             del self.variable_map[(variable_data.name, variable_data.context)]
             del self.variables[variable_id]
 
-        self.errors.clear()
-        self.blocks.clear()
-        self.procedures.clear()
+        self.non_referenced_variables = {}
+        self.errors = []
+        self.blocks = {}
+        self.procedures = {}
         self.current_token = None
 
 

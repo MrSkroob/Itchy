@@ -9,6 +9,7 @@ from itchy.shared_templates import ASTNode
 class CompilerErrorCodes(StrEnum):
     UNDEFINED_VARIABLE = "undefined-variable"
     REMOVE_RETURN = "remove-return"
+    UNUSED_VARIABLE = "unused-variable"
 
 
 class CompilerError(Exception):
@@ -27,6 +28,12 @@ class CompilerWarning(CompilerError):
 class UnboundError(CompilerWarning):
     def __init__(self, message: str, error_node: ASTNode | None, *,
                   error_code: str | None = CompilerErrorCodes.UNDEFINED_VARIABLE, data: dict[str, Any]={}) -> None:
+        super().__init__(message, error_node, error_code, data)
+
+
+class NotReferencedError(CompilerWarning):
+    def __init__(self, message: str, error_node: ASTNode | None, *,
+                  error_code: str | None = CompilerErrorCodes.UNUSED_VARIABLE, data: dict[str, Any] = {}) -> None:
         super().__init__(message, error_node, error_code, data)
 
 
