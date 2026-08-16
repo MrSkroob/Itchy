@@ -211,7 +211,7 @@ class Assembler:
             length += 1
         return length
 
-    def get_variable(self, stmt: VarRef, context: StrOptional) -> str:
+    def get_variable(self, stmt: VarRef, context: StrOptional, is_reference: bool=True) -> str:
         """
         Returns a variable ID without any extra functionality.
         Do this when you strictly expect the variable to exist, and want to error if it wasn't implicitly/explicitly defined previously.
@@ -230,7 +230,7 @@ class Assembler:
         else:
             raise NameError(f"variable {name} is not defined!")
 
-        if key in self.non_referenced_variables:
+        if key in self.non_referenced_variables and is_reference:
             del self.non_referenced_variables[key]
 
         self.symbols.append(
@@ -1264,7 +1264,7 @@ class Assembler:
         
         if target.slice_expr is not None:
             try:
-                var_id = self.get_variable(target, context)
+                var_id = self.get_variable(target, context, False)
             except NameError:
                 error = UnboundError(f"{target.root} is not defined.", target, data={"name": target.root})
                 if not self.compile_with_warnings:
@@ -1300,7 +1300,7 @@ class Assembler:
         else:
             # if 
             try:
-                var_id = self.get_variable(target, context) 
+                var_id = self.get_variable(target, context, False) 
             except NameError:
                 error = UnboundError(f"{target.root} is not defined.", target, data={"name": target.root})
                 if not self.compile_with_warnings:
