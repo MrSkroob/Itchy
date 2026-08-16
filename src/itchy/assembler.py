@@ -9,7 +9,7 @@ import os
 
 from typing import TypeVar
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import Enum, StrEnum
 
 from copy import deepcopy
 from pathlib import Path
@@ -64,10 +64,15 @@ class InputType(Enum):
 PLACE_HOLDER_0 = ScratchInput((InputType.SHADOW_ONLY, (DataType.NUMBER, "0")), VariableTypes.NUMBER, True)
 
 
+class CompilerErrorCodes(StrEnum):
+    UNDEFINED_VARIABLE = "undefined-variable"
+
+
 class CompilerError(Exception):
-    def __init__(self, message: str, error_node: ASTNode | None) -> None:
+    def __init__(self, message: str, error_node: ASTNode | None, error_code: str | None=None) -> None:
         self.error_node = error_node
         self.message = message
+        self.error_code = error_code
         super().__init__(message)
 
 
@@ -76,7 +81,8 @@ class CompilerWarning(CompilerError):
 
 
 class UnboundError(CompilerWarning):
-    pass
+    def __init__(self, message: str, error_node: ASTNode | None, error_code: str | None = CompilerErrorCodes.UNDEFINED_VARIABLE) -> None:
+        super().__init__(message, error_node, error_code)
 
 
 class ArgumentError(CompilerError):
