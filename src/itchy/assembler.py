@@ -309,30 +309,34 @@ class Assembler:
             name=PUSH_RETURN_FRAME,
             params=(),
             body=(
-                FunctionCallStmt("data_addtolist", (StringExpr(""), VarExpr(VarRef(RETURN_STACK)))),
-                FunctionCallStmt("data_addtolist", (StringExpr("false"), VarExpr(VarRef(FLAG_STACK)))),
-            )
+                FunctionCallStmt("data_addtolist", (StringExpr("", dummy=True), VarExpr(VarRef(RETURN_STACK, dummy=True), dummy=True))),
+                FunctionCallStmt("data_addtolist", (StringExpr("false", dummy=True), VarExpr(VarRef(FLAG_STACK, dummy=True), dummy=True))),
+            ),
+            dummy=True
         )
 
         # return_helper
         set_return_value = FunctionDefStmt(
             name=SET_RETURN_VALUE,
-            params=(Param("value", "var"),),
+            params=(Param("value", "var", dummy=True),),
             body=(
                 FunctionCallStmt("data_replaceitemoflist", (FunctionCallExpr("data_lengthoflist", 
                                                                             (VarExpr(
-                                                                                VarRef(RETURN_STACK)),)), 
+                                                                                VarRef(RETURN_STACK, dummy=True), dummy=True),), dummy=True), 
                                                             VarExpr(
-                                                                VarRef("value")), 
+                                                                VarRef("value", dummy=True), dummy=True), 
                                                             VarExpr(
-                                                                VarRef(RETURN_STACK)))),
+                                                                VarRef(RETURN_STACK, dummy=True), dummy=True)), dummy=True),
                 FunctionCallStmt("data_replaceitemoflist", (FunctionCallExpr("data_lengthoflist", 
                                                                                             (VarExpr(
-                                                                                                VarRef(FLAG_STACK)),)), 
-                                                                            StringExpr("true"),
+                                                                                                VarRef(FLAG_STACK, dummy=True), 
+                                                                                                dummy=True),)), 
+                                                                            StringExpr("true", dummy=True),
                                                                             VarExpr(
-                                                                                VarRef(FLAG_STACK)))),
-            )
+                                                                                VarRef(FLAG_STACK, dummy=True), 
+                                                                                dummy=True)), dummy=True),
+            ), 
+            dummy=True
         )
 
         # # return helper
@@ -342,15 +346,16 @@ class Assembler:
             body=(
                 FunctionCallStmt("data_deleteoflist", (FunctionCallExpr("data_lengthoflist", 
                                                                                         (VarExpr(
-                                                                                            VarRef(RETURN_STACK)),)), 
+                                                                                            VarRef(RETURN_STACK, dummy=True), dummy=True),), dummy=True), 
                                                                         VarExpr(
-                                                                            VarRef(RETURN_STACK)))),
+                                                                            VarRef(RETURN_STACK, dummy=True), dummy=True)), dummy=True),
                 FunctionCallStmt("data_deleteoflist", (FunctionCallExpr("data_lengthoflist", 
                                                                                                         (VarExpr(
-                                                                                                            VarRef(FLAG_STACK)),)), 
+                                                                                                            VarRef(FLAG_STACK, dummy=True), dummy=True),)), 
                                                                                         VarExpr(
-                                                                                            VarRef(FLAG_STACK)))),
-            )
+                                                                                            VarRef(FLAG_STACK, dummy=True), dummy=True)), dummy=True),
+            ),
+            dummy=True
         )
 
         pre_defines = (push_return_frame, set_return_value, pop_return_frame)
