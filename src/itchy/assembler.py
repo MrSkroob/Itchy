@@ -152,7 +152,7 @@ class Assembler:
         # we don't need to worry about function "variables" since they are arguments.
         # i.e. they are not treated as variables and are treated as read-only.
         # variable name -> id
-        self.variable_map: dict[str, str] = {}
+        self.variable_map: dict[tuple[str, StrOptional], str] = {}
 
         self.messages: dict[str, str] = {}
 
@@ -229,15 +229,22 @@ class Assembler:
             length += 1
         return length
 
-    def get_variable(self, name: str) -> str:
+    def get_variable(self, name: str, context: StrOptional) -> str:
         """
         Returns a variable ID without any extra functionality.
         Do this when you strictly expect the variable to exist, and want to error if it wasn't implicitly/explicitly defined previously.
         """
-        key = name
-        if key not in self.variable_map:
-            raise NameError(f"variable {name} not defined!")
+        
+        if (name, context) in self.variable_map:
+            key = (name, context)
+            # raise NameError(f"variable {name} is not defined!")
+        elif (name, None) in self.variable_map:
+            key = (name, None)
+        else:
+            raise NameError(f"variable {name} is not defined!")
+    
         return self.variable_map[key]
+    
 
     def define_broadcast(self, name: str) -> str:
         if name in self.messages:
@@ -271,10 +278,10 @@ class Assembler:
         else:
             default_value = 0
 
-        key = name
+        key = (name, context)
 
         if key in self.variable_map:
-            return self.variable_map[name]
+            return self.variable_map[key]
 
         var_id = self.new_id()
 
@@ -549,13 +556,13 @@ class Assembler:
                     )
                 else:
                     try:
-                        var_id = self.get_variable(arg_expr.ref.root)
+                        var_id = self.get_variable(arg_expr.ref.root, context)
                     except NameError:
-                        error = UnboundError(f"{arg_expr.ref.root} not defined.", arg_expr, data={"name": arg_expr.ref.root})
+                        error = UnboundError(f"{arg_expr.ref.root} is not defined.", arg_expr, data={"name": arg_expr.ref.root})
                         if not self.compile_with_warnings:
                             return self.raise_or_return(error)
                         self.errors.append(error)
-                        var_id = self.define_variable(False, "var", arg_expr.ref.root, None)
+                        var_id = self.define_variable(False, "var", arg_expr.ref.root, context)
 
                     inputs[arg.name] = (InputType.SHADOW_ONLY,
                                         (DataType.VARIABLE, arg_expr.ref.root, var_id))
@@ -589,13 +596,14 @@ class Assembler:
                         f"{stmt.callee}: argument for {index} must be a variable", arg_expr
                     ))
                 try:
-                    fields[field.name] = (arg_expr.ref.root, self.get_variable(arg_expr.ref.root))
+                    fields[field.name] = (arg_expr.ref.root, self.get_variable(arg_expr.ref.root, context))
                 except NameError:
-                    error = UnboundError(f"{arg_expr.ref.root} not defined.", arg_expr, data={"name": arg_expr.ref.root})
+                    print(context)
+                    error = UnboundError(f"{arg_expr.ref.root} is not defined.", arg_expr, data={"name": arg_expr.ref.root})
                     if not self.compile_with_warnings:
                         return self.raise_or_return(error)
                     self.errors.append(error)
-                    fields[field.name] = (arg_expr.ref.root, self.define_variable(False, "var", arg_expr.ref.root, None))
+                    fields[field.name] = (arg_expr.ref.root, self.define_variable(False, "var", arg_expr.ref.root, context))
                     
             elif field.name in block_data.broadcasts:
                 if not isinstance(arg_expr, StringExpr):
@@ -962,13 +970,13 @@ class Assembler:
     def emit_for_in(self, stmt: ForInStmt, parent: StrOptional, context: StrOptional):
         list_variable_name = "compiler:" + self.new_id()
         try:
-            iterable_id = self.get_variable(stmt.iterable.root)
+            iterable_id = self.get_variable(stmt.iterable.root, context)
         except NameError:
-            error = UnboundError(f"{stmt.iterable.root} not defined.", stmt.iterable, data={"name": stmt.iterable.root})
+            error = UnboundError(f"{stmt.iterable.root} is not defined.", stmt.iterable, data={"name": stmt.iterable.root})
             if not self.compile_with_warnings:
                 return self.raise_or_return(error)
             self.errors.append(error)
-            iterable_id = self.define_variable(False, "var", stmt.iterable.root, None)
+            iterable_id = self.define_variable(False, "var", stmt.iterable.root, context)
 
         self.assert_writable_name(stmt.variable, context)
         # we *still* need this id to be unique, because even if it's in a for loop, scratch considers it global.
@@ -1179,13 +1187,13 @@ class Assembler:
         
         if target.slice_expr is not None:
             try:
-                var_id = self.get_variable(target.root)
+                var_id = self.get_variable(target.root, context)
             except NameError:
-                error = UnboundError(f"{target.root} not defined.", target, data={"name": target.root})
+                error = UnboundError(f"{target.root} is not defined.", target, data={"name": target.root})
                 if not self.compile_with_warnings:
                     return self.raise_or_return(error)
                 self.errors.append(error)
-                var_id = self.define_variable(False, "list", target.root, None)
+                var_id = self.define_variable(False, "list", target.root, context)
             
             variable = self.variables[var_id]
 
@@ -1215,13 +1223,13 @@ class Assembler:
         else:
             # if 
             try:
-                var_id = self.get_variable(target.root) 
+                var_id = self.get_variable(target.root, context) 
             except NameError:
-                error = UnboundError(f"{target.root} not defined.", target, data={"name": target.root})
+                error = UnboundError(f"{target.root} is not defined.", target, data={"name": target.root})
                 if not self.compile_with_warnings:
                     return self.raise_or_return(error)
                 self.errors.append(error)
-                var_id = self.define_variable(False, "var", target.root, None)
+                var_id = self.define_variable(False, "var", target.root, context)
             
             block_id = self.new_id()
             self.make_block(
@@ -1506,13 +1514,13 @@ class Assembler:
                         )
                     else:
                         try:
-                            var_id = self.get_variable(arg_expr.ref.root)
+                            var_id = self.get_variable(arg_expr.ref.root, context)
                         except NameError:
-                            error = UnboundError(f"{arg_expr.ref.root} not defined.", arg_expr, data={"name": arg_expr.ref.root})
+                            error = UnboundError(f"{arg_expr.ref.root} is not defined.", arg_expr, data={"name": arg_expr.ref.root})
                             if not self.compile_with_warnings:
                                 return self.raise_or_return(error, PLACE_HOLDER_0)
                             self.errors.append(error)
-                            var_id = self.define_variable(False, "var", arg_expr.ref.root, None)
+                            var_id = self.define_variable(False, "var", arg_expr.ref.root, context)
                         inputs[arg.name] = (InputType.SHADOW_ONLY,
                                             (DataType.VARIABLE, arg_expr.ref.root, var_id))
                 else:
@@ -1545,16 +1553,16 @@ class Assembler:
                             arg_expr
                         ), PLACE_HOLDER_0)
                     try:
-                        fields[field.name] = (arg_expr.ref.root, self.get_variable(arg_expr.ref.root))
+                        fields[field.name] = (arg_expr.ref.root, self.get_variable(arg_expr.ref.root, context))
                     except NameError:
-                        error = UnboundError(f"{arg_expr.ref.root} not defined.", arg_expr, data={"name": arg_expr.ref.root})
+                        error = UnboundError(f"{arg_expr.ref.root} is not defined.", arg_expr, data={"name": arg_expr.ref.root})
                         if not self.compile_with_warnings:
                             return self.raise_or_return(
                                 error,
                                 PLACE_HOLDER_0
                             )
                         self.errors.append(error)
-                        fields[field.name] = (arg_expr.ref.root, self.define_variable(False, "var", arg_expr.ref.root, None))
+                        fields[field.name] = (arg_expr.ref.root, self.define_variable(False, "var", arg_expr.ref.root, context))
                 else:
                     if not isinstance(arg_expr, StringExpr):
                         return self.raise_or_return(InvalidTypeError(
@@ -1621,12 +1629,12 @@ class Assembler:
                     return self.raise_or_return(InvalidTypeError(f"Right expression must be a list", right), PLACE_HOLDER_0)
 
                 try:
-                    list_id = self.get_variable(right.ref.root)
+                    list_id = self.get_variable(right.ref.root, context)
                 except NameError:
                     error = UnboundError(f"{right.ref.root} is not defined", right, data={"name": right})
                     if not self.compile_with_warnings:
                         return self.raise_or_return(error, PLACE_HOLDER_0)
-                    list_id = self.define_variable(False, "list", right.ref.root, None)
+                    list_id = self.define_variable(False, "list", right.ref.root, context)
                     self.errors.append(error)
 
                 self.make_block(
@@ -1729,13 +1737,13 @@ class Assembler:
             )
         else:
             try:
-                var_id = self.get_variable(ref.root)
+                var_id = self.get_variable(ref.root, context)
             except NameError:
-                error = UnboundError(f"{ref.root} not defined.", ref, data={"name": ref.root})
+                error = UnboundError(f"{ref.root} is not defined.", ref, data={"name": ref.root})
                 if not self.compile_with_warnings:
                     return self.raise_or_return(error, PLACE_HOLDER_0)
                 self.errors.append(error)
-                var_id = self.define_variable(False, "var" if ref.slice_expr is None else "list", ref.root, None)
+                var_id = self.define_variable(False, "var" if ref.slice_expr is None else "list", ref.root, context)
             
             var_type = self.variables[var_id].var_type
             if ref.slice_expr is not None:
@@ -1882,7 +1890,7 @@ class Assembler:
             if variable_data.shared:
                 continue
 
-            del self.variable_map[variable_data.name]
+            del self.variable_map[(variable_data.name, variable_data.context)]
             del self.variables[variable_id]
 
         self.errors.clear()
