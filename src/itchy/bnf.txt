@@ -28,7 +28,7 @@
 <var> ::= <Symbol> [<slice>]
 <literals> ::= <functioncall> | <tableconstructor> | <var> | <Bool> | <Number> | <String> 
 // <explist1> ::= <equation> {<FieldSeperator> <explist1>}
-<laststat> ::= <Return> [<equation>]
+<laststat> ::= <Return> [<varlist1>]
 <varlist1> ::= <equation> {<FieldSeperator> <equation>} [<FieldSeperator>]
 <args> ::= "(" [<varlist1>] ")"
 <argtype> ::= <Symbol> <Colon> <Type>

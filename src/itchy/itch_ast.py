@@ -1100,29 +1100,33 @@ class ASTBuilder:
             )
             # self.emit_token(return_token, "keyword")
     
-            equation_node = next(
+            varlist_node = next(
                 (
                     child
                     for child in children
-                    if isinstance(child, ParsedNode) and child.name == "equation"
+                    if isinstance(child, ParsedNode) and child.name == "varlist1"
                 ),
                 None,
             )
     
-            if equation_node is None:
+            if varlist_node is None:
                 return ReturnStmt(
                     (),
                     span=return_token.span,
                     dummy=node.dummy_node
                 )
     
-            value = self.build_equation(equation_node)
+            value = self.build_varlist1(varlist_node)
+            end = return_token.span.end
+
+            if len(value) > 0:
+                end = value[-1].span.end
     
             return ReturnStmt(
-                (value,),
+                value,
                 span=SourceSpan(
                     start=return_token.span.start,
-                    end=value.span.end,
+                    end=end,
                 ),
                 dummy=node.dummy_node
             )

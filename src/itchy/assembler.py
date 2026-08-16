@@ -448,6 +448,9 @@ class Assembler:
 
         body: list[Stmt] = []
 
+        if self.count_args(stmt.values) > 1:
+            return self.raise_or_return(SyntaxError("Can only return one value at a time", stmt))
+
         if self.count_args(stmt.values) > 0:
             # technically it's always 1 or 0, but this was left over for future where we might support more than one
             # return expressions (tuples)
