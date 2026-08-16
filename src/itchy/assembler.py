@@ -14,7 +14,7 @@ from enum import Enum, StrEnum
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
-from itchy.shared_templates import VariableTypes, DataType, SourceSpan, SPRITE_TEMPLATE, COSTUME_TEMPLATE, VARIABLE_TYPE_TO_USER_TYPES, ASTNode
+from itchy.shared_templates import VariableTypes, DataType, SourceSpan, SPRITE_TEMPLATE, COSTUME_TEMPLATE
 from itchy.errors import CompilerError, CompilerErrorCodes, UnboundError, NotReferencedError, ArgumentError, NotDefinedError, InvalidTypeError, SyntaxError
 from itchy.scratch_blocks import SCRATCH_BLOCKS, Block, Reporter, Event, Menu
 from itchy.itch_ast import \
@@ -112,6 +112,7 @@ class ProcedureInfo:
 
     # if applicable
     return_types: set[VariableTypes]=field(default_factory=lambda: {VariableTypes.NOTHING})
+    nothings: int = 0
 
 
 class Assembler:
@@ -403,7 +404,6 @@ class Assembler:
         final_return_statement: ReturnStmt | None = None
 
         for index, stmt in enumerate(statements):
-
             if isinstance(stmt, ReturnStmt) and index == len(statements) - 1:
                 final_return_statement = stmt
             
@@ -424,7 +424,9 @@ class Assembler:
 
         if context in self.procedures:
             proc_info = self.procedures[context]
-            if final_return_statement is not None and len(final_return_statement.values) > 0:
+            if final_return_statement is not None and len(final_return_statement.values) > 0 \
+            and VariableTypes.NOTHING in proc_info.return_types \
+            and proc_info.nothings == 0:
                 proc_info.return_types.remove(VariableTypes.NOTHING)
         
         return BlockRange(first, last)
@@ -502,6 +504,8 @@ class Assembler:
                 body.append(
                     FunctionCallStmt(SET_RETURN_VALUE, (value,))
                 )
+        else:
+            proc_data.nothings += 1
 
 
         control_stop = FunctionCallStmt(
@@ -711,7 +715,8 @@ class Assembler:
             user_arg_type = emitted_arg.return_type
 
             if not self.type_check(arg_type, user_arg_type):
-                return self.raise_or_return(InvalidTypeError(f"{stmt.callee}: argument {index} expected one of {arg_type} not {user_arg_type}", arg_expr))
+                return self.raise_or_return(
+                    InvalidTypeError(f"{stmt.callee}: argument {index} of type {arg_type} is not in ({", ".join([i.value for i in user_arg_type])})", arg_expr))
             
             inputs[arg_id] = emitted_arg.value
             index += 1
@@ -1472,7 +1477,6 @@ class Assembler:
         #         f"{expr.callee} is not a valid scratch block",
         #         expr
         #     )
-        
         self.symbols.append(
             SymbolOccurence(
                 expr.span,
@@ -1546,13 +1550,17 @@ class Assembler:
                 block_parent,
                 setup,
             )
-
-            return self.emit_var_ref(
+            
+            return_input = self.emit_var_ref(
                 VarRef(expr.callee + ":return"),
                 None,
                 block_parent,
                 parent,
             )
+
+            return_input.return_type = self.procedures[expr.callee].return_types
+
+            return return_input
         else:
             block_data = SCRATCH_BLOCKS[expr.callee]
 
@@ -1832,6 +1840,7 @@ class Assembler:
             )
             
             var_type = self.variables[var_id].var_type
+
             if ref.slice_expr is not None:
                 if var_type is VariableTypes.LIST:
                     operator_id = self.make_block(
@@ -1875,13 +1884,11 @@ class Assembler:
                     )
 
             else:
-                
-
                 return ScratchInput(
                     (
                         InputType.SHADOW_ONLY,
                         (
-                            DataType.LIST if var_type == VariableTypes.LIST else DataType.VARIABLE,
+                            DataType.LIST if VariableTypes.LIST == var_type else DataType.VARIABLE,
                             ref.root,
                             var_id
                         )
