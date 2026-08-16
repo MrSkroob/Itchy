@@ -14,7 +14,7 @@ from enum import Enum, StrEnum
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
-from itchy.shared_templates import VariableTypes, DataType, SourceSpan, SPRITE_TEMPLATE, COSTUME_TEMPLATE, VARIABLE_TYPE_TO_USER_TYPES
+from itchy.shared_templates import VariableTypes, DataType, SourceSpan, SPRITE_TEMPLATE, COSTUME_TEMPLATE, VARIABLE_TYPE_TO_USER_TYPES, ASTNode
 from itchy.errors import CompilerError, CompilerErrorCodes, UnboundError, NotReferencedError, ArgumentError, NotDefinedError, InvalidTypeError, SyntaxError
 from itchy.scratch_blocks import SCRATCH_BLOCKS, Block, Reporter, Event, Menu
 from itchy.itch_ast import \
@@ -42,10 +42,10 @@ TEMP_FILE_SRC = ROOT / "assets" / "empty.svg"
 ScratchInputRaw = tuple["InputType", tuple["DataType", str] | tuple["DataType", str, str]] | tuple["InputType", str]
 ScratchFieldRaw = tuple[str, None] | tuple[str, str]
 
-@dataclass(frozen=True)
+@dataclass
 class ScratchInput:
     value: ScratchInputRaw
-    return_type: VariableTypes = VariableTypes.UNKNOWN
+    return_type: set[VariableTypes] = field(default_factory=lambda: {VariableTypes.NOTHING})
     manufactured: bool=False # tells code that this input was automatically generated (not by the user) 
     # so should be ignored in subsequent error collection.
 
@@ -62,7 +62,7 @@ class InputType(Enum):
     BLOCK_AND_SHADOW = 3 # do not use - because compiler does not have default values.
 
 
-PLACE_HOLDER_0 = ScratchInput((InputType.SHADOW_ONLY, (DataType.NUMBER, "0")), VariableTypes.NUMBER, True)
+PLACE_HOLDER_0 = ScratchInput((InputType.SHADOW_ONLY, (DataType.NUMBER, "0")), {VariableTypes.NUMBER}, True)
 
 
 class SymbolType(StrEnum):
@@ -111,7 +111,7 @@ class ProcedureInfo:
     argument_types: tuple[VariableTypes, ...]
 
     # if applicable
-    return_types: set[VariableTypes]=field(default_factory=set[VariableTypes])
+    return_types: set[VariableTypes]=field(default_factory=lambda: {VariableTypes.NOTHING})
 
 
 class Assembler:
@@ -200,6 +200,7 @@ class Assembler:
             block["y"] = y if y is not None else 100
         
         return self.add_block(block, id)
+            
 
     def count_args(self, args: tuple[Expr | Stmt, ...]):
         length = 0
@@ -384,7 +385,7 @@ class Assembler:
         for i in self.non_referenced_variables.values():
             self.errors.append(
                 NotReferencedError(
-                    f"{i.name}",
+                    f"{i.name} is not referenced",
                     error_node=i
                 )
             )
@@ -399,7 +400,13 @@ class Assembler:
         first: StrOptional = None
         last: StrOptional = None
 
+        final_return_statement: ReturnStmt | None = None
+
         for stmt in statements:
+
+            if isinstance(stmt, ReturnStmt):
+                final_return_statement = stmt
+            
             emitted = self.emit_stmt(stmt, parent, context)
 
             if emitted.first is None:
@@ -415,6 +422,10 @@ class Assembler:
             
             last = emitted.last
 
+        if context in self.procedures:
+            proc_info = self.procedures[context]
+            if final_return_statement is not None and len(final_return_statement.values) > 0:
+                proc_info.return_types.remove(VariableTypes.NOTHING)
         
         return BlockRange(first, last)
     
@@ -453,6 +464,22 @@ class Assembler:
                 raise TypeError("Bad statement type")
 
 
+    def type_check(self, a: VariableTypes, b: set[VariableTypes]):
+        if a in b:
+            return True
+
+        if a == VariableTypes.NOTHING:
+            return False
+
+        if a == VariableTypes.VAR and VariableTypes.LIST not in b:
+            return True
+
+        if a == VariableTypes.UNKNOWN:
+            return True
+
+        return False
+
+
     def emit_return(self, stmt: ReturnStmt, parent: StrOptional, context: StrOptional) -> BlockRange:
         if context is None or not self.procedures.get(context):
             return self.raise_or_return(SyntaxError("'return' outside of function", stmt, CompilerErrorCodes.REMOVE_RETURN))
@@ -469,11 +496,13 @@ class Assembler:
         if self.count_args(stmt.values) > 0:
             # technically it's always 1 or 0, but this was left over for future where we might support more than one
             # return expressions (tuples)
-            proc_data.return_types.add(self.emit_expr(stmt.values[0], context, BlockRange(None, None, True), None).return_type)
+            proc_data.return_types = \
+                proc_data.return_types.union(self.emit_expr(stmt.values[0], context, BlockRange(None, None, True), None).return_type)
             for value in stmt.values:
                 body.append(
                     FunctionCallStmt(SET_RETURN_VALUE, (value,))
                 )
+
 
         control_stop = FunctionCallStmt(
             "control_stop", (StringExpr("this script"),)
@@ -601,7 +630,6 @@ class Assembler:
                 try:
                     fields[field.name] = (arg_expr.ref.root, self.get_variable(arg_expr.ref, context))
                 except NameError:
-                    print(context)
                     error = UnboundError(f"{arg_expr.ref.root} is not defined.", arg_expr, data={"name": arg_expr.ref.root})
                     if not self.compile_with_warnings:
                         return self.raise_or_return(error)
@@ -682,8 +710,8 @@ class Assembler:
 
             user_arg_type = emitted_arg.return_type
 
-            if arg_type != user_arg_type and arg_type != VARIABLE_TYPE_TO_USER_TYPES.get(user_arg_type, user_arg_type):
-                return self.raise_or_return(InvalidTypeError(f"{stmt.callee}: argument {index} expected {arg_type} not {user_arg_type}", arg_expr))
+            if not self.type_check(arg_type, user_arg_type):
+                return self.raise_or_return(InvalidTypeError(f"{stmt.callee}: argument {index} expected one of {arg_type} not {user_arg_type}", arg_expr))
             
             inputs[arg_id] = emitted_arg.value
             index += 1
@@ -1291,12 +1319,12 @@ class Assembler:
         
         match expr:
             case NumberExpr(value=value):
-                return ScratchInput((InputType.SHADOW_ONLY, (DataType.NUMBER, str(value))), VariableTypes.NUMBER)
+                return ScratchInput((InputType.SHADOW_ONLY, (DataType.NUMBER, str(value))), {VariableTypes.NUMBER})
             case StringExpr(value=value):
                 if re.match(HEXCODE, value) is not None:
-                    return ScratchInput((InputType.SHADOW_ONLY, (DataType.COLOR, value)), VariableTypes.STRING)
+                    return ScratchInput((InputType.SHADOW_ONLY, (DataType.COLOR, value)), {VariableTypes.STRING})
                 else:
-                    return ScratchInput((InputType.SHADOW_ONLY, (DataType.STRING, value)), VariableTypes.STRING)
+                    return ScratchInput((InputType.SHADOW_ONLY, (DataType.STRING, value)), {VariableTypes.STRING})
             case BoolExpr(value=value):
                 # in scratch:
                 # if (0 == 0) == "true" is true, so we can just use strings without any fancy conversion
@@ -1320,7 +1348,7 @@ class Assembler:
                     }
                 )
 
-                return ScratchInput((InputType.BLOCK_ONLY, operator_id), VariableTypes.BOOL)
+                return ScratchInput((InputType.BLOCK_ONLY, operator_id), {VariableTypes.BOOL})
             case VarExpr(ref=ref):
                 return self.emit_var_ref(ref, context, block_parent, parent)
             case UnaryOpExpr(op=op, value=value):
@@ -1628,7 +1656,7 @@ class Assembler:
             self.blocks[block_id]["inputs"] = inputs
 
             return ScratchInput(
-                (InputType.BLOCK_ONLY if block_data.return_type == VariableTypes.BOOL else InputType.BLOCK_AND_SHADOW, block_id), block_data.return_type
+                (InputType.BLOCK_ONLY if VariableTypes.BOOL in block_data.return_type else InputType.BLOCK_AND_SHADOW, block_id), block_data.return_type
             )
 
     def emit_unary_expr(self, op: str, value: Expr, context: StrOptional, block_parent: BlockRange, parent: StrOptional) -> ScratchInput:
@@ -1642,7 +1670,7 @@ class Assembler:
                     "OPERAND": self.emit_expr(value, context, block_parent, block_id).value,
                 },
             )
-            return ScratchInput((InputType.BLOCK_ONLY, block_id), VariableTypes.BOOL)
+            return ScratchInput((InputType.BLOCK_ONLY, block_id), {VariableTypes.BOOL})
 
         if op == "-":
             if isinstance(value, NumberExpr):
@@ -1659,7 +1687,7 @@ class Assembler:
                         "NUM2": self.emit_expr(value, context, block_parent, block_id).value,
                     },
                 )
-                return ScratchInput((InputType.BLOCK_ONLY, block_id), VariableTypes.NUMBER)
+                return ScratchInput((InputType.BLOCK_ONLY, block_id), {VariableTypes.NUMBER})
 
         raise NotImplementedError(f"Unsupported unary operator: {op}")
     
@@ -1670,7 +1698,7 @@ class Assembler:
         right_expr = self.emit_expr(right, context, block_parent, block_id)
 
         if op == "in":
-            if right_expr.return_type is VariableTypes.LIST:
+            if VariableTypes.LIST in right_expr.return_type:
                 if not isinstance(right, VarExpr):
                     return self.raise_or_return(InvalidTypeError(f"Right expression must be a list", right), PLACE_HOLDER_0)
 
@@ -1696,7 +1724,7 @@ class Assembler:
                 )
 
                 return ScratchInput(
-                    (InputType.BLOCK_AND_SHADOW, block_id), VariableTypes.BOOL
+                    (InputType.BLOCK_AND_SHADOW, block_id), {VariableTypes.BOOL}
                 )
                 
         
@@ -1731,8 +1759,8 @@ class Assembler:
         )
 
         return ScratchInput(
-            (InputType.BLOCK_ONLY if return_type == VariableTypes.BOOL else InputType.BLOCK_AND_SHADOW, block_id),
-            return_type,
+            (InputType.BLOCK_ONLY if VariableTypes.BOOL in return_type else InputType.BLOCK_AND_SHADOW, block_id),
+            {return_type},
         )
 
     def emit_var_ref(self, ref: VarRef, context: StrOptional, block_parent: BlockRange, parent: StrOptional) -> ScratchInput:
@@ -1782,7 +1810,7 @@ class Assembler:
                     InputType.BLOCK_ONLY,
                     reporter_id
                 ),
-                return_type=arg_type
+                return_type={arg_type}
             )
         else:
             try:
@@ -1843,7 +1871,7 @@ class Assembler:
                         (
                             InputType.BLOCK_ONLY,
                             operator_id
-                        ), VariableTypes.STRING
+                        ), {VariableTypes.STRING}
                     )
 
             else:
@@ -1858,7 +1886,7 @@ class Assembler:
                             var_id
                         )
                     ),
-                    var_type
+                    {var_type}
                 )
         
 

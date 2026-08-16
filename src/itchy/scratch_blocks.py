@@ -1,5 +1,5 @@
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from itchy.shared_templates import VariableTypes, DataType
 
 
@@ -17,7 +17,7 @@ class Field:
 @dataclass(frozen=True)
 class Menu:
     """
-    May have default values, but is effectively identical to an Input
+    May have default values, but is effectively identical to an Input (but is always a string)
     """
     opcode: str
     name: str
@@ -49,7 +49,7 @@ class Reporter:
     """
     inputs: tuple[ReturnType | Menu, ...] = ()
     fields: tuple[Field, ...] = ()
-    return_type: VariableTypes = VariableTypes.UNKNOWN
+    return_type: set[VariableTypes] = field(default_factory=lambda: {VariableTypes.NOTHING})
     variables: tuple[str, ...] = ()
 
  
@@ -103,9 +103,9 @@ SCRATCH_BLOCKS: dict[str, Block | Reporter | Event] = {
     "motion_ifonedgebounce": Block(()),
     "motion_setrotationstyle": Block(fields=(Field("STYLE", ("left-right", "don't rotate", "all around")),)),
 
-    "motion_xposition": Reporter(return_type=VariableTypes.NUMBER),
-    "motion_yposition": Reporter(return_type=VariableTypes.NUMBER),
-    "motion_direction": Reporter(return_type=VariableTypes.NUMBER),
+    "motion_xposition": Reporter(return_type={VariableTypes.NUMBER}),
+    "motion_yposition": Reporter(return_type={VariableTypes.NUMBER}),
+    "motion_direction": Reporter(return_type={VariableTypes.NUMBER}),
 
     # --- looks ----------------------------------------------------------
     "looks_sayforsecs": Block((ReturnType("MESSAGE", DataType.STRING), ReturnType("SECS"))),
@@ -127,14 +127,14 @@ SCRATCH_BLOCKS: dict[str, Block | Reporter | Event] = {
     "looks_goforwardbackwardlayers": Block((ReturnType("NUM"),), (Field("FORWARD_BACKWARD", ("forward", "backward")),)),
     
 
-    "looks_size": Reporter(return_type=VariableTypes.NUMBER),
+    "looks_size": Reporter(return_type={VariableTypes.NUMBER}),
     "looks_costumenumbername": Reporter(
         fields=(Field("NUMBER_NAME", ("name", "number")),), 
-        return_type=VariableTypes.STRING
+        return_type={VariableTypes.STRING, VariableTypes.NUMBER}
     ),
     "looks_backdropnumbername": Reporter(
         (), fields=(Field("NUMBER_NAME", ("name", "number")),), 
-        return_type=VariableTypes.STRING
+        return_type={VariableTypes.STRING, VariableTypes.NUMBER}
     ),
 
     # --- sound ----------------------------------------------------------
@@ -148,24 +148,23 @@ SCRATCH_BLOCKS: dict[str, Block | Reporter | Event] = {
     "sound_changevolumeby": Block((ReturnType("VOLUME"),)),
     "sound_setvolumeto": Block((ReturnType("VOLUME"),)),
 
-    "sound_volume": Reporter(return_type=VariableTypes.NUMBER),
+    "sound_volume": Reporter(return_type={VariableTypes.NUMBER}),
 
     # --- operator ----------------------------------------------------------
-    "operator_random": Reporter((ReturnType("FROM"), ReturnType("TO")), return_type=VariableTypes.NUMBER),
-    "operator_mod": Reporter((ReturnType("NUM1"), ReturnType("NUM2")), return_type=VariableTypes.NUMBER),
-    "operator_round": Reporter((ReturnType("NUM"),), return_type=VariableTypes.NUMBER),
-    "operator_random": Reporter((ReturnType("FROM"), ReturnType("TO")), return_type=VariableTypes.NUMBER),
+    "operator_random": Reporter((ReturnType("FROM"), ReturnType("TO")), return_type={VariableTypes.NUMBER}),
+    "operator_mod": Reporter((ReturnType("NUM1"), ReturnType("NUM2")), return_type={VariableTypes.NUMBER}),
+    "operator_round": Reporter((ReturnType("NUM"),), return_type={VariableTypes.NUMBER}),
+    "operator_random": Reporter((ReturnType("FROM"), ReturnType("TO")), return_type={VariableTypes.NUMBER}),
     "operator_join": Reporter(
         (ReturnType("STRING1", DataType.STRING), ReturnType("STRING2", DataType.STRING)),
-        return_type=VariableTypes.STRING
+        return_type={VariableTypes.STRING}
     ),
     "operator_letter_of": Reporter(
         (ReturnType("LETTER"), ReturnType("STRING", DataType.STRING)),
-        return_type=VariableTypes.STRING
+        return_type={VariableTypes.STRING}
     ),
-    "operator_length": Reporter((ReturnType("STRING", DataType.STRING),), return_type=VariableTypes.NUMBER),
-    "operator_contains": Reporter((ReturnType("STRING1", DataType.STRING), ReturnType("STRING2", DataType.STRING)), return_type=VariableTypes.BOOL),
-    "operator_round": Reporter((ReturnType("NUM"),), return_type=VariableTypes.NUMBER),
+    "operator_length": Reporter((ReturnType("STRING", DataType.STRING),), return_type={VariableTypes.NUMBER}),
+    "operator_contains": Reporter((ReturnType("STRING1", DataType.STRING), ReturnType("STRING2", DataType.STRING)), return_type={VariableTypes.BOOL}),
     "operator_mathop": Reporter(
         (ReturnType("NUM"),), (Field("OPERATOR", (
             "abs",
@@ -184,7 +183,7 @@ SCRATCH_BLOCKS: dict[str, Block | Reporter | Event] = {
             "10 ^"
         )),
         ), 
-        return_type=VariableTypes.NUMBER
+        return_type={VariableTypes.NUMBER}
     ),
 
     # --- control ----------------------------------------------------
@@ -207,25 +206,27 @@ SCRATCH_BLOCKS: dict[str, Block | Reporter | Event] = {
     "event_broadcastandwait": Block((ReturnType("BROADCAST_INPUT", DataType.STRING),), broadcasts=("BROADCAST_INPUT",)),
 
     # --- sensing ----------------------------------------------------
-    "sensing_touchingobject": Reporter((Menu("sensing_touchingobjectmenu", "TOUCHINGOBJECTMENU"),), return_type=VariableTypes.BOOL),
-    "sensing_touchingcolor": Reporter((ReturnType("COLOR", DataType.COLOR),), return_type=VariableTypes.BOOL),
-    "sensing_coloristouchingcolor": Reporter((ReturnType("COLOR", DataType.COLOR), ReturnType("COLOR2", DataType.COLOR)), return_type=VariableTypes.BOOL),
-    "sensing_distanceto": Reporter((Menu("sensing_distancetomenu", "DISTANCETOMENU"),), return_type=VariableTypes.NUMBER),
+    "sensing_touchingobject": Reporter((Menu("sensing_touchingobjectmenu", "TOUCHINGOBJECTMENU"),), return_type={VariableTypes.BOOL}),
+    "sensing_touchingcolor": Reporter((ReturnType("COLOR", DataType.COLOR),), return_type={VariableTypes.BOOL}),
+    "sensing_coloristouchingcolor": Reporter((ReturnType("COLOR", DataType.COLOR), ReturnType("COLOR2", DataType.COLOR)), return_type={VariableTypes.BOOL}),
+    "sensing_distanceto": Reporter((Menu("sensing_distancetomenu", "DISTANCETOMENU"),), return_type={VariableTypes.NUMBER}),
 
     "sensing_askandwait": Block((ReturnType("QUESTION", DataType.STRING),)),
-    "sensing_answer": Reporter(return_type=VariableTypes.STRING),
+    "sensing_answer": Reporter(return_type={VariableTypes.STRING}),
 
-    "sensing_keypressed": Reporter((Menu("sensing_keyoptions", "KEY_OPTION", expected=VALID_KEYS),), return_type=VariableTypes.BOOL),
-    "sensing_mousedown": Reporter(return_type=VariableTypes.BOOL),
-    "sensing_mousex": Reporter(return_type=VariableTypes.NUMBER),
-    "sensing_mousey": Reporter(return_type=VariableTypes.NUMBER),
+    "sensing_keypressed": Reporter((Menu("sensing_keyoptions", "KEY_OPTION", expected=VALID_KEYS),), return_type={VariableTypes.BOOL}),
+    "sensing_mousedown": Reporter(return_type={VariableTypes.BOOL}),
+    "sensing_mousex": Reporter(return_type={VariableTypes.NUMBER}),
+    "sensing_mousey": Reporter(return_type={VariableTypes.NUMBER}),
 
     "sensing_setdragmode": Block(fields=(Field("DRAG_MODE", ("draggable", "not draggable")),)),
-    "sensing_loudness": Reporter(return_type=VariableTypes.NUMBER),
-    "sensing_timer": Reporter(return_type=VariableTypes.NUMBER),
+    "sensing_loudness": Reporter(return_type={VariableTypes.NUMBER}),
+    "sensing_timer": Reporter(return_type={VariableTypes.NUMBER}),
     "sensing_resettimer": Block(),
 
-    "sensing_of": Reporter((Menu("sensing_of_object_menu", "OBJECT", expected=("_stage_",)),), (Field("PROPERTY", ()),)),
+    "sensing_of": Reporter((Menu("sensing_of_object_menu", "OBJECT", expected=("_stage_",)),), (Field("PROPERTY", ()),), return_type={
+        VariableTypes.STRING, VariableTypes.NUMBER, VariableTypes.VAR
+    }),
     "sensing_current": Reporter(fields=(Field("CURRENTMENU", (
         "year",
         "month",
@@ -235,12 +236,12 @@ SCRATCH_BLOCKS: dict[str, Block | Reporter | Event] = {
         "minute",
         "second"
     )),),
-    return_type=VariableTypes.NUMBER),
-    "sensing_dayssince2000": Reporter(return_type=VariableTypes.NUMBER),
+    return_type={VariableTypes.NUMBER}),
+    "sensing_dayssince2000": Reporter(return_type={VariableTypes.NUMBER}),
 
-    "sensing_username": Reporter(return_type=VariableTypes.STRING),
-    "sensing_online": Reporter(return_type=VariableTypes.BOOL),
-    
+    "sensing_username": Reporter(return_type={VariableTypes.STRING}),
+    "sensing_online": Reporter(return_type={VariableTypes.BOOL}),
+
     # -- lists and variables
     "data_addtolist": Block((ReturnType("ITEM", DataType.STRING),), (LIST_FIELD,), variables=("LIST",)),
     "data_deleteoflist": Block((ReturnType("INDEX"),), (LIST_FIELD,), variables=("LIST",)),
@@ -248,10 +249,10 @@ SCRATCH_BLOCKS: dict[str, Block | Reporter | Event] = {
     "data_insertatlist": Block((ReturnType("ITEM", DataType.STRING), ReturnType("INDEX")), (LIST_FIELD,), variables=("LIST",)),
     "data_replaceitemoflist": Block((ReturnType("INDEX"), ReturnType("ITEM", DataType.STRING)), (LIST_FIELD,), variables=("LIST",)),
     
-    "data_itemoflist": Reporter((ReturnType("INDEX"),), (LIST_FIELD,), variables=("LIST",)),
-    "data_itemnumoflist": Reporter((ReturnType("ITEM", DataType.STRING),), (LIST_FIELD,), variables=("LIST",), return_type=VariableTypes.NUMBER),
-    "data_lengthoflist": Reporter(fields=(LIST_FIELD,), variables=("LIST",), return_type=VariableTypes.NUMBER),
-    "data_listcontainsitem": Reporter((ReturnType("ITEM"),), (LIST_FIELD,), variables=("LIST",), return_type=VariableTypes.BOOL),
+    "data_itemoflist": Reporter((ReturnType("INDEX"),), (LIST_FIELD,), variables=("LIST",), return_type={VariableTypes.VAR}),
+    "data_itemnumoflist": Reporter((ReturnType("ITEM", DataType.STRING),), (LIST_FIELD,), variables=("LIST",), return_type={VariableTypes.NUMBER}),
+    "data_lengthoflist": Reporter(fields=(LIST_FIELD,), variables=("LIST",), return_type={VariableTypes.NUMBER}),
+    "data_listcontainsitem": Reporter((ReturnType("ITEM"),), (LIST_FIELD,), variables=("LIST",), return_type={VariableTypes.BOOL}),
 
     "data_showlist": Block(fields=(LIST_FIELD,), variables=("LIST",)),
     "data_hidelist": Block(fields=(LIST_FIELD,), variables=("LIST",)),

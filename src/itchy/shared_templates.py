@@ -81,11 +81,13 @@ class VariableTypes(StrEnum):
     BOOL = "bool"
     LIST = "list"
     UNKNOWN = "unknown"
+    NOTHING = "nothing"
 
 
 # 
 VARIABLE_TYPE_TO_USER_TYPES: dict[VariableTypes, VariableTypes] = {
     VariableTypes.VAR: VariableTypes.VAR,
+    VariableTypes.LIST: VariableTypes.STRING,
     VariableTypes.STRING: VariableTypes.VAR,
     VariableTypes.NUMBER: VariableTypes.VAR
 }
