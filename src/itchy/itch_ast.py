@@ -45,7 +45,7 @@ def collect_comment_tokens(source: str) -> list[SemanticToken]:
 
 @dataclass(frozen=True, kw_only=True)
 class ASTNode:
-    span: SourceSpan = field(default=SourceSpan(SourcePosition(0, 0), SourcePosition(0, 0)), kw_only=True, repr=False)
+    span: SourceSpan = field(default=SourceSpan(SourcePosition(-1, -1), SourcePosition(-1, -1)), kw_only=True, repr=False)
     dummy: bool=False
 
 class Stmt(ASTNode):
