@@ -148,7 +148,7 @@ class Assembler:
         self.procedures: dict[str, ProcedureInfo] = {}
 
         self.is_strict = is_strict
-        self.compile_with_warnings = compile_with_warnings
+        self.compile_with_warnings = compile_with_warnings or not is_strict
         # we don't need to worry about function "variables" since they are arguments.
         # i.e. they are not treated as variables and are treated as read-only.
         # variable name -> id
@@ -1789,6 +1789,8 @@ class Assembler:
                     )
 
             else:
+                
+
                 return ScratchInput(
                     (
                         InputType.SHADOW_ONLY,

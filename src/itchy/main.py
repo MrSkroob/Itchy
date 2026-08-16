@@ -34,6 +34,7 @@ def compile(file: str, output: str, target: str):
             # tree = build_ast(parsed.tree)
             # assembler.emit_program(tree)
             assembler.assemble(tree, output, target)
+            # assembler.emit_program(tree)
             # print_ast(tree)
         except (ParseError, CompilerError) as e:
             if isinstance(e, ParseError):
@@ -44,7 +45,7 @@ def compile(file: str, output: str, target: str):
             return False
     # print([i for i in parser.speculative_errors])
     # print([i for i in parser.accumulated_errors])
-    # print([i.error_node.span.start.line for i in assembler.errors])
+    # print([(i.error_node.span.start.line, i.message) for i in assembler.errors])
     return True
 
 
