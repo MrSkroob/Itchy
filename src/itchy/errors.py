@@ -1,4 +1,4 @@
-from itchy.parser import ExpectedState, FailState
+from itchy.parser import ExpectedState, ParseError
 from itchy.tokenizer import Token, Definitions, GenericRules
 from itchy.assembler import CompilerError
 
@@ -125,11 +125,11 @@ def _choose_expected(
     return sorted(kinds, key=_expected_sort_key)
 
 
-def get_message(fail_state: FailState, expected: ExpectedState):
+def get_message(error: ParseError, expected: ExpectedState):
     pos = expected.pos
     token = (
-        fail_state.tokens[pos]
-        if 0 <= pos < len(fail_state.tokens)
+        error.tokens[pos]
+        if 0 <= pos < len(error.tokens)
         else None
     )
 
@@ -160,15 +160,15 @@ def get_message(fail_state: FailState, expected: ExpectedState):
     return message
 
 def format_syntax_error(
-    fail_state: FailState,
+    error: ParseError,
     expected: ExpectedState,
     source: str,
     filename: str,
 ) -> str:
     pos = expected.pos
     token = (
-        fail_state.tokens[pos]
-        if 0 <= pos < len(fail_state.tokens)
+        error.tokens[pos]
+        if 0 <= pos < len(error.tokens)
         else None
     )
 
@@ -180,7 +180,7 @@ def format_syntax_error(
         character = token.char
         underline_length = max(1, len(token.literal))
 
-    message = get_message(fail_state, expected)
+    message = get_message(error, expected)
 
     source_lines = source.splitlines()
 

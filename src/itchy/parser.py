@@ -40,13 +40,6 @@ class ParseResult():
         return str(self.tree)
 
 
-@dataclass
-class FailState():
-    node: GrammarNode
-    tokens: list[Token[Definitions]]
-    pos: int
-
-
 class ParseError(Exception):
     def __init__(self, tokens: list[Token[Definitions]], pos: int, rule_start: int, failed_rule: Rule, node: GrammarNode, 
                  previous_valid_tree: ParseResult | None=None) -> None:
@@ -123,17 +116,6 @@ class Parser:
     @property
     def expected_items(self):
         return self.expected.items
-
-
-    @property
-    def fail_state(self):
-        if self.furthest_error is None:
-            return None
-        return FailState(
-            self.furthest_error.node,
-            self.furthest_error.tokens,
-            self.furthest_error.pos - 1
-        )
 
     @property
     def recovered_tree(self) -> ParsedNode | Token[Definitions] | None:
