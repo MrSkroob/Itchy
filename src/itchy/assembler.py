@@ -70,10 +70,11 @@ class CompilerErrorCodes(StrEnum):
 
 
 class CompilerError(Exception):
-    def __init__(self, message: str, error_node: ASTNode | None, error_code: str | None=None) -> None:
+    def __init__(self, message: str, error_node: ASTNode | None, error_code: str | None=None, data: dict[str, Any]={}) -> None:
         self.error_node = error_node
         self.message = message
         self.error_code = error_code
+        self.data = data
         super().__init__(message)
 
 
@@ -82,8 +83,9 @@ class CompilerWarning(CompilerError):
 
 
 class UnboundError(CompilerWarning):
-    def __init__(self, message: str, error_node: ASTNode | None, error_code: str | None = CompilerErrorCodes.UNDEFINED_VARIABLE) -> None:
-        super().__init__(message, error_node, error_code)
+    def __init__(self, message: str, error_node: ASTNode | None, *,
+                  error_code: str | None = CompilerErrorCodes.UNDEFINED_VARIABLE, data: dict[str, Any]={}) -> None:
+        super().__init__(message, error_node, error_code, data)
 
 
 class ArgumentError(CompilerError):
@@ -549,7 +551,7 @@ class Assembler:
                     try:
                         var_id = self.get_variable(arg_expr.ref.root)
                     except NameError:
-                        error = UnboundError(f"{arg_expr.ref.root} not defined.", arg_expr)
+                        error = UnboundError(f"{arg_expr.ref.root} not defined.", arg_expr, data={"name": arg_expr.ref.root})
                         if not self.compile_with_warnings:
                             return self.raise_or_return(error)
                         self.errors.append(error)
@@ -589,7 +591,7 @@ class Assembler:
                 try:
                     fields[field.name] = (arg_expr.ref.root, self.get_variable(arg_expr.ref.root))
                 except NameError:
-                    error = UnboundError(f"{arg_expr.ref.root} not defined.", arg_expr)
+                    error = UnboundError(f"{arg_expr.ref.root} not defined.", arg_expr, data={"name": arg_expr.ref.root})
                     if not self.compile_with_warnings:
                         return self.raise_or_return(error)
                     self.errors.append(error)
@@ -962,7 +964,7 @@ class Assembler:
         try:
             iterable_id = self.get_variable(stmt.iterable.root)
         except NameError:
-            error = UnboundError(f"{stmt.iterable.root} not defined.", stmt.iterable)
+            error = UnboundError(f"{stmt.iterable.root} not defined.", stmt.iterable, data={"name": stmt.iterable.root})
             if not self.compile_with_warnings:
                 return self.raise_or_return(error)
             self.errors.append(error)
@@ -1179,7 +1181,7 @@ class Assembler:
             try:
                 var_id = self.get_variable(target.root)
             except NameError:
-                error = UnboundError(f"{target.root} not defined.", target)
+                error = UnboundError(f"{target.root} not defined.", target, data={"name": target.root})
                 if not self.compile_with_warnings:
                     return self.raise_or_return(error)
                 self.errors.append(error)
@@ -1215,7 +1217,7 @@ class Assembler:
             try:
                 var_id = self.get_variable(target.root) 
             except NameError:
-                error = UnboundError(f"{target.root} not defined.", target)
+                error = UnboundError(f"{target.root} not defined.", target, data={"name": target.root})
                 if not self.compile_with_warnings:
                     return self.raise_or_return(error)
                 self.errors.append(error)
@@ -1506,7 +1508,7 @@ class Assembler:
                         try:
                             var_id = self.get_variable(arg_expr.ref.root)
                         except NameError:
-                            error = UnboundError(f"{arg_expr.ref.root} not defined.", arg_expr)
+                            error = UnboundError(f"{arg_expr.ref.root} not defined.", arg_expr, data={"name": arg_expr.ref.root})
                             if not self.compile_with_warnings:
                                 return self.raise_or_return(error, PLACE_HOLDER_0)
                             self.errors.append(error)
@@ -1545,7 +1547,7 @@ class Assembler:
                     try:
                         fields[field.name] = (arg_expr.ref.root, self.get_variable(arg_expr.ref.root))
                     except NameError:
-                        error = UnboundError(f"{arg_expr.ref.root} not defined.", arg_expr)
+                        error = UnboundError(f"{arg_expr.ref.root} not defined.", arg_expr, data={"name": arg_expr.ref.root})
                         if not self.compile_with_warnings:
                             return self.raise_or_return(
                                 error,
@@ -1621,7 +1623,7 @@ class Assembler:
                 try:
                     list_id = self.get_variable(right.ref.root)
                 except NameError:
-                    error = UnboundError(f"{right.ref.root} is not defined", right)
+                    error = UnboundError(f"{right.ref.root} is not defined", right, data={"name": right})
                     if not self.compile_with_warnings:
                         return self.raise_or_return(error, PLACE_HOLDER_0)
                     list_id = self.define_variable(False, "list", right.ref.root, None)
@@ -1729,7 +1731,7 @@ class Assembler:
             try:
                 var_id = self.get_variable(ref.root)
             except NameError:
-                error = UnboundError(f"{ref.root} not defined.", ref)
+                error = UnboundError(f"{ref.root} not defined.", ref, data={"name": ref.root})
                 if not self.compile_with_warnings:
                     return self.raise_or_return(error, PLACE_HOLDER_0)
                 self.errors.append(error)
