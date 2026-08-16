@@ -377,9 +377,9 @@ class ASTBuilder:
         self.function_definitions: dict[FunctionDefStmt, SourceSpan] = {}
         self.var_definitions: dict[VarDefStmt, SourceSpan] = {}
 
+        self.warnings = {}
 
     def reset(self) -> None:
-        self.warnings = []
         self.argument_index = 0
         self.semantic_tokens = []
         self.function_scope = None

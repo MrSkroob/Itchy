@@ -14,7 +14,7 @@ from enum import Enum
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
-from itchy.shared_templates import VariableTypes, DataType, SPRITE_TEMPLATE, COSTUME_TEMPLATE, VARIABLE_TYPE_TO_USER_TYPES, ASTNode
+from itchy.shared_templates import VariableTypes, DataType, SPRITE_TEMPLATE, COSTUME_TEMPLATE, VARIABLE_TYPE_TO_USER_TYPES
 from itchy.errors import CompilerError, CompilerErrorCodes, UnboundError, NotReferencedError, ArgumentError, NotDefinedError, InvalidTypeError, SyntaxError
 from itchy.scratch_blocks import SCRATCH_BLOCKS, Block, Reporter, Event, Menu
 from itchy.itch_ast import \
@@ -496,9 +496,6 @@ class Assembler:
                     f"Block {stmt.callee} expects {expected_args} argument(s), got {self.count_args(stmt.args)}",
                     stmt
                 ))
-
-
-
 
         inputs: dict[str, ScratchInputRaw] = {}
         fields: dict[str, ScratchFieldRaw] = {}
@@ -1685,7 +1682,8 @@ class Assembler:
             else:
                 opcode = "argument_reporter_string_number"
 
-            # argument_opcode = procedure_info.argument_names[arg_index]
+            if (ref.root, context) in self.non_referenced_variables:
+                del self.non_referenced_variables[ref.root, context]
 
             reporter_id = self.make_block(
                 opcode=opcode,
@@ -1697,13 +1695,6 @@ class Assembler:
                     )
                 }
             )
-
-            # if len(procedure_info.return_types) == 1:
-            #     return_type = list(procedure_info.return_types)[0]
-            # elif len(procedure_info.return_types) > 0:
-            #     return_type = VariableTypes.VAR
-            # else:
-            #     return_type = VariableTypes.UNKNOWN
 
             return ScratchInput(
                 (
