@@ -1,63 +1,82 @@
-from collections.abc import Iterable
-from itchy.parser import FailState
-from itchy.tokenizer import Token, Definitions
+from itchy.parser import ExpectedState, FailState
+from itchy.tokenizer import Token, Definitions, GenericRules
 from itchy.assembler import CompilerError
 
-from itchy.tree import (
-    Alternative,
-    GrammarNode,
-    NonTerminal,
-    OptionalNode,
-    Repeat,
-    Sequence,
-    Terminal,
-)
 
+EXPECTED_PRIORITY: dict[Definitions, int] = {
+    # Closing delimiters
+    Definitions.CloseBracket: 0,
+    Definitions.CloseSquareBracket: 0,
+    Definitions.CloseCurlyBracket: 0,
 
-# Friendly names for tokens whose enum names are not suitable for users.
-TOKEN_NAMES: dict[str, str] = {
+    # Structural punctuation
+    Definitions.FieldSeperator: 1,
+    Definitions.Colon: 1,
+    Definitions.StatementSeperator: 1,
+
     # Keywords
-    "Define": "'define'",
-    "ElseIf": "'elseif'",
-    "Return": "'return'",
-    "Shared": "'shared'",
-    "Event": "'event'",
-    "While": "'while'",
-    "Break": "'break'",
-    "Warp": "'warp'",
-    "Else": "'else'",
-    "For": "'for'",
-    "Let": "'let'",
-    "If": "'if'",
-    "In": "'in'",
-
-    # Values
-    "Number": "a number",
-    "String": "a string",
-    "Symbol": "an identifier",
-    "Bool": "'true' or 'false'",
-    "Type": "'var', 'bool', or 'list'",
+    Definitions.Else: 2,
+    Definitions.ElseIf: 2,
+    Definitions.In: 2,
 
     # Operators
-    "Assign": "an assignment operator",
-    "Binop": "an operator",
+    Definitions.Assign: 3,
+    Definitions.Binop: 3,
+
+    # Expression/value starters
+    Definitions.Symbol: 4,
+    Definitions.Number: 4,
+    Definitions.String: 4,
+    Definitions.Bool: 4,
+    Definitions.OpenBracket: 4,
+    Definitions.OpenSquareBracket: 4,
+}
+
+
+TOKEN_NAMES: dict[str, str] = {
+    # Keywords
+    Definitions.Define.name: "'define'",
+    Definitions.ElseIf.name: "'elseif'",
+    Definitions.Return.name: "'return'",
+    Definitions.Shared.name: "'shared'",
+    Definitions.Event.name: "'event'",
+    Definitions.While.name: "'while'",
+    Definitions.Warp.name: "'warp'",
+    Definitions.Else.name: "'else'",
+    Definitions.For.name: "'for'",
+    Definitions.If.name: "'if'",
+    Definitions.In.name: "'in'",
+
+    # Values
+    Definitions.Number.name: "a number",
+    Definitions.String.name: "a string",
+    Definitions.Symbol.name: "an identifier",
+    Definitions.Bool.name: "'true' or 'false'",
+    Definitions.Type.name: "'var', 'bool', or 'list'",
+
+    # Operators
+    Definitions.Assign.name: "an assignment operator",
+    Definitions.Binop.name: "an operator",
 
     # Punctuation
-    "Colon": "':'",
-    "Dot": "'.'",
-    "FieldSeperator": "','",
-    "OpenBracket": "'('",
-    "CloseBracket": "')'",
-    "OpenSquareBracket": "'['",
-    "CloseSquareBracket": "']'",
-    "OpenCurlyBracket": "'{'",
-    "CloseCurlyBracket": "'}'",
-    "StatementSeperator": "';'",
-
-    # Normally not useful in an error message, but included for completeness
-    "Whitespace": "whitespace",
-    "Comment": "a comment",
+    Definitions.Colon.name: "':'",
+    Definitions.Dot.name: "'.'", # not used, but might be for imports in the future.
+    Definitions.FieldSeperator.name: "','",
+    Definitions.OpenBracket.name: "'('",
+    Definitions.CloseBracket.name: "')'",
+    Definitions.OpenSquareBracket.name: "'['",
+    Definitions.CloseSquareBracket.name: "']'",
+    Definitions.OpenCurlyBracket.name: "'{'",
+    Definitions.CloseCurlyBracket.name: "'}'",
+    Definitions.StatementSeperator.name: "';'",
 }
+
+
+def _expected_sort_key(kind: Definitions) -> tuple[int, str]:
+    return (
+        EXPECTED_PRIORITY.get(kind, 3),
+        kind.name,
+    )
 
 
 def format_compiler_error(
@@ -95,26 +114,76 @@ def format_compiler_error(
     )
 
 
+def _choose_expected(
+    kinds: set[Definitions],
+) -> list[Definitions]:
+    closers = kinds & CLOSING_DELIMITERS
+
+    if closers:
+        return sorted(closers, key=_expected_sort_key)
+
+    return sorted(kinds, key=_expected_sort_key)
+
+
+def get_message(fail_state: FailState, expected: ExpectedState):
+    pos = expected.pos
+    token = (
+        fail_state.tokens[pos]
+        if 0 <= pos < len(fail_state.tokens)
+        else None
+    )
+
+    if token is None:
+        found = "end of file"
+    else:
+        found = _describe_found_token(token)
+
+    expected_kinds = {
+        item.definition
+        for item in expected.items
+        if isinstance(item.definition, Definitions)
+    }
+
+    expected_names = [
+        _describe_token_kind(kind)
+        for kind in _choose_expected(expected_kinds)
+    ]
+
+    if expected_names:
+        message = (
+            f"expected {_join_expected(expected_names, 1)}, "
+            f"but found {found}"
+        )
+    else:
+        message = f"unexpected {found}"
+
+    return message
+
 def format_syntax_error(
     fail_state: FailState,
+    expected: ExpectedState,
     source: str,
     filename: str,
 ) -> str:
-    token = _token_at_failure(fail_state)
-    expected = _expected_descriptions(fail_state.node)
+    pos = expected.pos
+    token = (
+        fail_state.tokens[pos]
+        if 0 <= pos < len(fail_state.tokens)
+        else None
+    )
 
     if token is None:
         line_number, character = _end_position(source)
-        found = "end of file"
         underline_length = 1
     else:
         line_number = token.line
         character = token.char
-        found = _describe_found_token(token)
         underline_length = max(1, len(token.literal))
 
+    message = get_message(fail_state, expected)
+
     source_lines = source.splitlines()
-    # This supports either zero-based or one-based token line numbers.
+
     source_index = line_number
     if not (0 <= source_index < len(source_lines)):
         source_index = line_number - 1
@@ -124,168 +193,65 @@ def format_syntax_error(
         if 0 <= source_index < len(source_lines)
         else ""
     )
-    display_line = source_index + 1
-    display_column = character
 
+    display_line = source_index + 1
     caret_padding = _visual_padding(line_text[:character])
     caret = " " * caret_padding + "^" * underline_length
 
-    if not isinstance(fail_state.node, Terminal):
-        # Do not let tabs make the caret visibly misaligned.
-        if expected:
-            message = f"expected {_join_expected(expected)}, but found {found}"
-        else:
-            message = f"unexpected {found}"
-    else:
-        message = "invalid syntax"
-
     return (
-        f'  File "{filename}", line {display_line}, column {display_column}\n'
+        f'  File "{filename}", line {display_line}, column {character}\n'
         f"    {line_text}\n"
         f"    {caret}\n"
         f"SyntaxError: {message}"
     )
 
 
-def _token_at_failure(fail_state: FailState):
-    if not fail_state.tokens:
-        return None
-
-    if fail_state.pos >= len(fail_state.tokens):
-        return None
-
-    return fail_state.tokens[fail_state.pos]
-
-
-def _expected_descriptions(node: GrammarNode) -> list[str]:
-    terminals = _first_terminals(node, visited_rules=set())
-
-    descriptions: list[str] = []
-    seen: set[str] = set()
-
-    for terminal in terminals:
-        description = _describe_terminal(terminal)
-
-        if description not in seen:
-            seen.add(description)
-            descriptions.append(description)
-
-    return descriptions
-
-
-def _first_terminals(
-    node: GrammarNode,
-    visited_rules: set[str],
-) -> list[Terminal]:
-    """
-    Finds terminals that could legally appear at the beginning of `node`.
-
-    This is similar to computing a small FIRST set for the failed grammar node.
-    """
-    match node:
-        case Terminal():
-            return [node]
-
-        case Alternative(options=options):
-            return _flatten(
-                _first_terminals(option, visited_rules.copy())
-                for option in options
-            )
-
-        case Sequence(children=children):
-            terminals: list[Terminal] = []
-
-            for child in children:
-                terminals.extend(
-                    _first_terminals(child, visited_rules.copy())
-                )
-
-                # A required child must occur before later sequence children.
-                if not _is_optional(child):
-                    break
-
-            return terminals
-
-        case OptionalNode(child=child) | Repeat(child=child):
-            return _first_terminals(child, visited_rules)
-
-        case NonTerminal(name=name, rule=rule):
-            if rule is None or name in visited_rules:
-                return []
-
-            visited_rules.add(name)
-            return _first_terminals(rule.body, visited_rules)
-
-        case _:
-            return []
-
-
-def _is_optional(node: GrammarNode) -> bool:
-    match node:
-        case OptionalNode() | Repeat():
-            return True
-
-        case Alternative(options=options):
-            return any(_is_optional(option) for option in options)
-
-        case Sequence(children=children):
-            return all(_is_optional(child) for child in children)
-
-        case NonTerminal(rule=rule):
-            return rule is not None and _is_optional(rule.body)
-
-        case _:
-            return False
-
-
-def _describe_terminal(terminal: Terminal) -> str:
-    token_kind = terminal.child
-    name = token_kind.name
-
-    friendly_name = TOKEN_NAMES.get(name)
-    if friendly_name is not None:
-        return friendly_name
-
-    # Keywords such as Define, While and Return are clearer as literals.
-    value = getattr(token_kind, "value", None)
-
-    if isinstance(value, str) and token_kind.name == Definitions.String.name:
-        return repr(value)
-
-    return _split_enum_name(name)
+def _describe_token_kind(
+    kind: Definitions | GenericRules,
+) -> str:
+    return TOKEN_NAMES.get(
+        kind.name,
+        _split_enum_name(kind.name),
+    )
 
 
 def _describe_found_token(token: Token[Definitions]) -> str:
-    kind_name = token.kind.name
-    literal = token.literal
+    if token.kind.name == "EOF":
+        return "end of file"
 
-    if kind_name == "EOF":
-        return "the end of the file"
-
-    if kind_name == "Newline":
+    if token.kind.name == "Newline":
         return "a newline"
 
-    if literal:
-        return repr(literal)
+    if token.literal:
+        return repr(token.literal)
 
-    return _split_enum_name(kind_name)
+    return _split_enum_name(token.kind.name)
 
 
 def _split_enum_name(name: str) -> str:
-    words: list[str] = []
+    result = ""
 
-    for character in name:
-        if character.isupper() and words:
-            words.append(" ")
-        words.append(character.lower())
+    for char in name:
+        if char.isupper() and result:
+            result += " "
+        result += char.lower()
 
-    return "".join(words)
+    return result
+
+
+CLOSING_DELIMITERS = {
+    Definitions.CloseBracket,
+    Definitions.CloseSquareBracket,
+    Definitions.CloseCurlyBracket,
+}
 
 
 def _join_expected(expected: list[str], limit: int = 5) -> str:
     if len(expected) > limit:
         remaining = len(expected) - limit
-        expected = expected[:limit] + [f"{remaining} other possibilities"]
+        expected = expected[:limit] + [
+            f"{remaining} other possibilities"
+        ]
 
     if len(expected) == 1:
         return expected[0]
@@ -294,15 +260,6 @@ def _join_expected(expected: list[str], limit: int = 5) -> str:
         return f"{expected[0]} or {expected[1]}"
 
     return ", ".join(expected[:-1]) + f", or {expected[-1]}"
-
-
-def _flatten(groups: Iterable[list[Terminal]]) -> list[Terminal]:
-    result: list[Terminal] = []
-
-    for group in groups:
-        result.extend(group)
-
-    return result
 
 
 def _visual_padding(text: str, tab_size: int = 4) -> int:

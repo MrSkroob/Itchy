@@ -4,7 +4,7 @@ from tools.ast_printer import print_ast
 from itchy.errors import format_syntax_error, format_compiler_error
 from itchy.assembler import Assembler, CompilerError
 from itchy.tokenizer import Tokenizer, Definitions
-from itchy.dummy_nodes import AGGRESSIVE_STRATEGIES
+from itchy.dummy_nodes import ANALYSIS_STRATEGIES
 import argparse
 
 import os
@@ -38,17 +38,17 @@ def compile(file: str, output: str, target: str):
         except (ParseError, CompilerError) as e:
             if isinstance(e, ParseError):
                 fail_state = parser.fail_state
-                print_ast(parser.deepest_partial)
+                # print_ast(parser.deepest_partial)
 
                 if fail_state is not None:
-                    print(format_syntax_error(fail_state, source, file))
+                    print(format_syntax_error(fail_state, parser.expected, source, file))
             else:
                 print(format_compiler_error(e, source, file))
 
             return False
-    print([i for i in parser.speculative_errors])
-    print([i for i in parser.accumulated_errors])
-    print([i.error_node.span.start.line for i in assembler.errors])
+    # print([i for i in parser.speculative_errors])
+    # print([i for i in parser.accumulated_errors])
+    # print([i.error_node.span.start.line for i in assembler.errors])
     return True
 
 

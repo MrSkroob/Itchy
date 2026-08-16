@@ -480,29 +480,28 @@ class Parser:
 
                     error_pos = min(len(error.tokens) - 1, error.pos)
 
-                    can_delete = len(error.tokens) > 0
+                    if len(error.tokens) == 0:
+                        raise
+
                     line = 0
                     # we made more progress, try to delete current line.
 
                     if error_pos > progress:
                         progress = error_pos
                         tokens = working_tokens.copy()
-                        if can_delete:
-                            # don't record error if it's a dummy token
-                            if not e.tokens[error_pos].dummy_token:
-                                self.accumulated_errors.append(e)
+                        # don't record error if it's a dummy token
+                        if not e.tokens[error_pos].dummy_token:
+                            self.accumulated_errors.append(e)
 
-                            line = error.tokens[error_pos].line - offset
+                        line = error.tokens[error_pos].line - offset
                         shift = 0
                         tries = 0
                     else:
                         # delete the line above until something works.
-                        if can_delete:
-                            line = (error.tokens[error_pos].line - offset) + shift
+                        line = (error.tokens[error_pos].line - offset) + shift
                         shift -= 1
 
-                    if can_delete:
-                        working_tokens = [i for i in working_tokens if i.line != line]
+                    working_tokens = [i for i in working_tokens if i.line != line]
 
                     # bad hack :(
                     # the error reporter sometimes reports the incorrect line by 1, so we need to test
