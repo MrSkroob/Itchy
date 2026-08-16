@@ -1504,7 +1504,7 @@ class Assembler:
                 expr.callee
             )
         )
-        if expr.callee not in SCRATCH_BLOCKS:
+        if expr.callee not in SCRATCH_BLOCKS and expr.callee in self.procedures:
             setup = BlockRange(None, None)
 
             push_return_frame = self.emit_function_call(FunctionCallStmt(
