@@ -402,9 +402,9 @@ class Assembler:
 
         final_return_statement: ReturnStmt | None = None
 
-        for stmt in statements:
+        for index, stmt in enumerate(statements):
 
-            if isinstance(stmt, ReturnStmt):
+            if isinstance(stmt, ReturnStmt) and index == len(statements) - 1:
                 final_return_statement = stmt
             
             emitted = self.emit_stmt(stmt, parent, context)

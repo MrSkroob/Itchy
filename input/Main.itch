@@ -1,11 +1,15 @@
-var stink
+bool c
 
 
-event event_whenflagclicked() {
-    event_broadcast("message1")
+define foo(a: number, b: string) {
+    if true {
+        return
+    }
+
+    return 0
 }
 
 
-event event_whenbroadcastreceived("message1") {
-    event_broadcast(
+event event_whenflagclicked() {
+    // foo()
 }

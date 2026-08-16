@@ -44,7 +44,7 @@ def compile(file: str, output: str, target: str):
 
             return False
 
-    print([i for i in assembler.variable_map])
+    # print([i for i in assembler.variable_map])
     # print([i for i in parser.speculative_errors])
     # print([i for i in parser.accumulated_errors])
     # print([(i.error_node.span.start.line, i.message) for i in assembler.errors])
