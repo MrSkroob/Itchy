@@ -66,6 +66,7 @@ PLACE_HOLDER_0 = ScratchInput((InputType.SHADOW_ONLY, (DataType.NUMBER, "0")), V
 
 class CompilerErrorCodes(StrEnum):
     UNDEFINED_VARIABLE = "undefined-variable"
+    REMOVE_RETURN = "remove-return"
 
 
 class CompilerError(Exception):
@@ -439,7 +440,7 @@ class Assembler:
 
     def emit_return(self, stmt: ReturnStmt, parent: StrOptional, context: StrOptional) -> BlockRange:
         if context is None or not self.procedures.get(context):
-            return self.raise_or_return(SyntaxError("'return' outside of function", stmt))
+            return self.raise_or_return(SyntaxError("'return' outside of function", stmt, CompilerErrorCodes.REMOVE_RETURN))
 
         proc_data = self.procedures[context]
         return_variable = proc_data.name + ":return"
@@ -778,7 +779,7 @@ class Assembler:
             
     def emit_function_def(self, stmt: FunctionDefStmt, parent: StrOptional) -> BlockRange:
         if parent is not None:
-            return self.raise_or_return(SyntaxError("Cannot define function inside of another", stmt))
+            return self.raise_or_return(SyntaxError("Cannot define function inside of another", stmt, CompilerErrorCodes.REMOVE_RETURN))
 
         self.define_variable(False, "var", stmt.name + ":return", None)
 
@@ -1541,7 +1542,7 @@ class Assembler:
                     try:
                         fields[field.name] = (arg_expr.ref.root, self.get_variable(arg_expr.ref.root))
                     except NameError:
-                        error = NotDefinedError(f"{arg_expr.ref.root} not defined.", arg_expr)
+                        error = UnboundError(f"{arg_expr.ref.root} not defined.", arg_expr)
                         if not self.compile_with_warnings:
                             return self.raise_or_return(
                                 error,
