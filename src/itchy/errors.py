@@ -1,6 +1,49 @@
+from enum import StrEnum
+from typing import Any
 from itchy.parser import ExpectedState, ParseError
 from itchy.tokenizer import Token, Definitions, GenericRules
-from itchy.assembler import CompilerError
+from itchy.shared_templates import ASTNode
+
+
+
+class CompilerErrorCodes(StrEnum):
+    UNDEFINED_VARIABLE = "undefined-variable"
+    REMOVE_RETURN = "remove-return"
+
+
+class CompilerError(Exception):
+    def __init__(self, message: str, error_node: ASTNode | None, error_code: str | None=None, data: dict[str, Any]={}) -> None:
+        self.error_node = error_node
+        self.message = message
+        self.error_code = error_code
+        self.data = data
+        super().__init__(message)
+
+
+class CompilerWarning(CompilerError):
+    pass
+
+
+class UnboundError(CompilerWarning):
+    def __init__(self, message: str, error_node: ASTNode | None, *,
+                  error_code: str | None = CompilerErrorCodes.UNDEFINED_VARIABLE, data: dict[str, Any]={}) -> None:
+        super().__init__(message, error_node, error_code, data)
+
+
+class ArgumentError(CompilerError):
+    pass
+
+
+class NotDefinedError(CompilerError):
+    pass
+
+
+class InvalidTypeError(CompilerError):
+    pass
+
+
+class SyntaxError(CompilerError):
+    pass
 
 
 EXPECTED_PRIORITY: dict[Definitions, int] = {

@@ -1,8 +1,10 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from itchy.tree import ParsedNode
 from itchy.parser import Token, Sequence, Repeat, OptionalNode, Alternative
+from itchy.shared_templates import ASTNode
 from itchy.tokenizer import GenericRules, Definitions, Tokenizer
 from itchy.shared_templates import SourceSpan, SourcePosition
+from itchy.errors import CompilerWarning
 from typing import Callable
 import ast
 
@@ -42,11 +44,6 @@ def collect_comment_tokens(source: str) -> list[SemanticToken]:
         if token.kind == Definitions.Comment
     ]
 
-
-@dataclass(frozen=True, kw_only=True)
-class ASTNode:
-    span: SourceSpan = field(default=SourceSpan(SourcePosition(-1, -1), SourcePosition(-1, -1)), kw_only=True, repr=False)
-    dummy: bool=False
 
 class Stmt(ASTNode):
     pass
@@ -380,6 +377,8 @@ class ASTBuilder:
         self.argument_index: int = 0
         self.function_definitions: dict[FunctionDefStmt, SourceSpan] = {}
         self.var_definitions: dict[VarDefStmt, SourceSpan] = {}
+
+        self.warnings = {}
 
     def reset(self) -> None:
         self.argument_index = 0

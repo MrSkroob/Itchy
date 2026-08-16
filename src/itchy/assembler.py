@@ -9,15 +9,16 @@ import os
 
 from typing import TypeVar
 from dataclasses import dataclass, field
-from enum import Enum, StrEnum
+from enum import Enum
 
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
 from itchy.shared_templates import VariableTypes, DataType, SPRITE_TEMPLATE, COSTUME_TEMPLATE, VARIABLE_TYPE_TO_USER_TYPES
+from itchy.errors import CompilerError, CompilerErrorCodes, UnboundError, ArgumentError, NotDefinedError, InvalidTypeError, SyntaxError
 from itchy.scratch_blocks import SCRATCH_BLOCKS, Block, Reporter, Event, Menu
 from itchy.itch_ast import \
-    ASTNode, Param, \
+    Param, \
     Stmt, VarRef, BlockStmt, IfStmt, BreakStmt, ForInStmt, WhileStmt, AssignStmt, ReturnStmt, VarDefStmt, ForRangeStmt, FunctionCallStmt, FunctionDefStmt, EventHandlerStmt, \
     IfBranch, Expr, NumberExpr, BoolExpr, StringExpr, VarExpr, UnaryOpExpr, BinaryOpExpr, TableExpr, FunctionCallExpr, Program
 
@@ -63,45 +64,6 @@ class InputType(Enum):
 
 PLACE_HOLDER_0 = ScratchInput((InputType.SHADOW_ONLY, (DataType.NUMBER, "0")), VariableTypes.NUMBER, True)
 
-
-class CompilerErrorCodes(StrEnum):
-    UNDEFINED_VARIABLE = "undefined-variable"
-    REMOVE_RETURN = "remove-return"
-
-
-class CompilerError(Exception):
-    def __init__(self, message: str, error_node: ASTNode | None, error_code: str | None=None, data: dict[str, Any]={}) -> None:
-        self.error_node = error_node
-        self.message = message
-        self.error_code = error_code
-        self.data = data
-        super().__init__(message)
-
-
-class CompilerWarning(CompilerError):
-    pass
-
-
-class UnboundError(CompilerWarning):
-    def __init__(self, message: str, error_node: ASTNode | None, *,
-                  error_code: str | None = CompilerErrorCodes.UNDEFINED_VARIABLE, data: dict[str, Any]={}) -> None:
-        super().__init__(message, error_node, error_code, data)
-
-
-class ArgumentError(CompilerError):
-    pass
-
-
-class NotDefinedError(CompilerError):
-    pass
-
-
-class InvalidTypeError(CompilerError):
-    pass
-
-
-class SyntaxError(CompilerError):
-    pass
 
 
 @dataclass

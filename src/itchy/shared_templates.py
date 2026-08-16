@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum, Enum
 
 
@@ -15,6 +15,13 @@ class SourcePosition:
 class SourceSpan:
     start: SourcePosition
     end: SourcePosition
+
+
+@dataclass(frozen=True, kw_only=True)
+class ASTNode:
+    span: SourceSpan = field(default=SourceSpan(SourcePosition(-1, -1), SourcePosition(-1, -1)), kw_only=True, repr=False)
+    dummy: bool=False
+
 
 
 SPRITE_TEMPLATE: dict[str, Any] = {
