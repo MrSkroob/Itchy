@@ -1884,7 +1884,7 @@ class Assembler:
             )
         else:
             try:
-                var_id = self.get_variable(ref, context, False)
+                var_id = self.get_variable(ref, context)
             except NameError:
                 error = UnboundError(f"{ref.root} is not defined.", ref, data={"name": ref.root})
                 if not self.compile_with_warnings:
