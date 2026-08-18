@@ -231,7 +231,7 @@ class Assembler:
         symbol_type = SymbolType.VARIABLE
         
         if (name, context) in self.variable_map:
-            if context is not None:
+            if context is not None and context in self.procedures:
                 symbol_type = SymbolType.PARAMETER
             key = (name, context)
             # raise NameError(f"variable {name} is not defined!")
@@ -498,6 +498,15 @@ class Assembler:
                     self.overridable.remove(name)
 
                 var_id = self.define_variable(shared, type_name, name, None, stmt.span)
+
+                self.symbols.append(SymbolOccurence(
+                    span=stmt.span,
+                    definition_location=stmt.span,
+                    context=None,
+                    symbol_type=SymbolType.VARIABLE,
+                    name=name
+                ))
+
                 self.flag_non_referenced_variable(var_id, stmt, context)
                 return BlockRange(None, None)
             case AssignStmt(target=target, value=value):
@@ -2073,11 +2082,16 @@ class Assembler:
     def _serialise_broadcasts(self) -> dict[str, str]:
         return {broadcast_id: name for name, broadcast_id in self.messages.items()}
 
-    def get_stage(self, f: zipfile.ZipFile) -> dict[str, dict[str, tuple[str, Any] | str]]:
+
+    def get_targets(self, f: zipfile.ZipFile) -> list[dict[str, Any]]:
         project = json.loads(f.read("project.json").decode("utf-8"))
         targets: list[dict[str, Any]] = project.get("targets", [])
+        return targets
+
+    def get_stage(self, f: zipfile.ZipFile) -> dict[str, dict[str, tuple[str, Any] | str]]:
+        targets = self.get_targets(f)
         for candidate in targets:
-            if candidate.get("isStage", True):
+            if candidate.get("isStage"):
                 return candidate
         raise CompilerError(f"No stage target in project file.", None)
 
@@ -2088,6 +2102,7 @@ class Assembler:
         2. *Keeps* stage/global data
         """
         self.messages = {}
+        self.variables = {}
         self.overridable = set()
 
         if target is not None:
@@ -2104,13 +2119,18 @@ class Assembler:
                 self.messages[broadcast_id] = broadcast_name
 
         # we do not clear shared variables/lists, 
-        for variable_id, variable_data in global_variables.items():
+        for variable_id, variable_data in list(global_variables.items()):
             if not variable_data.shared:
                 continue
 
             # do not add to existing variables if WE were the ones defining it.
             if variable_data.uri == self.uri:
-                continue
+                if variable_data.id in self.variables:
+                    del self.variables[variable_data.id]
+                    del self.variable_map[(variable_data.name, None)]
+                    # ugly bad hack for the lsp
+                    # is a quick and dirty way to delete variables that may not exist globally anymore. 
+                    del global_variables[variable_data.name]
             
             self.variable_map[(variable_data.name, variable_data.context)] = variable_id
             self.variables[variable_id] = VariableData(
