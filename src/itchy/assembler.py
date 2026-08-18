@@ -1304,8 +1304,9 @@ class Assembler:
         if target.slice_expr is not None:
             try:
                 var_id = self.get_variable(target, context)
-                self.non_referenced_variables[(target.root, context)] = VarDefStmt(
-                    self.variables[var_id].var_type.value, target.root, False, span=target.span) 
+                variable = self.variables[var_id]
+                self.non_referenced_variables[(target.root, variable.context)] = VarDefStmt(
+                    variable.var_type.value, target.root, False, span=target.span) 
             except NameError:
                 error = UnboundError(f"{target.root} is not defined.", target, data={"name": target.root})
                 if not self.compile_with_warnings:
@@ -1342,7 +1343,8 @@ class Assembler:
             # if 
             try:
                 var_id = self.get_variable(target, context) 
-                self.non_referenced_variables[(target.root, context)] = VarDefStmt(
+                variable = self.variables[var_id]
+                self.non_referenced_variables[(target.root, variable.context)] = VarDefStmt(
                     self.variables[var_id].var_type.value, target.root, False, span=target.span) 
             except NameError:
                 error = UnboundError(f"{target.root} is not defined.", target, data={"name": target.root})
