@@ -2107,13 +2107,14 @@ class Assembler:
         for variable_id, variable_data in global_variables.items():
             if not variable_data.shared:
                 continue
-            # honestly context should always be none but... eh.
+
+            # do not add to existing variables if WE were the ones defining it.
             if variable_data.uri == self.uri:
                 continue
             
             self.variable_map[(variable_data.name, variable_data.context)] = variable_id
             self.variables[variable_id] = VariableData(
-                self.uri,
+                variable_data.uri,
                 variable_data.name,
                 variable_data.id,
                 variable_data.context,
