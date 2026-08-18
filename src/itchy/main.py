@@ -1,7 +1,7 @@
 from itchy.parser import Parser, ParseError
 from itchy.itch_ast import ASTBuilder, Program
 from tools.ast_printer import print_ast
-from itchy.errors import format_syntax_error, format_compiler_error
+from itchy.errors import format_syntax_error, format_compiler_error, get_message
 from itchy.assembler import Assembler, CompilerError
 from itchy.tokenizer import Tokenizer, Definitions
 from itchy.dummy_nodes import ANALYSIS_STRATEGIES
@@ -16,7 +16,7 @@ from pathlib import Path
 ROOT = Path(__file__).parent.parent
 
 
-parser = Parser()
+parser = Parser(skip_bad_tokens=True, skip_rules_on_fail=ANALYSIS_STRATEGIES)
 ast_builder = ASTBuilder()
 assembler = Assembler()
 
@@ -37,6 +37,9 @@ def compile(file: str, output: str, target: str):
             # assembler.emit_program(tree)
             # print_ast(tree)
         except (ParseError, CompilerError) as e:
+            for i in parser.accumulated_errors:
+                print(get_message(i, i.expected))
+
             if isinstance(e, ParseError):
                 print(format_syntax_error(e, parser.expected, source, file))
             else:

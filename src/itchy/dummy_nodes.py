@@ -122,6 +122,20 @@ def make_wrap(line: int = 1, char: int = 1):
     )
 
 
+def dummy_token_factory(kind: Definitions, value: str):
+    def dummy_token(line: int=1, char: int=1):
+        return (
+            Token(
+                kind,
+                value,
+                line,
+                char,
+                dummy_token=True
+            ),
+        )
+    return dummy_token
+
+
 def make_stat(line: int=1, char: int=1):
     """
     soooo don't use this normally, but this might work for the semantic parser in order to not die when you
@@ -153,6 +167,7 @@ def make_stat(line: int=1, char: int=1):
                 dummy_node=True
             ),
         ),
+        dummy_node=True
     )
 
     return (
@@ -188,6 +203,12 @@ AGGRESSIVE_STRATEGIES: Strategy = {
 # strategies where we will try not to "add" syntax that changes meaning.
 ANALYSIS_STRATEGIES: Strategy = {
     "primary": make_dummy_primary,
-    "stat": make_stat,
-    "wrap": make_wrap
+    # "stat": make_stat,
+    "varlist1": make_paramlist,
+    # "wrap": make_wrap,
+    # "chunk": make_chunk,
+    Definitions.CloseCurlyBracket: dummy_token_factory(Definitions.CloseCurlyBracket, "}"),
+    Definitions.OpenCurlyBracket: dummy_token_factory(Definitions.OpenCurlyBracket, "{"),
+    Definitions.CloseCurlyBracket: dummy_token_factory(Definitions.CloseCurlyBracket, "}"),
+    Definitions.OpenBracket: dummy_token_factory(Definitions.OpenBracket, "(")
 }

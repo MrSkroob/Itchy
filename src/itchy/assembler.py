@@ -135,6 +135,9 @@ class Assembler:
         # variable name -> id
         self.variable_map: dict[tuple[str, StrOptional], str] = {}
 
+        # set of variable ids that can be overriden because they were defined in the project.
+        self.overridable: set[str] = set()
+
         # name, id
         self.messages: dict[str, str] = {}
 
@@ -482,8 +485,10 @@ class Assembler:
                     return self.raise_or_return(InvalidTypeError(f"Invalid variable type: '{type_name}'.\
                                                                  Scratch only permits var, list and bool.", stmt))
 
-                if (name, None) in self.variable_map:
+                if name not in self.overridable and (name, None) in self.variable_map:
                     return self.raise_or_return(DuplicateDefinitionError(f"Variable '{stmt.name}' shadowed by variable of same name.", stmt))
+
+                self.overridable.remove(name)
 
                 var_id = self.define_variable(shared, type_name, name, None, stmt.span)
                 self.flag_non_referenced_variable(var_id, stmt, context)
@@ -2076,6 +2081,7 @@ class Assembler:
         2. *Keeps* stage/global data
         """
         self.messages = {}
+        self.overridable.clear()
 
         if target is not None:
             with zipfile.ZipFile(target, "r") as f:
@@ -2084,6 +2090,7 @@ class Assembler:
             for var_id, var_data in stage["variables"].items():
                 self.variable_map[(var_data[0], None)] = var_id
                 self.variables[var_id] = VariableData(var_data[0], var_id, None, VariableTypes.VAR, False, True, var_data[1], None)
+                self.overridable.add(var_data[0])
 
             for broadcast_id, broadcast_name in stage["broadcasts"].items():
                 assert isinstance(broadcast_name, str)

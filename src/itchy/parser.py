@@ -41,13 +41,14 @@ class ParseResult():
 
 
 class ParseError(Exception):
-    def __init__(self, tokens: list[Token[Definitions]], pos: int, rule_start: int, failed_rule: Rule, node: GrammarNode, 
+    def __init__(self, tokens: list[Token[Definitions]], pos: int, rule_start: int, failed_rule: Rule, node: GrammarNode, expected: ExpectedState,
                  previous_valid_tree: ParseResult | None=None) -> None:
         self.tokens = tokens
         self.pos = pos
         self.node = node
         self.rule = failed_rule
         self.rule_start = rule_start
+        self.expected = expected
         self.previous_valid_tree: ParseResult | None = previous_valid_tree
         super().__init__()
 
@@ -73,7 +74,8 @@ class Parser:
     def __init__(self, *, skip_bad_tokens: bool=False, skip_rules_on_fail: Strategy=dict()) -> None:
         """
         skip_rules_on_fail makes the parser skip the rule entirely if that rule fails.
-        rule_blacklist makes the parser not evaluate the rule at all.
+        rule_blacklist makes the parser not evaluate the rule at all.\n
+        Warning: if you do exact matches, then the parser will always assume there's a syntax error there (but will still continue)
         """
 
         self.rules = build_parse_tree()
@@ -144,7 +146,7 @@ class Parser:
 
     def make_error(self, tokens: list[Token[Definitions]], pos: int, rule_start: int, failed_rule: Rule,
                     node: GrammarNode, previous_valid_tree: ParseResult | None=None):
-        error = ParseError(tokens, pos, rule_start, failed_rule, node, previous_valid_tree)
+        error = ParseError(tokens, pos, rule_start, failed_rule, node, ExpectedState(0, self.expected.items.copy()), previous_valid_tree)
         
         if self.furthest_error is None or pos > self.furthest_error.pos:
             self.furthest_error = error
@@ -206,7 +208,15 @@ class Parser:
                     return ParseResult(tokens[pos], pos + 1)
                 self.record_expected(node.child, pos)
                 debug_print(f"{print_token_safe(tokens, pos)}. Terminal rule not matched {value.name}")
-                raise self.make_error(tokens, pos, start_pos, current_rule, node)
+
+                error = self.make_error(tokens, pos, start_pos, current_rule, node)
+
+                if value.name in self.skip_rules_on_fail:
+                    print("ee")
+                    self.accumulated_errors.append(error)
+                    return ParseResult(tokens[pos], pos + 1)
+
+                raise error
             
             case NonTerminal(_, rule):
                 if rule is None:
@@ -414,10 +424,6 @@ class Parser:
 
 
     def parse(self, root: Rule, tokens: list[Token[Definitions]]) -> ParseResult:
-        self.furthest_error = None
-        self.deepest_partial = None
-        self.accumulated_errors = []
-        self.speculative_errors = {}
         self.reset_expected()
         self.rule_stack.clear()
 
@@ -429,6 +435,12 @@ class Parser:
         # Reset per-parse state so a Parser instance can be reused across
         # multiple `read()` calls without leaking stale error/recovery info
         # from a previous file into the next one.
+
+        self.furthest_error = None
+        self.deepest_partial = None
+        self.accumulated_errors = []
+        self.speculative_errors = {}
+
         self.halt = False
         self.recovered_from_error = False
         root = get_root_node(self.rules)
@@ -447,7 +459,6 @@ class Parser:
             shift = 0
             offset = 0
             working_tokens = tokens.copy()
-  
 
             while True:
                 try:
@@ -473,12 +484,16 @@ class Parser:
                         progress = error_pos
                         tokens = working_tokens.copy()
                         # don't record error if it's a dummy token
-                        if not e.tokens[error_pos].dummy_token:
-                            self.accumulated_errors.append(e)
 
                         line = error.tokens[error_pos].line - offset
                         shift = 0
                         tries = 0
+
+                        if not e.tokens[error_pos].dummy_token:
+                            # self.accumulated_errors = list(self.speculative_errors.values()) + \
+                                # [i for i in self.accumulated_errors if i.pos not in self.speculative_errors]
+                            # self.speculative_errors = {}
+                            self.accumulated_errors.append(e)
                     else:
                         # delete the line above until something works.
                         line = (error.tokens[error_pos].line - offset) + shift
