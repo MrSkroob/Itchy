@@ -72,9 +72,10 @@ class SymbolType(StrEnum):
     EVENT = "event"
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class SymbolOccurence:
     span: SourceSpan
+    definition_location: SourceSpan | None
     context: StrOptional
     symbol_type: SymbolType
     name: str
@@ -234,12 +235,15 @@ class Assembler:
 
         self.flag_referenced_variable(self.variable_map[key], context)
 
+        variable = self.variables[self.variable_map[key]]
+
         self.symbols.append(
             SymbolOccurence(
-                stmt.span,
-                context,
-                symbol_type,
-                stmt.root
+                span=stmt.span,
+                definition_location=variable.definition_location,
+                context=context,
+                symbol_type=symbol_type,
+                name=stmt.root
             )
         )
     
@@ -423,27 +427,6 @@ class Assembler:
                     )
                 )
 
-        # append all usages of a variable that's not referenced.
-        # for symbol in self.symbols:
-        #     if symbol.symbol_type not in [SymbolType.PARAMETER, SymbolType.VARIABLE]:
-        #         continue
-        #     key = (symbol.name, symbol.context)
-
-        #     if symbol.context not in self.procedures:
-        #         key = (symbol.name, None)
-
-        #     if key in self.non_referenced_variables:
-        #         key2 = (symbol.span.start.line, symbol.span.start.character)
-        #         if key2 in seen_locations:
-        #             continue
-        #         seen_locations.add(key2)
-        #         self.errors.append(
-        #             NotReferencedError(
-        #                 f"{symbol.name} is not referenced",
-        #                 error_node = ASTNode(span=symbol.span)
-        #             )
-        #         )
-    
     
     def emit_sequence(
             self,
@@ -724,23 +707,34 @@ class Assembler:
         return block_range
             
     def emit_function_call(self, stmt: FunctionCallStmt, parent: StrOptional, context: StrOptional) -> BlockRange:
-        self.symbols.append(
-            SymbolOccurence(
-                stmt.span,
-                context,
-                SymbolType.FUNCTION,
-                stmt.callee
-            )
-        )
 
         if stmt.callee not in self.procedures:
             # is either a custom scratch block or a hallucination :v
             block_range = self.emit_scratch_block(stmt, parent, context)
             if block_range is None:
                 return self.raise_or_return(NotDefinedError(f"Procedure {stmt.callee} is not defined and is not a valid scratch block.", stmt))
+            self.symbols.append(
+                SymbolOccurence(
+                    span=stmt.span,
+                    definition_location=None,
+                    context=context,
+                    symbol_type=SymbolType.FUNCTION,
+                    name=stmt.callee
+                )
+            )
             return block_range
 
         info = self.procedures[stmt.callee]
+
+        self.symbols.append(
+            SymbolOccurence(
+                span=stmt.span,
+                definition_location=info.definition_location,
+                context=context,
+                symbol_type=SymbolType.FUNCTION,
+                name=stmt.callee
+            )
+        )
 
         if self.count_args(stmt.args) != len(info.argument_ids):
             return self.raise_or_return(ArgumentError(
@@ -820,10 +814,11 @@ class Assembler:
 
         self.symbols.append(
             SymbolOccurence(
-                stmt.span,
-                context,
-                SymbolType.EVENT,
-                stmt.name
+                span=stmt.span,
+                definition_location=None,
+                context=context,
+                symbol_type=SymbolType.EVENT,
+                name=stmt.name
             )
         )
 
@@ -918,10 +913,11 @@ class Assembler:
 
         self.symbols.append(
             SymbolOccurence(
-                stmt.span,
-                None,
-                SymbolType.FUNCTION,
-                stmt.name
+                span=stmt.span,
+                definition_location=stmt.span,
+                context=None,
+                symbol_type=SymbolType.FUNCTION,
+                name=stmt.name
             )
         )
         self.define_variable(False, "var", stmt.name + ":return", None, None)
@@ -962,10 +958,11 @@ class Assembler:
             var_id = self.define_variable(False, param.type_name, param.name, stmt.name, param.span)
             self.flag_non_referenced_variable(var_id, param, stmt.name)
             self.symbols.append(SymbolOccurence(
-                param.span,
-                stmt.name,
-                SymbolType.PARAMETER,
-                param.name
+                span=param.span,
+                definition_location=param.span,
+                context=stmt.name,
+                symbol_type=SymbolType.PARAMETER,
+                name=param.name
             ))
 
         prototype = self.blocks[prototype_id]
@@ -1564,20 +1561,19 @@ class Assembler:
 
         # return expression
     def emit_function_expr(self, expr: FunctionCallExpr, context: StrOptional, block_parent: BlockRange, parent: StrOptional) -> ScratchInput:
-        # if expr.callee not in SCRATCH_BLOCKS:
-        #     raise CompilerError(
-        #         f"{expr.callee} is not a valid scratch block",
-        #         expr
-        #     )
-        self.symbols.append(
-            SymbolOccurence(
-                expr.span,
-                context,
-                SymbolType.FUNCTION,
-                expr.callee
-            )
-        )
         if expr.callee not in SCRATCH_BLOCKS and expr.callee in self.procedures:
+            proc_info = self.procedures[expr.callee]
+
+            self.symbols.append(
+                SymbolOccurence(
+                    span=expr.span,
+                    definition_location=proc_info.definition_location,
+                    context=context,
+                    symbol_type=SymbolType.FUNCTION,
+                    name=expr.callee
+                )
+            )
+
             setup = BlockRange(None, None)
 
             push_return_frame = self.emit_function_call(FunctionCallStmt(
@@ -1655,6 +1651,16 @@ class Assembler:
             return return_input
         else:
             block_data = SCRATCH_BLOCKS[expr.callee]
+
+            self.symbols.append(
+                SymbolOccurence(
+                    span=expr.span,
+                    definition_location=None,
+                    context=context,
+                    symbol_type=SymbolType.FUNCTION,
+                    name=expr.callee
+                )
+            )
 
             if not isinstance(block_data, Reporter):
                 return self.raise_or_return(CompilerError(
@@ -1882,14 +1888,15 @@ class Assembler:
             else:
                 opcode = "argument_reporter_string_number"
 
-            self.flag_referenced_variable(self.get_variable(ref, context), context)
+            self.flag_referenced_variable(procedure_info.argument_ids[arg_index], context)
 
             self.symbols.append(
                 SymbolOccurence(
-                    ref.span,
-                    context,
-                    SymbolType.PARAMETER,
-                    ref.root
+                    span=ref.span,
+                    definition_location=self.variables[procedure_info.argument_ids[arg_index]].definition_location,
+                    context=context,
+                    symbol_type=SymbolType.VARIABLE,
+                    name=ref.root
                 )
             )
 
@@ -1923,10 +1930,11 @@ class Assembler:
 
             self.symbols.append(
                 SymbolOccurence(
-                    ref.span,
-                    context,
-                    SymbolType.VARIABLE,
-                    ref.root
+                    span=ref.span,
+                    definition_location=self.variables[var_id].definition_location,
+                    context=context,
+                    symbol_type=SymbolType.VARIABLE,
+                    name=ref.root
                 )
             )
             
