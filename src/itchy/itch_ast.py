@@ -746,28 +746,17 @@ class ASTBuilder:
     def build_vardefstat(self, node: ParsedNode) -> VarDefStmt:
         shared = has_token(node, "Shared")
     
-    
         type_token = find_first_token(node, "Type")
         symbol_token = find_first_token(node, "Symbol")
     
         self.emit_token(type_token, "type")
         self.emit_token(symbol_token, "variable", ("declaration",))
     
-        start = type_token.span.start
-    
-        if shared:
-            shared_token = find_first_token(node, "Shared")
-            # self.emit_token(shared_token, "keyword")
-            start = shared_token.span.start
-
         stmt = VarDefStmt(
             type_token.literal,
             symbol_token.literal,
             shared,
-            span=SourceSpan(
-                start=start,
-                end=symbol_token.span.end
-            ), dummy=node.dummy_node
+            span=symbol_token.span
         )
 
         self.var_definitions[stmt] = stmt.span
