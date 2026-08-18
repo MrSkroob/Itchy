@@ -138,7 +138,7 @@ class Assembler:
         self.costumes: set[str] = set()
         self.errors: list[CompilerError] = []
 
-        self.non_referenced_variables: dict[tuple[str, StrOptional], VarDefStmt | Param] = {}
+        self.non_referenced_variables: dict[tuple[str, StrOptional], VarDefStmt | Param | VarRef] = {}
 
         self.symbols: list[SymbolOccurence] = []
 
@@ -282,6 +282,8 @@ class Assembler:
         key = (name, context)
 
         if key in self.variable_map:
+            if key in self.non_referenced_variables:
+                del self.non_referenced_variables[key]
             return self.variable_map[key]
 
         var_id = self.new_id()
@@ -1301,7 +1303,9 @@ class Assembler:
         
         if target.slice_expr is not None:
             try:
-                var_id = self.get_variable(target, context, False)
+                var_id = self.get_variable(target, context)
+                self.non_referenced_variables[(target.root, context)] = VarDefStmt(
+                    self.variables[var_id].var_type.value, target.root, False, span=target.span) 
             except NameError:
                 error = UnboundError(f"{target.root} is not defined.", target, data={"name": target.root})
                 if not self.compile_with_warnings:
@@ -1337,7 +1341,9 @@ class Assembler:
         else:
             # if 
             try:
-                var_id = self.get_variable(target, context, False) 
+                var_id = self.get_variable(target, context) 
+                self.non_referenced_variables[(target.root, context)] = VarDefStmt(
+                    self.variables[var_id].var_type.value, target.root, False, span=target.span) 
             except NameError:
                 error = UnboundError(f"{target.root} is not defined.", target, data={"name": target.root})
                 if not self.compile_with_warnings:
