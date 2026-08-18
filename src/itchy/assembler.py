@@ -488,7 +488,8 @@ class Assembler:
                 if name not in self.overridable and (name, None) in self.variable_map:
                     return self.raise_or_return(DuplicateDefinitionError(f"Variable '{stmt.name}' shadowed by variable of same name.", stmt))
 
-                self.overridable.remove(name)
+                if name in self.overridable:
+                    self.overridable.remove(name)
 
                 var_id = self.define_variable(shared, type_name, name, None, stmt.span)
                 self.flag_non_referenced_variable(var_id, stmt, context)
