@@ -310,6 +310,10 @@ class Assembler:
 
     def flag_non_referenced_variable(self, var_id: str, stmt: VarDefStmt | VarRef | Param, context: StrOptional):
         variable = self.variables[var_id]
+
+        if variable.shared:
+            return
+
         if isinstance(stmt, VarDefStmt):
             self.non_referenced_variables[(variable.name, None)] = [stmt]
         else:
