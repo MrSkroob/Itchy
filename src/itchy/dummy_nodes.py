@@ -203,12 +203,12 @@ AGGRESSIVE_STRATEGIES: Strategy = {
 # strategies where we will try not to "add" syntax that changes meaning.
 ANALYSIS_STRATEGIES: Strategy = {
     "primary": make_dummy_primary,
-    # "stat": make_stat,
+    "stat": make_stat,
     "varlist1": make_paramlist,
     # "wrap": make_wrap,
     # "chunk": make_chunk,
-    Definitions.CloseCurlyBracket: dummy_token_factory(Definitions.CloseCurlyBracket, "}"),
-    Definitions.OpenCurlyBracket: dummy_token_factory(Definitions.OpenCurlyBracket, "{"),
-    Definitions.CloseCurlyBracket: dummy_token_factory(Definitions.CloseCurlyBracket, "}"),
-    Definitions.OpenBracket: dummy_token_factory(Definitions.OpenBracket, "(")
+    # Definitions.CloseCurlyBracket.name: dummy_token_factory(Definitions.CloseCurlyBracket, "}"),
+    # Definitions.OpenCurlyBracket.name: dummy_token_factory(Definitions.OpenCurlyBracket, "{"),
+    # Definitions.CloseCurlyBracket.name: dummy_token_factory(Definitions.CloseCurlyBracket, "}"),
+    # Definitions.OpenBracket.name: dummy_token_factory(Definitions.OpenBracket, "(")
 }

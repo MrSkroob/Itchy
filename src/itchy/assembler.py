@@ -2082,7 +2082,7 @@ class Assembler:
         2. *Keeps* stage/global data
         """
         self.messages = {}
-        self.overridable.clear()
+        self.overridable = set()
 
         if target is not None:
             with zipfile.ZipFile(target, "r") as f:

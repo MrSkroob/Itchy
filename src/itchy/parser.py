@@ -211,10 +211,9 @@ class Parser:
 
                 error = self.make_error(tokens, pos, start_pos, current_rule, node)
 
-                if value.name in self.skip_rules_on_fail:
-                    print("ee")
-                    self.accumulated_errors.append(error)
-                    return ParseResult(tokens[pos], pos + 1)
+                # if value.name in self.skip_rules_on_fail and tokens[pos].kind != GenericRules.EOF:
+                    # self.accumulated_errors.append(error)
+                    # return ParseResult(self.skip_rules_on_fail[value.name]()[0], pos + 1)
 
                 raise error
             
@@ -454,7 +453,9 @@ class Parser:
             """
             progress = -1
             offset_tries = 8
-            max_tries = offset_tries * 2
+            direction_tries = offset_tries * 2
+            direction = 1
+            max_tries = direction_tries * 4
             tries = 0
             shift = 0
             offset = 0
@@ -497,17 +498,23 @@ class Parser:
                     else:
                         # delete the line above until something works.
                         line = (error.tokens[error_pos].line - offset) + shift
-                        shift -= 1
+                        shift -= direction
 
                     working_tokens = [i for i in working_tokens if i.line != line]
 
                     # bad hack :(
                     # the error reporter sometimes reports the incorrect line by 1, so we need to test
                     # offsets both 1 and 0.
-                    if tries == offset_tries:
+                    if tries % offset_tries == 0:
                         shift = 0
                         offset = 1
                         working_tokens = tokens.copy()
+
+                    if tries % direction_tries == 0:
+                        shift = 0
+                        offset = 0
+                        working_tokens = tokens.copy()
+                        direction *= -1
 
                     if tries > max_tries:
                         raise
