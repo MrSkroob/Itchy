@@ -1,15 +1,22 @@
 bool c
 
 
+define bar(c: number) {
+    return
+}
+
+
 define foo(a: number, b: string) {
     if true {
-        return
+        return false
     }
 
-    return 0
+    return ""
 }
 
 
 event event_whenflagclicked() {
-    // foo()
+    bar(foo(1, "2"))
+
+    c = false
 }

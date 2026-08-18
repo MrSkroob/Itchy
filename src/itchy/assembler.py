@@ -96,6 +96,7 @@ class VariableData:
     is_list: bool
     shared: bool
     initial_value: Any
+    definition_location: SourceSpan | None
 
 
 @dataclass
@@ -108,6 +109,7 @@ class ProcedureInfo:
     argument_defaults: tuple[str, ...]
 
     # compiler only. does not get serialised
+    definition_location: SourceSpan | None
     argument_types: tuple[VariableTypes, ...]
 
     # if applicable
@@ -264,7 +266,7 @@ class Assembler:
         if var_name in procedure.argument_names:
             raise ValueError(f"{var_name} IS READ ONLY!!!")
 
-    def define_variable(self, shared: bool, type_name: str, name: str, context: StrOptional) -> str:
+    def define_variable(self, shared: bool, type_name: str, name: str, context: StrOptional, source_location: SourceSpan | None) -> str:
         """
         Returns a variable ID. NOT a block ID.
         You may also use this if you're okay with the variable not existing beforehand (typically for loop variables and other compiler-defined, single use variables.)
@@ -291,7 +293,8 @@ class Assembler:
             var_type=VariableTypes(type_name),
             is_list=is_list,
             shared=shared,
-            initial_value=default_value
+            initial_value=default_value,
+            definition_location=source_location
         )
 
         self.variables[var_id] = variable
@@ -309,8 +312,8 @@ class Assembler:
         """
         x, y = 100, 100
 
-        self.define_variable(False, "list", RETURN_STACK, None)
-        self.define_variable(False, "list", FLAG_STACK, None)
+        self.define_variable(False, "list", RETURN_STACK, None, None)
+        self.define_variable(False, "list", FLAG_STACK, None, None)
 
         # return_helper
         push_return_frame = FunctionDefStmt(
@@ -383,7 +386,10 @@ class Assembler:
         emit_statements(pre_defines)
         emit_statements(program.body)
 
+        seen_locations: set[tuple[int, int]] = set()
+
         for i in self.non_referenced_variables.values():
+            seen_locations.add((i.span.start.line, i.span.start.character))
             self.errors.append(
                 NotReferencedError(
                     f"{i.name} is not referenced",
@@ -392,12 +398,19 @@ class Assembler:
             )
 
         # append all usages of a variable that's not referenced.
-
         for symbol in self.symbols:
             if symbol.symbol_type not in [SymbolType.PARAMETER, SymbolType.VARIABLE]:
                 continue
             key = (symbol.name, symbol.context)
+
+            if symbol.context not in self.procedures:
+                key = (symbol.name, None)
+
             if key in self.non_referenced_variables:
+                key2 = (symbol.span.start.line, symbol.span.start.character)
+                if key2 in seen_locations:
+                    continue
+                seen_locations.add(key2)
                 self.errors.append(
                     NotReferencedError(
                         f"{symbol.name} is not referenced",
@@ -454,7 +467,7 @@ class Assembler:
                     return self.raise_or_return(InvalidTypeError(f"Invalid variable type: {type_name}.\
                                                                  Scratch only permits var, list and bool.", stmt))
                 self.non_referenced_variables[(name, None)] = stmt 
-                self.define_variable(shared, type_name, name, None)
+                self.define_variable(shared, type_name, name, None, stmt.span)
                 return BlockRange(None, None)
             case AssignStmt(target=target, value=value):
                 return self.emit_assignment(target, value, parent, context)
@@ -502,7 +515,7 @@ class Assembler:
 
         proc_data = self.procedures[context]
         return_variable = proc_data.name + ":return"
-        self.define_variable(False, "var", return_variable, None)
+        self.define_variable(False, "var", return_variable, None, None)
 
         body: list[Stmt] = []
 
@@ -612,7 +625,7 @@ class Assembler:
                         if not self.compile_with_warnings:
                             return self.raise_or_return(error)
                         self.errors.append(error)
-                        var_id = self.define_variable(False, "var", arg_expr.ref.root, context)
+                        var_id = self.define_variable(False, "var", arg_expr.ref.root, context, None)
 
                     inputs[arg.name] = (InputType.SHADOW_ONLY,
                                         (DataType.VARIABLE, arg_expr.ref.root, var_id))
@@ -652,7 +665,7 @@ class Assembler:
                     if not self.compile_with_warnings:
                         return self.raise_or_return(error)
                     self.errors.append(error)
-                    fields[field.name] = (arg_expr.ref.root, self.define_variable(False, "var", arg_expr.ref.root, context))
+                    fields[field.name] = (arg_expr.ref.root, self.define_variable(False, "var", arg_expr.ref.root, context, None))
                     
             elif field.name in block_data.broadcasts:
                 if not isinstance(arg_expr, StringExpr):
@@ -878,7 +891,7 @@ class Assembler:
                 stmt.name
             )
         )
-        self.define_variable(False, "var", stmt.name + ":return", None)
+        self.define_variable(False, "var", stmt.name + ":return", None, None)
 
         definition_id = self.make_block(
             opcode="procedures_definition",
@@ -914,7 +927,7 @@ class Assembler:
                 argument_defaults.append("")
 
             self.non_referenced_variables[(param.name, stmt.name)] = param 
-            self.define_variable(False, param.type_name, param.name, stmt.name)
+            self.define_variable(False, param.type_name, param.name, stmt.name, param.span)
             self.symbols.append(SymbolOccurence(
                 param.span,
                 stmt.name,
@@ -952,7 +965,8 @@ class Assembler:
             argument_ids=argument_ids_tuple,
             argument_names=argument_names_tuple,
             argument_defaults=argument_defaults_tuple,
-            argument_types=argument_types_tuple
+            argument_types=argument_types_tuple,
+            definition_location=stmt.span
         )
 
         # for concise' sake, append a return statement always
@@ -975,7 +989,7 @@ class Assembler:
         except NameError:
             return self.raise_or_return(CompilerError(f"Cannot override read only argument {stmt.variable}", stmt.start))
 
-        var_id = self.define_variable(False, "var", stmt.variable, context)
+        var_id = self.define_variable(False, "var", stmt.variable, context, stmt.span)
         set_id = self.new_id()
 
         set_inputs: dict[str, ScratchInputRaw] = {}
@@ -1067,13 +1081,16 @@ class Assembler:
             if not self.compile_with_warnings:
                 return self.raise_or_return(error)
             self.errors.append(error)
-            iterable_id = self.define_variable(False, "var", stmt.iterable.root, context)
+            iterable_id = self.define_variable(False, "var", stmt.iterable.root, context, None)
 
         self.assert_writable_name(stmt.variable, context)
         # we *still* need this id to be unique, because even if it's in a for loop, scratch considers it global.
         # so we need a variable with a unique name to avoid amiguity.
-        var_id = self.define_variable(False, "var", list_variable_name, context) # not to be used by the programmer, so is given garbage name.
-        var_list_item_id = self.define_variable(False, "var", stmt.variable, context) # variable type doesn't matter as long as it's not 'list'
+        iterable_variable_data = self.variables[iterable_id]
+        var_type = "var" if iterable_variable_data.var_type == VariableTypes.LIST else iterable_variable_data.var_type.value
+
+        var_id = self.define_variable(False, "var", list_variable_name, context, None) # not to be used by the programmer, so is given garbage name.
+        var_list_item_id = self.define_variable(False, var_type, stmt.variable, context, stmt.span)
 
         """
         temp = 1 // set_id
@@ -1284,7 +1301,7 @@ class Assembler:
                 if not self.compile_with_warnings:
                     return self.raise_or_return(error)
                 self.errors.append(error)
-                var_id = self.define_variable(False, "list", target.root, context)
+                var_id = self.define_variable(False, "list", target.root, context, None)
             
             variable = self.variables[var_id]
 
@@ -1320,7 +1337,7 @@ class Assembler:
                 if not self.compile_with_warnings:
                     return self.raise_or_return(error)
                 self.errors.append(error)
-                var_id = self.define_variable(False, "var", target.root, context)
+                var_id = self.define_variable(False, "var", target.root, context, None)
             
             block_id = self.new_id()
             self.make_block(
@@ -1635,7 +1652,7 @@ class Assembler:
                             if not self.compile_with_warnings:
                                 return self.raise_or_return(error, PLACE_HOLDER_0)
                             self.errors.append(error)
-                            var_id = self.define_variable(False, "var", arg_expr.ref.root, context)
+                            var_id = self.define_variable(False, "var", arg_expr.ref.root, context, None)
                         inputs[arg.name] = (InputType.SHADOW_ONLY,
                                             (DataType.VARIABLE, arg_expr.ref.root, var_id))
                 else:
@@ -1677,7 +1694,7 @@ class Assembler:
                                 PLACE_HOLDER_0
                             )
                         self.errors.append(error)
-                        fields[field.name] = (arg_expr.ref.root, self.define_variable(False, "var", arg_expr.ref.root, context))
+                        fields[field.name] = (arg_expr.ref.root, self.define_variable(False, "var", arg_expr.ref.root, context, None))
                 else:
                     if not isinstance(arg_expr, StringExpr):
                         return self.raise_or_return(InvalidTypeError(
@@ -1749,7 +1766,7 @@ class Assembler:
                     error = UnboundError(f"{right.ref.root} is not defined", right, data={"name": right})
                     if not self.compile_with_warnings:
                         return self.raise_or_return(error, PLACE_HOLDER_0)
-                    list_id = self.define_variable(False, "list", right.ref.root, context)
+                    list_id = self.define_variable(False, "list", right.ref.root, context, None)
                     self.errors.append(error)
 
                 self.make_block(
@@ -1855,13 +1872,13 @@ class Assembler:
             )
         else:
             try:
-                var_id = self.get_variable(ref, context)
+                var_id = self.get_variable(ref, context, False)
             except NameError:
                 error = UnboundError(f"{ref.root} is not defined.", ref, data={"name": ref.root})
                 if not self.compile_with_warnings:
                     return self.raise_or_return(error, PLACE_HOLDER_0)
                 self.errors.append(error)
-                var_id = self.define_variable(False, "var" if ref.slice_expr is None else "list", ref.root, context)
+                var_id = self.define_variable(False, "var" if ref.slice_expr is None else "list", ref.root, context, None)
 
             self.symbols.append(
                 SymbolOccurence(
@@ -2005,7 +2022,8 @@ class Assembler:
                 stage = self.get_stage(f)
 
             for var_id, var_data in stage["variables"].items():
-                self.variables[var_id] = VariableData(var_data[0], var_id, None, VariableTypes.VAR, False, True, var_data[1])
+                self.variable_map[(var_data[0], None)] = var_id
+                self.variables[var_id] = VariableData(var_data[0], var_id, None, VariableTypes.VAR, False, True, var_data[1], None)
 
             for broadcast_id, broadcast_name in stage["broadcasts"].items():
                 assert isinstance(broadcast_name, str)
