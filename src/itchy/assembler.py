@@ -744,6 +744,9 @@ class Assembler:
 
             user_arg_type = emitted_arg.return_type
 
+            if isinstance(arg_expr, VarRef) and not arg_expr.dummy:
+                self.get_variable(arg_expr, context)
+
             if not self.type_check(arg_type, user_arg_type):
                 failure = InvalidTypeError(
                     f"{stmt.callee}: not one of ({", ".join(i.value for i in user_arg_type)}) matches argument {index} of type {arg_type.value}", arg_expr)
