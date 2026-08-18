@@ -506,6 +506,9 @@ class Assembler:
         if a == VariableTypes.UNKNOWN:
             return True
 
+        if VariableTypes.VAR in b and a != VariableTypes.LIST:
+            return True
+
         return False
 
 
