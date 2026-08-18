@@ -138,7 +138,7 @@ class Assembler:
         self.costumes: set[str] = set()
         self.errors: list[CompilerError] = []
 
-        self.non_referenced_variables: dict[tuple[str, StrOptional], VarDefStmt | Param | VarRef] = {}
+        self.non_referenced_variables: dict[tuple[str, StrOptional], list[VarDefStmt | Param]] = {}
 
         self.symbols: list[SymbolOccurence] = []
 
@@ -213,7 +213,7 @@ class Assembler:
             length += 1
         return length
 
-    def get_variable(self, stmt: VarRef, context: StrOptional, is_reference: bool=True) -> str:
+    def get_variable(self, stmt: VarRef, context: StrOptional) -> str:
         """
         Returns a variable ID without any extra functionality.
         Do this when you strictly expect the variable to exist, and want to error if it wasn't implicitly/explicitly defined previously.
@@ -232,8 +232,7 @@ class Assembler:
         else:
             raise NameError(f"variable {name} is not defined!")
 
-        if key in self.non_referenced_variables and is_reference:
-            del self.non_referenced_variables[key]
+        self.flag_referenced_variable(self.variable_map[key], context)
 
         self.symbols.append(
             SymbolOccurence(
@@ -282,8 +281,7 @@ class Assembler:
         key = (name, context)
 
         if key in self.variable_map:
-            if key in self.non_referenced_variables:
-                del self.non_referenced_variables[key]
+            self.flag_referenced_variable(self.variable_map[key], context)
             return self.variable_map[key]
 
         var_id = self.new_id()
@@ -303,6 +301,31 @@ class Assembler:
         self.variable_map[key] = var_id
 
         return var_id
+
+    def flag_non_referenced_variable(self, var_id: str, stmt: VarDefStmt | VarRef | Param, context: StrOptional):
+        variable = self.variables[var_id]
+        if isinstance(stmt, VarDefStmt):
+            self.non_referenced_variables[(variable.name, None)] = [stmt]
+        else:
+            if isinstance(stmt, VarRef):
+                stmt = VarDefStmt(variable.var_type.value, variable.name, variable.shared, span=stmt.span)
+            if (variable.name, context) not in self.non_referenced_variables:
+                self.non_referenced_variables[(variable.name, context)] = []
+            self.non_referenced_variables[(variable.name, context)].append(stmt)
+        
+
+    def flag_referenced_variable(self, var_id: str, context: StrOptional):
+        variable = self.variables[var_id]
+        key = (variable.name, context)
+        key2 = (variable.name, None)
+
+        if key in self.non_referenced_variables:
+            self.non_referenced_variables[key].pop()
+            if len(self.non_referenced_variables[key]) == 0:
+                del self.non_referenced_variables[key]
+
+        if key2 in self.non_referenced_variables:
+            del self.non_referenced_variables[key2]
     
     def emit_program(self, program: Program) -> None:
         """
@@ -390,35 +413,36 @@ class Assembler:
 
         seen_locations: set[tuple[int, int]] = set()
 
-        for i in self.non_referenced_variables.values():
-            seen_locations.add((i.span.start.line, i.span.start.character))
-            self.errors.append(
-                NotReferencedError(
-                    f"{i.name} is not referenced",
-                    error_node=i
-                )
-            )
-
-        # append all usages of a variable that's not referenced.
-        for symbol in self.symbols:
-            if symbol.symbol_type not in [SymbolType.PARAMETER, SymbolType.VARIABLE]:
-                continue
-            key = (symbol.name, symbol.context)
-
-            if symbol.context not in self.procedures:
-                key = (symbol.name, None)
-
-            if key in self.non_referenced_variables:
-                key2 = (symbol.span.start.line, symbol.span.start.character)
-                if key2 in seen_locations:
-                    continue
-                seen_locations.add(key2)
+        for variables in self.non_referenced_variables.values():
+            for variable in variables:
+                seen_locations.add((variable.span.start.line, variable.span.start.character))
                 self.errors.append(
                     NotReferencedError(
-                        f"{symbol.name} is not referenced",
-                        error_node = ASTNode(span=symbol.span)
+                        f"{variable.name} is not referenced",
+                        error_node=variable
                     )
                 )
+
+        # append all usages of a variable that's not referenced.
+        # for symbol in self.symbols:
+        #     if symbol.symbol_type not in [SymbolType.PARAMETER, SymbolType.VARIABLE]:
+        #         continue
+        #     key = (symbol.name, symbol.context)
+
+        #     if symbol.context not in self.procedures:
+        #         key = (symbol.name, None)
+
+        #     if key in self.non_referenced_variables:
+        #         key2 = (symbol.span.start.line, symbol.span.start.character)
+        #         if key2 in seen_locations:
+        #             continue
+        #         seen_locations.add(key2)
+        #         self.errors.append(
+        #             NotReferencedError(
+        #                 f"{symbol.name} is not referenced",
+        #                 error_node = ASTNode(span=symbol.span)
+        #             )
+        #         )
     
     
     def emit_sequence(
@@ -468,8 +492,9 @@ class Assembler:
                 if type_name not in {VariableTypes.VAR.value, VariableTypes.LIST.value, VariableTypes.BOOL.value}:
                     return self.raise_or_return(InvalidTypeError(f"Invalid variable type: {type_name}.\
                                                                  Scratch only permits var, list and bool.", stmt))
-                self.non_referenced_variables[(name, None)] = stmt 
-                self.define_variable(shared, type_name, name, None, stmt.span)
+                
+                var_id = self.define_variable(shared, type_name, name, None, stmt.span)
+                self.flag_non_referenced_variable(var_id, stmt, context)
                 return BlockRange(None, None)
             case AssignStmt(target=target, value=value):
                 return self.emit_assignment(target, value, parent, context)
@@ -934,8 +959,8 @@ class Assembler:
                 proccode_parts.append("%s")
                 argument_defaults.append("")
 
-            self.non_referenced_variables[(param.name, stmt.name)] = param 
-            self.define_variable(False, param.type_name, param.name, stmt.name, param.span)
+            var_id = self.define_variable(False, param.type_name, param.name, stmt.name, param.span)
+            self.flag_non_referenced_variable(var_id, param, stmt.name)
             self.symbols.append(SymbolOccurence(
                 param.span,
                 stmt.name,
@@ -1305,8 +1330,9 @@ class Assembler:
             try:
                 var_id = self.get_variable(target, context)
                 variable = self.variables[var_id]
-                self.non_referenced_variables[(target.root, variable.context)] = VarDefStmt(
-                    variable.var_type.value, target.root, False, span=target.span) 
+                self.flag_non_referenced_variable(var_id, VarDefStmt(
+                    variable.var_type.value, target.root, variable.shared, span=target.span
+                ), context)
             except NameError:
                 error = UnboundError(f"{target.root} is not defined.", target, data={"name": target.root})
                 if not self.compile_with_warnings:
@@ -1344,8 +1370,10 @@ class Assembler:
             try:
                 var_id = self.get_variable(target, context) 
                 variable = self.variables[var_id]
-                self.non_referenced_variables[(target.root, variable.context)] = VarDefStmt(
-                    self.variables[var_id].var_type.value, target.root, False, span=target.span) 
+
+                self.flag_non_referenced_variable(var_id, VarDefStmt(
+                    variable.var_type.value, target.root, variable.shared, span=target.span
+                ), context)
             except NameError:
                 error = UnboundError(f"{target.root} is not defined.", target, data={"name": target.root})
                 if not self.compile_with_warnings:
@@ -1854,8 +1882,7 @@ class Assembler:
             else:
                 opcode = "argument_reporter_string_number"
 
-            if (ref.root, context) in self.non_referenced_variables:
-                del self.non_referenced_variables[ref.root, context]
+            self.flag_referenced_variable(self.get_variable(ref, context), context)
 
             self.symbols.append(
                 SymbolOccurence(
