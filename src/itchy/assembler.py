@@ -91,6 +91,7 @@ class BlockRange:
 
 @dataclass(frozen=True)
 class VariableData:
+    uri: str
     name: str
     id: str
     context: StrOptional
@@ -120,7 +121,7 @@ class ProcedureInfo:
 
 
 class Assembler:
-    def __init__(self, is_strict: bool=True, compile_with_warnings: bool=False) -> None:
+    def __init__(self, uri: str, is_strict: bool=True, compile_with_warnings: bool=False) -> None:
         """
         is_strict: whether the compiler should halt on error. Enabling this option will also disable any write to the .sb3 file.
         """
@@ -129,6 +130,7 @@ class Assembler:
         self.procedures: dict[str, ProcedureInfo] = {}
 
         self.is_strict = is_strict
+        self.uri = uri
         self.compile_with_warnings = compile_with_warnings or not is_strict
         # we don't need to worry about function "variables" since they are arguments.
         # i.e. they are not treated as variables and are treated as read-only.
@@ -297,6 +299,7 @@ class Assembler:
 
         variable = VariableData(
             name=name, 
+            uri=self.uri,
             id=self.new_id(),
             context=context,
             var_type=VariableTypes(type_name),
@@ -485,9 +488,12 @@ class Assembler:
                     return self.raise_or_return(InvalidTypeError(f"Invalid variable type: '{type_name}'.\
                                                                  Scratch only permits var, list and bool.", stmt))
 
+
                 if name not in self.overridable and (name, None) in self.variable_map:
                     return self.raise_or_return(DuplicateDefinitionError(f"Variable '{stmt.name}' shadowed by variable of same name.", stmt))
 
+                # allow variable to override existing one in project at least once. 
+                # any subsequent definitions will be counted as duplicates.
                 if name in self.overridable:
                     self.overridable.remove(name)
 
@@ -2090,7 +2096,7 @@ class Assembler:
 
             for var_id, var_data in stage["variables"].items():
                 self.variable_map[(var_data[0], None)] = var_id
-                self.variables[var_id] = VariableData(var_data[0], var_id, None, VariableTypes.VAR, False, True, var_data[1], None)
+                self.variables[var_id] = VariableData(self.uri, var_data[0], var_id, None, VariableTypes.VAR, False, True, var_data[1], None)
                 self.overridable.add(var_data[0])
 
             for broadcast_id, broadcast_name in stage["broadcasts"].items():
@@ -2102,8 +2108,12 @@ class Assembler:
             if not variable_data.shared:
                 continue
             # honestly context should always be none but... eh.
+            if variable_data.uri == self.uri:
+                continue
+            
             self.variable_map[(variable_data.name, variable_data.context)] = variable_id
             self.variables[variable_id] = VariableData(
+                self.uri,
                 variable_data.name,
                 variable_data.id,
                 variable_data.context,
