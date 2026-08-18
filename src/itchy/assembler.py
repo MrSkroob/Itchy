@@ -1895,12 +1895,12 @@ class Assembler:
             else:
                 opcode = "argument_reporter_string_number"
 
-            self.flag_referenced_variable(procedure_info.argument_ids[arg_index], context)
+            self.flag_referenced_variable(self.variable_map[(arg_name, context)], context)
 
             self.symbols.append(
                 SymbolOccurence(
                     span=ref.span,
-                    definition_location=self.variables[procedure_info.argument_ids[arg_index]].definition_location,
+                    definition_location=self.variables[self.variable_map[(arg_name, context)]].definition_location,
                     context=context,
                     symbol_type=SymbolType.VARIABLE,
                     name=ref.root
