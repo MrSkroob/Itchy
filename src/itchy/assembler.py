@@ -14,8 +14,9 @@ from enum import Enum, StrEnum
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
-from itchy.shared_templates import VariableTypes, DataType, SourceSpan, SPRITE_TEMPLATE, COSTUME_TEMPLATE, ASTNode
-from itchy.errors import CompilerError, CompilerErrorCodes, UnboundError, NotReferencedError, ArgumentError, NotDefinedError, InvalidTypeError, SyntaxError, TypeMismatchError
+from itchy.shared_templates import VariableTypes, DataType, SourceSpan, SPRITE_TEMPLATE, COSTUME_TEMPLATE
+from itchy.errors import CompilerError, CompilerErrorCodes, UnboundError, NotReferencedError, DuplicateDefinitionError,\
+    ArgumentError, NotDefinedError, InvalidTypeError, SyntaxError, TypeMismatchError
 from itchy.scratch_blocks import SCRATCH_BLOCKS, Block, Reporter, Event, Menu
 from itchy.itch_ast import \
     Param, \
@@ -134,6 +135,7 @@ class Assembler:
         # variable name -> id
         self.variable_map: dict[tuple[str, StrOptional], str] = {}
 
+        # name, id
         self.messages: dict[str, str] = {}
 
         self.costumes: set[str] = set()
@@ -473,9 +475,12 @@ class Assembler:
                 return self.emit_sequence(body, parent, context)
             case VarDefStmt(shared=shared, type_name=type_name, name=name):
                 if type_name not in {VariableTypes.VAR.value, VariableTypes.LIST.value, VariableTypes.BOOL.value}:
-                    return self.raise_or_return(InvalidTypeError(f"Invalid variable type: {type_name}.\
+                    return self.raise_or_return(InvalidTypeError(f"Invalid variable type: '{type_name}'.\
                                                                  Scratch only permits var, list and bool.", stmt))
-                
+
+                if (name, None) in self.variable_map:
+                    return self.raise_or_return(DuplicateDefinitionError(f"Variable '{stmt.name}' shadowed by variable of same name.", stmt))
+
                 var_id = self.define_variable(shared, type_name, name, None, stmt.span)
                 self.flag_non_referenced_variable(var_id, stmt, context)
                 return BlockRange(None, None)
@@ -587,7 +592,7 @@ class Assembler:
         if not isinstance(block_data, Block):
             return self.raise_or_return(
                 InvalidTypeError(
-                    f"{stmt.callee} should be a stack block",
+                    f"'{stmt.callee}' should be a stack block",
                     stmt
                 )
             )
@@ -596,7 +601,7 @@ class Assembler:
 
         if self.count_args(stmt.args) != expected_args:
             return self.raise_or_return(ArgumentError(
-                    f"Block {stmt.callee} expects {expected_args} argument(s), got {self.count_args(stmt.args)}",
+                    f"Block '{stmt.callee}' expects {expected_args} argument(s), got {self.count_args(stmt.args)}",
                     stmt
                 ))
 
@@ -634,7 +639,7 @@ class Assembler:
                     try:
                         var_id = self.get_variable(arg_expr.ref, context)
                     except NameError:
-                        error = UnboundError(f"{arg_expr.ref.root} is not defined.", arg_expr, data={"name": arg_expr.ref.root})
+                        error = UnboundError(f"'{arg_expr.ref.root}' is not defined.", arg_expr, data={"name": arg_expr.ref.root})
                         if not self.compile_with_warnings:
                             return self.raise_or_return(error)
                         self.errors.append(error)
@@ -694,7 +699,7 @@ class Assembler:
                 
                 if arg_expr.value not in field.expected and len(field.expected) > 0:
                     return self.raise_or_return(
-                        ArgumentError(f"{arg_expr.value} is not one of {field.expected}", arg_expr)
+                        ArgumentError(f"'{arg_expr.value}' is not one of {field.expected}", arg_expr)
                     )
 
                 fields[field.name] = (arg_expr.value, None)
@@ -712,7 +717,7 @@ class Assembler:
             # is either a custom scratch block or a hallucination :v
             block_range = self.emit_scratch_block(stmt, parent, context)
             if block_range is None:
-                return self.raise_or_return(NotDefinedError(f"Procedure {stmt.callee} is not defined and is not a valid scratch block.", stmt))
+                return self.raise_or_return(NotDefinedError(f"Procedure '{stmt.callee}' is not defined and is not a valid scratch block", stmt))
             self.symbols.append(
                 SymbolOccurence(
                     span=stmt.span,
@@ -738,7 +743,7 @@ class Assembler:
 
         if self.count_args(stmt.args) != len(info.argument_ids):
             return self.raise_or_return(ArgumentError(
-                f"Function {stmt.callee} expects {len(info.argument_ids)} arguments, "
+                f"Function '{stmt.callee}' expects {len(info.argument_ids)} arguments, "
                 f"got {self.count_args(stmt.args)}",
                 stmt
             ))
@@ -774,7 +779,6 @@ class Assembler:
             if not self.type_check(arg_type, user_arg_type):
                 failure = InvalidTypeError(
                     f"{stmt.callee}: not one of ({", ".join(i.value for i in user_arg_type)}) matches argument {index} of type {arg_type.value}", arg_expr)
-                # return self.raise_or_return(error)
                 self.errors.append(failure)
             
             inputs[arg_id] = emitted_arg.value
@@ -798,13 +802,13 @@ class Assembler:
             return self.raise_or_return(CompilerError(f"Cannot start a new thread while inside a function/event", stmt))
 
         if stmt.name not in SCRATCH_BLOCKS:
-            return self.raise_or_return(NotDefinedError(f"{stmt.name} is not a known event", stmt))
+            return self.raise_or_return(NotDefinedError(f"'{stmt.name}' is not a known event", stmt))
 
         block_data = SCRATCH_BLOCKS[stmt.name]
 
         if not isinstance(block_data, Event):
             return self.raise_or_return(CompilerError(
-                f"{stmt.name} should be a hat/event block", stmt
+                f"'{stmt.name}' should be a hat/event block", stmt
             ))
 
         # unlike Block/Reporter, an Event's `broadcasts` entries are not a
@@ -910,6 +914,9 @@ class Assembler:
     def emit_function_def(self, stmt: FunctionDefStmt, parent: StrOptional) -> BlockRange:
         if parent is not None:
             return self.raise_or_return(SyntaxError("Cannot define function inside of another", stmt, CompilerErrorCodes.REMOVE_RETURN))
+
+        if stmt.name in self.procedures:
+            return self.raise_or_return(DuplicateDefinitionError(f"Function '{stmt.name}' shadowed by function of same name.", stmt))
 
         self.symbols.append(
             SymbolOccurence(
@@ -1017,7 +1024,7 @@ class Assembler:
         try:
             self.assert_writable_name(stmt.variable, context)
         except NameError:
-            return self.raise_or_return(CompilerError(f"Cannot override read only argument {stmt.variable}", stmt.start))
+            return self.raise_or_return(CompilerError(f"Cannot override read only argument '{stmt.variable}'", stmt.start))
 
         var_id = self.define_variable(False, "var", stmt.variable, context, stmt.span)
         set_id = self.new_id()
@@ -1107,7 +1114,7 @@ class Assembler:
         try:
             iterable_id = self.get_variable(stmt.iterable, context)
         except NameError:
-            error = UnboundError(f"{stmt.iterable.root} is not defined.", stmt.iterable, data={"name": stmt.iterable.root})
+            error = UnboundError(f"'{stmt.iterable.root}' is not defined.", stmt.iterable, data={"name": stmt.iterable.root})
             if not self.compile_with_warnings:
                 return self.raise_or_return(error)
             self.errors.append(error)
@@ -1319,7 +1326,7 @@ class Assembler:
     
     def emit_assignment(self, target: VarRef, value: Expr, parent: StrOptional, context: StrOptional) -> BlockRange:
         if context in self.procedures and target.root in self.procedures[context].argument_names:
-            return self.raise_or_return(CompilerError(f"Cannot assign read only argument {target.root}", target))
+            return self.raise_or_return(CompilerError(f"Cannot assign read only argument '{target.root}'", target))
 
         inputs: dict[str, ScratchInputRaw] = {}
         
@@ -1331,7 +1338,7 @@ class Assembler:
                     variable.var_type.value, target.root, variable.shared, span=target.span
                 ), context)
             except NameError:
-                error = UnboundError(f"{target.root} is not defined.", target, data={"name": target.root})
+                error = UnboundError(f"'{target.root}' is not defined.", target, data={"name": target.root})
                 if not self.compile_with_warnings:
                     return self.raise_or_return(error)
                 self.errors.append(error)
@@ -1372,7 +1379,7 @@ class Assembler:
                     variable.var_type.value, target.root, variable.shared, span=target.span
                 ), context)
             except NameError:
-                error = UnboundError(f"{target.root} is not defined.", target, data={"name": target.root})
+                error = UnboundError(f"'{target.root}' is not defined.", target, data={"name": target.root})
                 if not self.compile_with_warnings:
                     return self.raise_or_return(error)
                 self.errors.append(error)
@@ -1664,7 +1671,7 @@ class Assembler:
 
             if not isinstance(block_data, Reporter):
                 return self.raise_or_return(CompilerError(
-                    f"{expr.callee} does not return anything.",
+                    f"'{expr.callee}' does not return anything.",
                     expr
                 ), PLACE_HOLDER_0)
         
@@ -1672,7 +1679,7 @@ class Assembler:
 
             if self.count_args(expr.args) != expected_args:
                 return self.raise_or_return(ArgumentError(
-                    f"Block {expr.callee} expects {expected_args} argument(s), got {self.count_args(expr.args)}",
+                    f"Block '{expr.callee}' expects {expected_args} argument(s), got {self.count_args(expr.args)}",
                     expr
                 ), PLACE_HOLDER_0)
             
@@ -1735,7 +1742,7 @@ class Assembler:
                     try:
                         fields[field.name] = (arg_expr.ref.root, self.get_variable(arg_expr.ref, context))
                     except NameError:
-                        error = UnboundError(f"{arg_expr.ref.root} is not defined.", arg_expr, data={"name": arg_expr.ref.root})
+                        error = UnboundError(f"'{arg_expr.ref.root}' is not defined.", arg_expr, data={"name": arg_expr.ref.root})
                         if not self.compile_with_warnings:
                             return self.raise_or_return(
                                 error,
@@ -1751,7 +1758,7 @@ class Assembler:
                         ), PLACE_HOLDER_0)
 
                     if arg_expr.value not in field.expected and len(field.expected) > 0:
-                        return self.raise_or_return(ArgumentError(f"{arg_expr.value} is not one of {field.expected}", arg_expr),
+                        return self.raise_or_return(ArgumentError(f"'{arg_expr.value}' is not one of {field.expected}", arg_expr),
                                                     PLACE_HOLDER_0)
 
                     fields[field.name] = (arg_expr.value, None)
@@ -1811,7 +1818,7 @@ class Assembler:
                 try:
                     list_id = self.get_variable(right.ref, context)
                 except NameError:
-                    error = UnboundError(f"{right.ref.root} is not defined", right, data={"name": right})
+                    error = UnboundError(f"'{right.ref.root}' is not defined", right, data={"name": right})
                     if not self.compile_with_warnings:
                         return self.raise_or_return(error, PLACE_HOLDER_0)
                     list_id = self.define_variable(False, "list", right.ref.root, context, None)
@@ -1876,7 +1883,7 @@ class Assembler:
             try:
                 arg_index = procedure_info.argument_names.index(ref.root)
             except ValueError:
-                return self.raise_or_return(ArgumentError(f"Argument {ref.root} doesn't exist.", ref), PLACE_HOLDER_0)
+                return self.raise_or_return(ArgumentError(f"Argument '{ref.root}' doesn't exist.", ref), PLACE_HOLDER_0)
             
             # _, *arg_types = procedure_info.proccode.split(" %")
             arg_types = procedure_info.argument_types
@@ -1922,7 +1929,7 @@ class Assembler:
             try:
                 var_id = self.get_variable(ref, context)
             except NameError:
-                error = UnboundError(f"{ref.root} is not defined.", ref, data={"name": ref.root})
+                error = UnboundError(f"'{ref.root}' is not defined.", ref, data={"name": ref.root})
                 if not self.compile_with_warnings:
                     return self.raise_or_return(error, PLACE_HOLDER_0)
                 self.errors.append(error)
@@ -2058,7 +2065,7 @@ class Assembler:
                 return candidate
         raise CompilerError(f"No stage target in project file.", None)
 
-    def prepare(self, target: str | None=None) -> None:
+    def prepare(self, target: str | None=None, global_messages: dict[str, str]={}, global_variables: dict[str, VariableData]={}) -> None:
         """
         Prepares the assembler to assemble the next file. It does the following:
         1. Clears blocks, variables, lists, etc. that are local to the sprite
@@ -2079,6 +2086,25 @@ class Assembler:
                 self.messages[broadcast_id] = broadcast_name
 
         # we do not clear shared variables/lists, 
+        for variable_id, variable_data in global_variables.items():
+            if not variable_data.shared:
+                continue
+            # honestly context should always be none but... eh.
+            self.variable_map[(variable_data.name, variable_data.context)] = variable_id
+            self.variables[variable_id] = VariableData(
+                variable_data.name,
+                variable_data.id,
+                variable_data.context,
+                variable_data.var_type,
+                variable_data.is_list,
+                variable_data.shared,
+                variable_data.initial_value,
+                None # we recreate a duplicate because we need to have the span set to None.
+            )
+
+        for message, message_id in global_messages.items():
+            self.messages[message] = message_id
+
         for variable_id in list(self.variables):
             variable_data = self.variables[variable_id]
             
