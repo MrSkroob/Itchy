@@ -1,0 +1,7 @@
+foofoofoofoofoofoofoofoofoofoofoofoofoobarbarbarbarbarbarbarbarbarbarbarbarbar// global variables
+shared var c
+
+
+define foo() {
+
+}

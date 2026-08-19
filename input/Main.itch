@@ -1,22 +1,22 @@
-bool c
-
-
-define bar(c: number) {
-    return
-}
-
-
-define foo(a: number, b: string) {
-    if true {
-        return false
-    }
-
-    return ""
+define foo(arg: var) {
+    c += 1
+    c += 1
+    c += 1
+    c += 1
+    c += 1
+    c += 1
+    c += 1
+    c += 1
+    c += 1
+    c += 1
+    return arg
 }
 
 
 event event_whenflagclicked() {
-    bar(foo(1, "2"))
+    c = 0
+    foo(c)
 
-    c = false
+    c = 1
+    foo(c)
 }

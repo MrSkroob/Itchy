@@ -2130,7 +2130,7 @@ class Assembler:
                     del self.variable_map[(variable_data.name, None)]
                     # ugly bad hack for the lsp
                     # is a quick and dirty way to delete variables that may not exist globally anymore. 
-                    del global_variables[variable_data.id]
+                    del global_variables[variable_data.name]
             
             self.variable_map[(variable_data.name, variable_data.context)] = variable_id
             self.variables[variable_id] = VariableData(
