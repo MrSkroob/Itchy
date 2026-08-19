@@ -156,7 +156,7 @@ class Parser:
 
     def parse_rule(self, rule: Rule, tokens: list[Token[Definitions]], pos: int) -> ParseResult:
         if self.halt:
-            return ParseResult(ParsedNode("", ()), pos)
+            raise InterruptedError()
 
   
         self.rule_stack.append(rule.name)
@@ -467,7 +467,7 @@ class Parser:
                     return result
                 except ParseError as e:
                     if self.halt:
-                        raise
+                        raise InterruptedError()
                     if len(tokens) == 0:
                         raise
 

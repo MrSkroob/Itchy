@@ -2120,9 +2120,6 @@ class Assembler:
 
         # we do not clear shared variables/lists, 
         for variable_id, variable_data in list(global_variables.items()):
-            if not variable_data.shared:
-                continue
-
             # do not add to existing variables if WE were the ones defining it.
             if variable_data.uri == self.uri:
                 if variable_data.id in self.variables:
@@ -2131,6 +2128,7 @@ class Assembler:
                     # ugly bad hack for the lsp
                     # is a quick and dirty way to delete variables that may not exist globally anymore. 
                     del global_variables[variable_data.name]
+                    continue
             
             self.variable_map[(variable_data.name, variable_data.context)] = variable_id
             self.variables[variable_id] = VariableData(

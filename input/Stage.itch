@@ -1,7 +1,4 @@
-foofoofoofoofoofoofoofoofoofoofoofoofoobarbarbarbarbarbarbarbarbarbarbarbarbar// global variables
-shared var c
-
-
+// global variables
 define foo() {
-
+    c = 0
 }
