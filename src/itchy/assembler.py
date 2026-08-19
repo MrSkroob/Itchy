@@ -137,6 +137,9 @@ class Assembler:
         # variable name -> id
         self.variable_map: dict[tuple[str, StrOptional], str] = {}
 
+        # when we receive global variables that we defined and have removed since, we should mark for deletion.
+        self.mark_for_deletion: set[str] = set()
+
         # set of variable ids that can be overriden because they were defined in the project.
         self.overridable: set[str] = set()
 
@@ -496,6 +499,9 @@ class Assembler:
                 # any subsequent definitions will be counted as duplicates.
                 if name in self.overridable:
                     self.overridable.remove(name)
+
+                if name in self.mark_for_deletion and shared:
+                    self.mark_for_deletion.remove(name)
 
                 var_id = self.define_variable(shared, type_name, name, None, stmt.span)
 
@@ -2125,9 +2131,8 @@ class Assembler:
                 if variable_data.id in self.variables:
                     del self.variables[variable_data.id]
                     del self.variable_map[(variable_data.name, None)]
-                    # ugly bad hack for the lsp
-                    # is a quick and dirty way to delete variables that may not exist globally anymore. 
-                    del global_variables[variable_data.name]
+
+                    self.mark_for_deletion.add(variable_data.name)
                     continue
             
             self.variable_map[(variable_data.name, variable_data.context)] = variable_id
