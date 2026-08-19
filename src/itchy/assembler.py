@@ -90,6 +90,13 @@ class BlockRange:
 
 
 @dataclass(frozen=True)
+class MessageData:
+    uri: str
+    name: str
+    id: str
+
+
+@dataclass(frozen=True)
 class VariableData:
     uri: str
     name: str
@@ -138,13 +145,14 @@ class Assembler:
         self.variable_map: dict[tuple[str, StrOptional], str] = {}
 
         # when we receive global variables that we defined and have removed since, we should mark for deletion.
-        self.mark_for_deletion: set[str] = set()
+        self.mark_variable_for_deletion: set[str] = set()
+        self.message_mark_for_deletion: set[str] = set()
 
         # set of variable ids that can be overriden because they were defined in the project.
         self.overridable: set[str] = set()
 
         # name, id
-        self.messages: dict[str, str] = {}
+        self.messages: dict[str, MessageData] = {}
 
         self.costumes: set[str] = set()
         self.errors: list[CompilerError] = []
@@ -261,11 +269,15 @@ class Assembler:
     
 
     def define_broadcast(self, name: str) -> str:
-        if name in self.messages:
-            return self.messages[name]
+        message = self.messages.get(name)
+
+        if message and message.name in self.messages:
+            if message.name in self.message_mark_for_deletion and message.uri == self.uri:
+                self.message_mark_for_deletion.remove(name)
+            return self.messages[name].id
 
         broadcast_id = self.new_id()
-        self.messages[name] = broadcast_id
+        self.messages[name] = MessageData(self.uri, name, broadcast_id)
         return broadcast_id
     
     def assert_writable_name(self, var_name: str, context: StrOptional) -> None:
@@ -500,8 +512,8 @@ class Assembler:
                 if name in self.overridable:
                     self.overridable.remove(name)
 
-                if name in self.mark_for_deletion and shared:
-                    self.mark_for_deletion.remove(name)
+                if name in self.mark_variable_for_deletion and shared:
+                    self.mark_variable_for_deletion.remove(name)
 
                 var_id = self.define_variable(shared, type_name, name, None, stmt.span)
 
@@ -2086,7 +2098,7 @@ class Assembler:
         }
 
     def _serialise_broadcasts(self) -> dict[str, str]:
-        return {broadcast_id: name for name, broadcast_id in self.messages.items()}
+        return {broadcast_id.id: name for name, broadcast_id in self.messages.items()}
 
 
     def get_targets(self, f: zipfile.ZipFile) -> list[dict[str, Any]]:
@@ -2101,13 +2113,15 @@ class Assembler:
                 return candidate
         raise CompilerError(f"No stage target in project file.", None)
 
-    def prepare(self, target: str | None=None, global_messages: dict[str, str]={}, global_variables: dict[str, VariableData]={}) -> None:
+    def prepare(self, target: str | None=None, global_messages: dict[str, MessageData]={}, global_variables: dict[str, VariableData]={}) -> None:
         """
         Prepares the assembler to assemble the next file. It does the following:
         1. Clears blocks, variables, lists, etc. that are local to the sprite
         2. *Keeps* stage/global data
         """
         self.messages = {}
+        self.mark_variable_for_deletion = set()
+        self.message_mark_for_deletion = set()
         self.variables = {}
         self.overridable = set()
 
@@ -2122,17 +2136,17 @@ class Assembler:
 
             for broadcast_id, broadcast_name in stage["broadcasts"].items():
                 assert isinstance(broadcast_name, str)
-                self.messages[broadcast_id] = broadcast_name
+                self.messages[broadcast_id] = MessageData("", broadcast_name, broadcast_id)
 
         # we do not clear shared variables/lists, 
         for variable_id, variable_data in list(global_variables.items()):
             # do not add to existing variables if WE were the ones defining it.
             if variable_data.uri == self.uri:
+                self.mark_variable_for_deletion.add(variable_data.name)
                 if variable_data.id in self.variables:
-                    del self.variables[variable_data.id]
+                    del self.variables[variable_id]
                     del self.variable_map[(variable_data.name, None)]
 
-                    self.mark_for_deletion.add(variable_data.name)
                     continue
             
             self.variable_map[(variable_data.name, variable_data.context)] = variable_id
@@ -2148,8 +2162,10 @@ class Assembler:
                 None # we recreate a duplicate because we need to have the span set to None.
             )
 
-        for message, message_id in global_messages.items():
-            self.messages[message] = message_id
+        for message, message_data in global_messages.items():
+            if message_data.uri == self.uri:
+                self.message_mark_for_deletion.add(message)
+            self.messages[message] = message_data
 
         for variable_id in list(self.variables):
             variable_data = self.variables[variable_id]
