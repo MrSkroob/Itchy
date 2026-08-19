@@ -146,7 +146,7 @@ class Assembler:
 
         # when we receive global variables that we defined and have removed since, we should mark for deletion.
         self.mark_variable_for_deletion: set[str] = set()
-        self.message_mark_for_deletion: set[str] = set()
+        self.mark_message_for_deletion: set[str] = set()
 
         # set of variable ids that can be overriden because they were defined in the project.
         self.overridable: set[str] = set()
@@ -272,8 +272,8 @@ class Assembler:
         message = self.messages.get(name)
 
         if message and message.name in self.messages:
-            if message.name in self.message_mark_for_deletion and message.uri == self.uri:
-                self.message_mark_for_deletion.remove(name)
+            if message.name in self.mark_message_for_deletion and message.uri == self.uri:
+                self.mark_message_for_deletion.remove(name)
             return self.messages[name].id
 
         broadcast_id = self.new_id()
@@ -2121,7 +2121,7 @@ class Assembler:
         """
         self.messages = {}
         self.mark_variable_for_deletion = set()
-        self.message_mark_for_deletion = set()
+        self.mark_message_for_deletion = set()
         self.variables = {}
         self.overridable = set()
 
@@ -2164,7 +2164,7 @@ class Assembler:
 
         for message, message_data in global_messages.items():
             if message_data.uri == self.uri:
-                self.message_mark_for_deletion.add(message)
+                self.mark_message_for_deletion.add(message)
             self.messages[message] = message_data
 
         for variable_id in list(self.variables):
