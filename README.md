@@ -1,6 +1,6 @@
 A toy programming language called 'Itchy' (because a *Scratch* is caused by an *Itch*).
 
-Created using the knowledge of how programming languages work, Python and compilers since I first created this repo for A level computer science (you can find the archive in [itchy-rewrite](https://github.com/MrSkroob/itchy-rewrite)). 
+Created using the knowledge of how programming languages work, Python and compilers since I first created this repo in my first attempt (you can find the archive in [itchy-rewrite](https://github.com/MrSkroob/itchy-rewrite)). 
 
 Repo features:
 - BNF grammar
@@ -135,4 +135,6 @@ The file's name (e.g. `Sprite1.itch`) will replace the contents of `Sprite1` in 
 <paramlist> ::= <argtype> {<FieldSeperator> <argtype>}
 
 ```
+# AI Disclosure
+There's been some light usage of AI in this repo. Mostly to do tedious stuff, like the `scratch_blocks.py` and majority of the stuff used to generate the static grammar `tmLanguage.json`.  
 
