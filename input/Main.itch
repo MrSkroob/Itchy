@@ -1,3 +1,6 @@
+shared var c
+
+
 define foo(arg: var) {
     c += 1
     c += 1
