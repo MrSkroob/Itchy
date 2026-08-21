@@ -259,7 +259,7 @@ class Assembler:
             SymbolOccurence(
                 span=stmt.span,
                 definition_location=variable.definition_location,
-                context=key[1],
+                context=context,
                 symbol_type=symbol_type,
                 name=stmt.root
             )
@@ -768,7 +768,7 @@ class Assembler:
                 SymbolOccurence(
                     span=stmt.span,
                     definition_location=None,
-                    context=None,
+                    context=context,
                     symbol_type=SymbolType.FUNCTION,
                     name=stmt.callee
                 )
@@ -781,7 +781,7 @@ class Assembler:
             SymbolOccurence(
                 span=stmt.span,
                 definition_location=info.definition_location,
-                context=None,
+                context=context,
                 symbol_type=SymbolType.FUNCTION,
                 name=stmt.callee
             )
@@ -866,7 +866,7 @@ class Assembler:
             SymbolOccurence(
                 span=stmt.span,
                 definition_location=None,
-                context=None,
+                context=context,
                 symbol_type=SymbolType.EVENT,
                 name=stmt.name
             )
@@ -1606,7 +1606,7 @@ class Assembler:
                 SymbolOccurence(
                     span=expr.span,
                     definition_location=proc_info.definition_location,
-                    context=None,
+                    context=context,
                     symbol_type=SymbolType.FUNCTION,
                     name=expr.callee
                 )
@@ -1694,7 +1694,7 @@ class Assembler:
                 SymbolOccurence(
                     span=expr.span,
                     definition_location=None,
-                    context=None,
+                    context=context,
                     symbol_type=SymbolType.FUNCTION,
                     name=expr.callee
                 )
@@ -1933,7 +1933,7 @@ class Assembler:
                     span=ref.span,
                     definition_location=self.variables[self.variable_map[(arg_name, context)]].definition_location,
                     context=context,
-                    symbol_type=SymbolType.VARIABLE,
+                    symbol_type=SymbolType.PARAMETER,
                     name=ref.root
                 )
             )
@@ -1970,7 +1970,7 @@ class Assembler:
                 SymbolOccurence(
                     span=ref.span,
                     definition_location=self.variables[var_id].definition_location,
-                    context=self.variables[var_id].context,
+                    context=context,
                     symbol_type=SymbolType.VARIABLE,
                     name=ref.root
                 )
@@ -2131,13 +2131,13 @@ class Assembler:
             # do not add to existing variables if WE were the ones defining it.
             if variable_data.uri == self.uri:
                 self.mark_variable_for_deletion.add(variable_data.name)
-                if variable_data.id in self.variables:
-                    del self.variables[variable_id]
-                    del self.variable_map[(variable_data.name, None)]
+                # if variable_data.id in self.variables:
+                #     del self.variables[variable_id]
+                #     del self.variable_map[(variable_data.name, None)]
 
-                    continue
-                self.overridable.add(variable_data.name)
-            
+                continue
+                # self.overridable.add(variable_data.name)
+
             self.variable_map[(variable_data.name, variable_data.context)] = variable_id
             self.variables[variable_id] = VariableData(
                 variable_data.uri,
