@@ -2151,6 +2151,7 @@ class Assembler:
                     del self.variable_map[(variable_data.name, None)]
 
                     continue
+                self.overridable.add(variable_data.name)
             
             self.variable_map[(variable_data.name, variable_data.context)] = variable_id
             self.variables[variable_id] = VariableData(
