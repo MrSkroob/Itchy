@@ -730,10 +730,12 @@ class ASTBuilder:
                 "-=": "-",
                 "/=": "/"
             }
+
+            dummy_ref = VarRef(target.root, target.slice_expr, span=target.span, dummy=True)
     
             return AssignStmt(
                 target,
-                BinaryOpExpr(VarExpr(target, span=target.span, dummy=True), 
+                BinaryOpExpr(VarExpr(dummy_ref, span=target.span, dummy=True), 
                             OPERATION_TO_BINOP[operation.literal], action, 
                             span=SourceSpan(target.span.start, SourcePosition(target.span.end.line, target.span.end.character + 2)), 
                             dummy=node.dummy_node),
