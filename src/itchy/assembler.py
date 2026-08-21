@@ -1971,16 +1971,6 @@ class Assembler:
                     return self.raise_or_return(error, PLACE_HOLDER_0)
                 self.errors.append(error)
                 var_id = self.define_variable(False, "var" if ref.slice_expr is None else "list", ref.root, context, None)
-
-            self.register_symbol(
-                SymbolOccurence(
-                    span=ref.span,
-                    definition_location=self.variables[var_id].definition_location,
-                    context=context,
-                    symbol_type=SymbolType.VARIABLE,
-                    name=ref.root
-                ), ref
-            )
             
             var_type = self.variables[var_id].var_type
 
