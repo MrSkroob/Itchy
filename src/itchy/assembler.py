@@ -14,7 +14,7 @@ from enum import Enum, StrEnum
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
-from itchy.shared_templates import VariableTypes, DataType, SourceSpan, SPRITE_TEMPLATE, COSTUME_TEMPLATE
+from itchy.shared_templates import VariableTypes, DataType, SourceSpan, SPRITE_TEMPLATE, COSTUME_TEMPLATE, ASTNode
 from itchy.errors import CompilerError, CompilerErrorCodes, UnboundError, NotReferencedError, DuplicateDefinitionError,\
     ArgumentError, NotDefinedError, InvalidTypeError, SyntaxError, TypeMismatchError
 from itchy.scratch_blocks import SCRATCH_BLOCKS, Block, Reporter, Event, Menu
@@ -181,6 +181,12 @@ class Assembler:
         block_id = id or self.new_id()
         self.blocks[block_id] = block
         return block_id
+
+    def register_symbol(self, symbol: SymbolOccurence, stmt: ASTNode):
+        if stmt.dummy:
+            return
+
+        self.symbols.append(symbol)
     
     def make_block(
             self,
@@ -255,14 +261,14 @@ class Assembler:
 
         variable = self.variables[self.variable_map[key]]
 
-        self.symbols.append(
+        self.register_symbol(
             SymbolOccurence(
                 span=stmt.span,
                 definition_location=variable.definition_location,
                 context=context,
                 symbol_type=symbol_type,
                 name=stmt.root
-            )
+            ), stmt
         )
     
         return self.variable_map[key]
@@ -520,13 +526,13 @@ class Assembler:
 
                 var_id = self.define_variable(shared, type_name, name, None, stmt.span)
 
-                self.symbols.append(SymbolOccurence(
+                self.register_symbol(SymbolOccurence(
                     span=stmt.span,
                     definition_location=stmt.span,
                     context=None,
                     symbol_type=SymbolType.VARIABLE,
                     name=name
-                ))
+                ), stmt)
 
                 self.flag_non_referenced_variable(var_id, stmt, context)
                 return BlockRange(None, None)
@@ -764,27 +770,27 @@ class Assembler:
             block_range = self.emit_scratch_block(stmt, parent, context)
             if block_range is None:
                 return self.raise_or_return(NotDefinedError(f"Procedure '{stmt.callee}' is not defined and is not a valid scratch block", stmt))
-            self.symbols.append(
+            self.register_symbol(
                 SymbolOccurence(
                     span=stmt.span,
                     definition_location=None,
                     context=context,
                     symbol_type=SymbolType.FUNCTION,
                     name=stmt.callee
-                )
+                ), stmt
             )
             return block_range
 
         info = self.procedures[stmt.callee]
 
-        self.symbols.append(
+        self.register_symbol(
             SymbolOccurence(
                 span=stmt.span,
                 definition_location=info.definition_location,
                 context=context,
                 symbol_type=SymbolType.FUNCTION,
                 name=stmt.callee
-            )
+            ), stmt
         )
 
         if self.count_args(stmt.args) != len(info.argument_ids):
@@ -862,14 +868,14 @@ class Assembler:
         # field-shaped arguments (see event_whenbroadcastreceived), so they
         # get counted on top of inputs and fields rather than overlapping.
 
-        self.symbols.append(
+        self.register_symbol(
             SymbolOccurence(
                 span=stmt.span,
                 definition_location=None,
                 context=context,
                 symbol_type=SymbolType.EVENT,
                 name=stmt.name
-            )
+            ), stmt
         )
 
         expected_args = len(block_data.inputs) + len(block_data.fields)
@@ -964,14 +970,14 @@ class Assembler:
         if stmt.name in self.procedures:
             return self.raise_or_return(DuplicateDefinitionError(f"Function '{stmt.name}' shadowed by function of same name.", stmt))
 
-        self.symbols.append(
+        self.register_symbol(
             SymbolOccurence(
                 span=stmt.span,
                 definition_location=stmt.span,
                 context=None,
                 symbol_type=SymbolType.FUNCTION,
                 name=stmt.name
-            )
+            ), stmt
         )
         self.define_variable(False, "var", stmt.name + ":return", None, None)
 
@@ -1010,13 +1016,13 @@ class Assembler:
 
             var_id = self.define_variable(False, param.type_name, param.name, stmt.name, param.span)
             self.flag_non_referenced_variable(var_id, param, stmt.name)
-            self.symbols.append(SymbolOccurence(
+            self.register_symbol(SymbolOccurence(
                 span=param.span,
                 definition_location=param.span,
                 context=stmt.name,
                 symbol_type=SymbolType.PARAMETER,
                 name=param.name
-            ))
+            ), param)
 
         prototype = self.blocks[prototype_id]
 
@@ -1602,14 +1608,14 @@ class Assembler:
         if expr.callee not in SCRATCH_BLOCKS and expr.callee in self.procedures:
             proc_info = self.procedures[expr.callee]
 
-            self.symbols.append(
+            self.register_symbol(
                 SymbolOccurence(
                     span=expr.span,
                     definition_location=proc_info.definition_location,
                     context=context,
                     symbol_type=SymbolType.FUNCTION,
                     name=expr.callee
-                )
+                ), expr
             )
 
             setup = BlockRange(None, None)
@@ -1690,14 +1696,14 @@ class Assembler:
         else:
             block_data = SCRATCH_BLOCKS[expr.callee]
 
-            self.symbols.append(
+            self.register_symbol(
                 SymbolOccurence(
                     span=expr.span,
                     definition_location=None,
                     context=context,
                     symbol_type=SymbolType.FUNCTION,
                     name=expr.callee
-                )
+                ), expr
             )
 
             if not isinstance(block_data, Reporter):
@@ -1928,14 +1934,14 @@ class Assembler:
 
             self.flag_referenced_variable(self.variable_map[(arg_name, context)], context)
 
-            self.symbols.append(
+            self.register_symbol(
                 SymbolOccurence(
                     span=ref.span,
                     definition_location=self.variables[self.variable_map[(arg_name, context)]].definition_location,
                     context=context,
                     symbol_type=SymbolType.PARAMETER,
                     name=ref.root
-                )
+                ), ref
             )
 
             reporter_id = self.make_block(
@@ -1966,14 +1972,14 @@ class Assembler:
                 self.errors.append(error)
                 var_id = self.define_variable(False, "var" if ref.slice_expr is None else "list", ref.root, context, None)
 
-            self.symbols.append(
+            self.register_symbol(
                 SymbolOccurence(
                     span=ref.span,
                     definition_location=self.variables[var_id].definition_location,
                     context=context,
                     symbol_type=SymbolType.VARIABLE,
                     name=ref.root
-                )
+                ), ref
             )
             
             var_type = self.variables[var_id].var_type
@@ -2130,11 +2136,8 @@ class Assembler:
         for variable_id, variable_data in list(global_variables.items()):
             # do not add to existing variables if WE were the ones defining it.
             if variable_data.uri == self.uri:
+                # signal to external LSP that we might want to delete this variable
                 self.mark_variable_for_deletion.add(variable_data.name)
-                # if variable_data.id in self.variables:
-                #     del self.variables[variable_id]
-                #     del self.variable_map[(variable_data.name, None)]
-
                 continue
                 # self.overridable.add(variable_data.name)
 
