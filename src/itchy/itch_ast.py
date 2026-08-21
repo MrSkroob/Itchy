@@ -733,7 +733,7 @@ class ASTBuilder:
     
             return AssignStmt(
                 target,
-                BinaryOpExpr(VarExpr(target, span=target.span, dummy=target.dummy), 
+                BinaryOpExpr(VarExpr(target, span=target.span, dummy=True), 
                             OPERATION_TO_BINOP[operation.literal], action, 
                             span=SourceSpan(target.span.start, SourcePosition(target.span.end.line, target.span.end.character + 2)), 
                             dummy=node.dummy_node),
