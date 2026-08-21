@@ -1375,21 +1375,21 @@ class Assembler:
             return self.raise_or_return(CompilerError(f"Cannot assign read only argument '{target.root}'", target))
 
         inputs: dict[str, ScratchInputRaw] = {}
+
+        try:
+            var_id = self.get_variable(target, context)
+            variable = self.variables[var_id]
+            self.flag_non_referenced_variable(var_id, VarDefStmt(
+                variable.var_type.value, target.root, variable.shared, span=target.span
+            ), context)
+        except NameError:
+            error = UnboundError(f"'{target.root}' is not defined.", target, data={"name": target.root})
+            if not self.compile_with_warnings:
+                return self.raise_or_return(error)
+            self.errors.append(error)
+            var_id = self.define_variable(False, "list" if target.slice_expr is not None else "var", target.root, context, None)
         
         if target.slice_expr is not None:
-            try:
-                var_id = self.get_variable(target, context)
-                variable = self.variables[var_id]
-                self.flag_non_referenced_variable(var_id, VarDefStmt(
-                    variable.var_type.value, target.root, variable.shared, span=target.span
-                ), context)
-            except NameError:
-                error = UnboundError(f"'{target.root}' is not defined.", target, data={"name": target.root})
-                if not self.compile_with_warnings:
-                    return self.raise_or_return(error)
-                self.errors.append(error)
-                var_id = self.define_variable(False, "list", target.root, context, None)
-            
             variable = self.variables[var_id]
 
             if variable.is_list:
@@ -1416,21 +1416,6 @@ class Assembler:
             else:
                 return self.raise_or_return(InvalidTypeError("Strings do not support item assignment", target))
         else:
-            # if 
-            try:
-                var_id = self.get_variable(target, context) 
-                variable = self.variables[var_id]
-
-                self.flag_non_referenced_variable(var_id, VarDefStmt(
-                    variable.var_type.value, target.root, variable.shared, span=target.span
-                ), context)
-            except NameError:
-                error = UnboundError(f"'{target.root}' is not defined.", target, data={"name": target.root})
-                if not self.compile_with_warnings:
-                    return self.raise_or_return(error)
-                self.errors.append(error)
-                var_id = self.define_variable(False, "var", target.root, context, None)
-            
             block_id = self.new_id()
             self.make_block(
                 "data_setvariableto",
