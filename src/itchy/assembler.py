@@ -248,7 +248,7 @@ class Assembler:
         symbol_type = SymbolType.VARIABLE
         
         if (name, context) in self.variable_map:
-            if context is not None and context in self.procedures:
+            if context is not None and context in self.procedures and name in self.procedures[context].argument_names:
                 symbol_type = SymbolType.PARAMETER
             key = (name, context)
             # raise NameError(f"variable {name} is not defined!")
