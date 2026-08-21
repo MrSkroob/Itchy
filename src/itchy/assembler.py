@@ -259,7 +259,7 @@ class Assembler:
             SymbolOccurence(
                 span=stmt.span,
                 definition_location=variable.definition_location,
-                context=context,
+                context=key[1],
                 symbol_type=symbol_type,
                 name=stmt.root
             )
@@ -768,7 +768,7 @@ class Assembler:
                 SymbolOccurence(
                     span=stmt.span,
                     definition_location=None,
-                    context=context,
+                    context=None,
                     symbol_type=SymbolType.FUNCTION,
                     name=stmt.callee
                 )
@@ -781,7 +781,7 @@ class Assembler:
             SymbolOccurence(
                 span=stmt.span,
                 definition_location=info.definition_location,
-                context=context,
+                context=None,
                 symbol_type=SymbolType.FUNCTION,
                 name=stmt.callee
             )
@@ -866,7 +866,7 @@ class Assembler:
             SymbolOccurence(
                 span=stmt.span,
                 definition_location=None,
-                context=context,
+                context=None,
                 symbol_type=SymbolType.EVENT,
                 name=stmt.name
             )
@@ -1606,7 +1606,7 @@ class Assembler:
                 SymbolOccurence(
                     span=expr.span,
                     definition_location=proc_info.definition_location,
-                    context=context,
+                    context=None,
                     symbol_type=SymbolType.FUNCTION,
                     name=expr.callee
                 )
@@ -1694,7 +1694,7 @@ class Assembler:
                 SymbolOccurence(
                     span=expr.span,
                     definition_location=None,
-                    context=context,
+                    context=None,
                     symbol_type=SymbolType.FUNCTION,
                     name=expr.callee
                 )
@@ -1970,7 +1970,7 @@ class Assembler:
                 SymbolOccurence(
                     span=ref.span,
                     definition_location=self.variables[var_id].definition_location,
-                    context=context,
+                    context=self.variables[var_id].context,
                     symbol_type=SymbolType.VARIABLE,
                     name=ref.root
                 )
