@@ -265,7 +265,7 @@ class Assembler:
             SymbolOccurence(
                 span=stmt.span,
                 definition_location=variable.definition_location,
-                context=context,
+                context=key[1],
                 symbol_type=symbol_type,
                 name=stmt.root
             ), stmt
