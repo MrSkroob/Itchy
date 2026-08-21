@@ -71,7 +71,7 @@ def make_var(line: int = 1, char: int = 1):
             Sequence.__name__,
             (
                 Token(Definitions.Symbol, "__error__", line, char, dummy_token=True),
-                ParsedNode(OptionalNode.__name__, ()),
+                ParsedNode(OptionalNode.__name__, (), dummy_node=True),
             ),
             dummy_node=True
         ),
@@ -155,7 +155,7 @@ def make_stat(line: int=1, char: int=1):
                         char,
                         dummy_token=True
                     ),
-                    ParsedNode("chunk", ()),
+                    ParsedNode("chunk", (), dummy_node=True),
                     Token(
                         Definitions.CloseCurlyBracket,
                         "}",
