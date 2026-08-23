@@ -157,6 +157,7 @@ class Assembler:
         self.costumes: set[str] = set()
         self.errors: list[CompilerError] = []
 
+        self.non_referenced_functions: dict[str, FunctionDefStmt] = {} 
         self.non_referenced_variables: dict[tuple[str, StrOptional], list[VarDefStmt | Param]] = {}
 
         self.symbols: list[SymbolOccurence] = []
@@ -272,7 +273,6 @@ class Assembler:
         )
     
         return self.variable_map[key]
-    
 
     def define_broadcast(self, name: str) -> str:
         message = self.messages.get(name)
@@ -335,6 +335,22 @@ class Assembler:
 
         return var_id
 
+
+    def flag_non_referenced_function(self, function: FunctionDefStmt):
+        if function.name in SCRATCH_BLOCKS:
+            return
+
+        if function.name not in self.procedures:
+            return
+
+        self.non_referenced_functions[function.name] = function
+        
+
+    def flag_referenced_function(self, function_name: str):
+        if function_name in self.non_referenced_functions:
+            del self.non_referenced_functions[function_name]
+
+
     def flag_non_referenced_variable(self, var_id: str, stmt: VarDefStmt | VarRef | Param, context: StrOptional):
         variable = self.variables[var_id]
 
@@ -350,7 +366,6 @@ class Assembler:
                 self.non_referenced_variables[(variable.name, context)] = []
             self.non_referenced_variables[(variable.name, context)].append(stmt)
         
-
     def flag_referenced_variable(self, var_id: str, context: StrOptional):
         variable = self.variables[var_id]
         key = (variable.name, context)
@@ -448,17 +463,25 @@ class Assembler:
         emit_statements(pre_defines)
         emit_statements(program.body)
 
-        seen_locations: set[tuple[int, int]] = set()
 
         for variables in self.non_referenced_variables.values():
             for variable in variables:
-                seen_locations.add((variable.span.start.line, variable.span.start.character))
                 self.errors.append(
                     NotReferencedError(
-                        f"{variable.name} is not referenced",
+                        f"'{variable.name}' is not referenced",
                         error_node=variable
                     )
                 )
+
+        for function in self.non_referenced_functions.values():
+            self.errors.append(
+                NotReferencedError(
+                    f"'{function.name}' is not referenced",
+                    error_node=function
+                )
+            )
+
+        
 
     
     def emit_sequence(
@@ -764,7 +787,6 @@ class Assembler:
         return block_range
             
     def emit_function_call(self, stmt: FunctionCallStmt, parent: StrOptional, context: StrOptional) -> BlockRange:
-
         if stmt.callee not in self.procedures:
             # is either a custom scratch block or a hallucination :v
             block_range = self.emit_scratch_block(stmt, parent, context)
@@ -780,6 +802,8 @@ class Assembler:
                 ), stmt
             )
             return block_range
+
+        self.flag_referenced_function(stmt.callee)
 
         info = self.procedures[stmt.callee]
 
@@ -1057,6 +1081,8 @@ class Assembler:
             argument_types=argument_types_tuple,
             definition_location=stmt.span
         )
+
+        self.flag_non_referenced_function(stmt)
 
         # for concise' sake, append a return statement always
         body_range = self.emit_sequence(stmt.body, definition_id, stmt.name)
@@ -2159,6 +2185,7 @@ class Assembler:
             del self.variables[variable_id]
 
         self.non_referenced_variables = {}
+        self.non_referenced_functions = set()
         self.errors = []
         self.blocks = {}
         self.procedures = {}
