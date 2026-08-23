@@ -2185,7 +2185,7 @@ class Assembler:
             del self.variables[variable_id]
 
         self.non_referenced_variables = {}
-        self.non_referenced_functions = set()
+        self.non_referenced_functions = {}
         self.errors = []
         self.blocks = {}
         self.procedures = {}
