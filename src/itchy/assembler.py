@@ -587,16 +587,20 @@ class Assembler:
         if a in b:
             return True
 
+        if a == VariableTypes.LIST:
+            a = VariableTypes.STRING
+
+        if VariableTypes.LIST in b:
+            b.add(VariableTypes.VAR)
+            b.remove(VariableTypes.LIST)
+
         if a == VariableTypes.NOTHING:
             return False
 
-        if a == VariableTypes.VAR and VariableTypes.LIST not in b:
+        if a == VariableTypes.VAR:
             return True
 
         if a == VariableTypes.UNKNOWN:
-            return True
-
-        if VariableTypes.VAR in b and a != VariableTypes.LIST:
             return True
 
         return False
