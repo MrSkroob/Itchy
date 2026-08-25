@@ -7,7 +7,7 @@ import zipfile
 import tempfile
 import os
 
-from typing import TypeVar
+from typing import TypeVar, Iterable
 from dataclasses import dataclass, field
 from enum import Enum, StrEnum
 
@@ -28,11 +28,16 @@ T = TypeVar("T")
 ScratchBlock = dict[str, Any]
 StrOptional = str | None
 
+FRAME_INDEX = "compiler:frame_index"
+STACK_ITERABLE = "compiler:stack_iterable"
+FIND_STACK_FRAME = "compiler:find_stack_frame"
 RETURN_STACK = "compiler:return_values"
-FLAG_STACK = "compiler:return_flags" 
+# FLAG_STACK = "compiler:return_flags" 
 PUSH_RETURN_FRAME = "compiler:push_return_frame"
 SET_RETURN_VALUE = "compiler:set_return_value"
 POP_RETURN_FRAME = "compiler:pop_return_frame"
+THREAD_ARG = "compiler:frame_id"
+
 
 
 HEXCODE = re.compile(r"^#(?:[0-9a-fA-F]{3}){1,2}$")
@@ -73,6 +78,12 @@ class SymbolType(StrEnum):
     EVENT = "event"
 
 
+@dataclass()
+class Context:
+    function_context: StrOptional
+    thread_id: int=1
+
+
 @dataclass(frozen=True, kw_only=True)
 class SymbolOccurence:
     span: SourceSpan
@@ -101,7 +112,7 @@ class VariableData:
     uri: str
     name: str
     id: str
-    context: StrOptional
+    context: Context
     var_type: VariableTypes
     is_list: bool
     shared: bool
@@ -151,6 +162,7 @@ class Assembler:
         # set of variable ids that can be overriden because they were defined in the project.
         self.overridable: set[str] = set()
 
+        self.thread_number = 0
         # name, id
         self.messages: dict[str, MessageData] = {}
 
@@ -174,6 +186,10 @@ class Assembler:
         if error.error_node and not error.error_node.dummy:
             self.errors.append(error)
         return return_value
+
+    def new_thread_id(self) -> int:
+        self.thread_number += 1
+        return self.thread_number
     
     def new_id(self) -> str:
         return uuid.uuid4().hex[:20]
@@ -239,24 +255,28 @@ class Assembler:
             length += 1
         return length
 
-    def get_variable(self, stmt: VarRef, context: StrOptional) -> str:
+    def get_variable_safe(self, stmt: VarRef, context: Context) -> tuple[str, StrOptional] | None:
         """
-        Returns a variable ID without any extra functionality.
-        Do this when you strictly expect the variable to exist, and want to error if it wasn't implicitly/explicitly defined previously.
+        Returns a variable key without any extra functionality. Returns none instead of raising an 
+        error if the variable exists.
         """
         name = stmt.root
 
         symbol_type = SymbolType.VARIABLE
+        function_owner = context.function_context
         
-        if (name, context) in self.variable_map:
-            if context is not None and context in self.procedures and name in self.procedures[context].argument_names:
+        if (name, function_owner) in self.variable_map:
+            if function_owner is not None \
+                and function_owner in self.procedures \
+                and name in self.procedures[function_owner].argument_names:
+
                 symbol_type = SymbolType.PARAMETER
-            key = (name, context)
+            key = (name, function_owner)
             # raise NameError(f"variable {name} is not defined!")
         elif (name, None) in self.variable_map:
             key = (name, None)
         else:
-            raise NameError(f"variable {name} is not defined!")
+            return
 
         self.flag_referenced_variable(self.variable_map[key], context)
 
@@ -271,7 +291,18 @@ class Assembler:
                 name=stmt.root
             ), stmt
         )
-    
+
+        return key
+
+    def get_variable(self, stmt: VarRef, context: Context) -> str:
+        """
+        Returns a variable ID without any extra functionality.
+        Do this when you strictly expect the variable to exist, and want to error if it wasn't implicitly/explicitly defined previously.
+        """
+        key = self.get_variable_safe(stmt, context)
+        if key is None:
+            raise NameError(f"{stmt.root} does not exist!")
+
         return self.variable_map[key]
 
     def define_broadcast(self, name: str) -> str:
@@ -286,18 +317,32 @@ class Assembler:
         self.messages[name] = MessageData(self.uri, name, broadcast_id)
         return broadcast_id
     
-    def assert_writable_name(self, var_name: str, context: StrOptional) -> None:
-        if context is None:
+    def assert_writable_name(self, var_name: str, context: Context) -> None:
+        function_context = context.function_context
+
+        if function_context is None:
             return
 
-        if context not in self.procedures:
+        if function_context not in self.procedures:
             return
         
-        procedure = self.procedures[context]
+        procedure = self.procedures[function_context]
         if var_name in procedure.argument_names:
             raise ValueError(f"{var_name} IS READ ONLY!!!")
 
-    def define_variable(self, shared: bool, type_name: str, name: str, context: StrOptional, source_location: SourceSpan | None) -> str:
+    def is_parameter(self, var_id: str):
+        variable = self.variables[var_id]
+
+        if variable.context.function_context is None:
+            return False
+
+        if variable.context.function_context in self.procedures:
+            proc_info = self.procedures[variable.context.function_context]
+            return variable.name in proc_info.argument_names
+
+        return False
+
+    def define_variable(self, shared: bool, type_name: str, name: str, context: Context, source_location: SourceSpan | None) -> str:
         """
         Returns a variable ID. NOT a block ID.
         You may also use this if you're okay with the variable not existing beforehand (typically for loop variables and other compiler-defined, single use variables.)
@@ -310,7 +355,9 @@ class Assembler:
         else:
             default_value = 0
 
-        key = (name, context)
+        # if context.function_context in self.procedures:
+
+        key = (name, context.function_context)
 
         if key in self.variable_map:
             self.flag_referenced_variable(self.variable_map[key], context)
@@ -351,7 +398,7 @@ class Assembler:
             del self.non_referenced_functions[function_name]
 
 
-    def flag_non_referenced_variable(self, var_id: str, stmt: VarDefStmt | VarRef | Param, context: StrOptional):
+    def flag_non_referenced_variable(self, var_id: str, stmt: VarDefStmt | VarRef | Param, context: Context):
         variable = self.variables[var_id]
 
         if variable.shared:
@@ -360,15 +407,16 @@ class Assembler:
         if isinstance(stmt, VarDefStmt):
             self.non_referenced_variables[(variable.name, None)] = [stmt]
         else:
+            function_context = context.function_context
             if isinstance(stmt, VarRef):
                 stmt = VarDefStmt(variable.var_type.value, variable.name, variable.shared, span=stmt.span)
-            if (variable.name, context) not in self.non_referenced_variables:
-                self.non_referenced_variables[(variable.name, context)] = []
-            self.non_referenced_variables[(variable.name, context)].append(stmt)
+            if (variable.name, function_context) not in self.non_referenced_variables:
+                self.non_referenced_variables[(variable.name, function_context)] = []
+            self.non_referenced_variables[(variable.name, function_context)].append(stmt)
         
-    def flag_referenced_variable(self, var_id: str, context: StrOptional):
+    def flag_referenced_variable(self, var_id: str, context: Context):
         variable = self.variables[var_id]
-        key = (variable.name, context)
+        key = (variable.name, context.function_context)
         key2 = (variable.name, None)
 
         if key in self.non_referenced_variables:
@@ -378,90 +426,114 @@ class Assembler:
 
         if key2 in self.non_referenced_variables:
             del self.non_referenced_variables[key2]
+
+
+    def emit_statements(self, statements: Iterable[Stmt], x: int=100, y: int=100):
+        """
+        emits statements that do not necessarily have to be linked together.
+        """
+        for stmt in statements:
+            block_range = self.emit_stmt(stmt, None, Context(None))
+            if block_range.first is None:
+                # e.g. a bare VarDefStmt, which doesn't emit a block
+                continue
+
+            first_block = self.blocks[block_range.first]
+            first_block["topLevel"] = True
+            first_block["parent"] = None
+            first_block["x"] = x
+            first_block["y"] = y
+
+            y += 200
     
     def emit_program(self, program: Program) -> None:
         """
-        Emits every top-level statement in `program` as its own independent
-        script. Unlike emit_sequence, this does NOT chain the statements
-        together via next/parent -- each top-level hat (or orphan stack) is
-        its own script in Scratch, so they only need to be spaced apart on
-        the canvas, not linked to one another.
+        Takes a program object only and emits each sequence within said program.
+        uses .emit_statements() internally so statements do not connect to each other. 
         """
-        x, y = 100, 100
-
-        self.define_variable(False, "list", RETURN_STACK, None, None)
-        self.define_variable(False, "list", FLAG_STACK, None, None)
+        self.define_variable(False, "var", FRAME_INDEX, Context(None), None)
+        self.define_variable(False, "list", RETURN_STACK, Context(None), None)
+        # self.define_variable(False, "list", FLAG_STACK, None, None)
+        self.define_variable(False, "var", STACK_ITERABLE, Context(None), None)
 
         # return_helper
         push_return_frame = FunctionDefStmt(
             name=PUSH_RETURN_FRAME,
-            params=(),
+            warp=True,
+            params=(Param("frame_id", "number"),),
             body=(
+                FunctionCallStmt("data_addtolist", (VarExpr(VarRef("frame_id")), VarExpr(VarRef(RETURN_STACK)))),
                 FunctionCallStmt("data_addtolist", (StringExpr(""), VarExpr(VarRef(RETURN_STACK)))),
-                FunctionCallStmt("data_addtolist", (StringExpr("false"), VarExpr(VarRef(FLAG_STACK)))),
+                FunctionCallStmt("data_addtolist", (StringExpr("false"), VarExpr(VarRef(RETURN_STACK)))),
+            )
+        )
+
+        #
+        find_frame = FunctionDefStmt(
+            name=FIND_STACK_FRAME,
+            warp=True,
+            params=(Param("frame_id", "number"),),
+            body=(
+                ForRangeStmt(STACK_ITERABLE, start=NumberExpr(1), 
+                             stop=FunctionCallExpr("data_lengthoflist", (VarExpr(VarRef(RETURN_STACK)),)), 
+                             step=NumberExpr(3), 
+                             body=(
+                                 IfStmt(
+                                     branches=(IfBranch(
+                                         BinaryOpExpr(VarExpr(VarRef(STACK_ITERABLE)), "==", VarExpr(VarRef("frame_id"))),
+                                         body=(
+                                             AssignStmt(VarRef(FRAME_INDEX), VarExpr(VarRef(STACK_ITERABLE))),
+                                             FunctionCallStmt("control_stop", (StringExpr("this script"),)),
+                                         )
+                                     ),),
+                                     else_body=()
+                                 ),
+                             )),
             )
         )
 
         # return_helper
         set_return_value = FunctionDefStmt(
             name=SET_RETURN_VALUE,
-            params=(Param("value", "var"),),
+            warp=True,
+            params=(Param("value", "var"), Param("frame_id", "number")),
             body=(
-                FunctionCallStmt("data_replaceitemoflist", (FunctionCallExpr("data_lengthoflist", 
-                                                                            (VarExpr(
-                                                                                VarRef(RETURN_STACK)),)), 
-                                                            VarExpr(
-                                                                VarRef("value")), 
-                                                            VarExpr(
-                                                                VarRef(RETURN_STACK)))),
-                FunctionCallStmt("data_replaceitemoflist", (FunctionCallExpr("data_lengthoflist", 
-                                                                                            (VarExpr(
-                                                                                                VarRef(FLAG_STACK)),)), 
-                                                                            StringExpr("true"),
+                FunctionCallStmt(FIND_STACK_FRAME, (VarExpr(VarRef("frame_id")),)),
+                # FunctionCallStmt("data_replaceitemoflist", (VarExpr(VarRef("stack_id")), VarExpr(VarRef("value")))),
+                FunctionCallStmt("data_replaceitemoflist", (BinaryOpExpr(VarExpr(VarRef("frame_id")), "+", NumberExpr(1)), 
+                                                                            VarExpr(VarRef("value")),
                                                                             VarExpr(
-                                                                                VarRef(FLAG_STACK)))),
+                                                                                VarRef(RETURN_STACK)))),
+                FunctionCallStmt("data_replaceitemoflist", (BinaryOpExpr(VarExpr(VarRef("frame_id")), "+", NumberExpr(2)), 
+                                                                                            StringExpr("true"),
+                                                                                            VarExpr(
+                                                                                                VarRef(RETURN_STACK)))),
             )
         )
 
         # # return helper
         pop_return_frame = FunctionDefStmt(
             name=POP_RETURN_FRAME,
-            params=(),
+            warp=True,
+            params=(Param("frame_id", "number"),),
             body=(
-                FunctionCallStmt("data_deleteoflist", (FunctionCallExpr("data_lengthoflist", 
-                                                                                        (VarExpr(
-                                                                                            VarRef(RETURN_STACK)),)), 
+                FunctionCallStmt(FIND_STACK_FRAME, (VarExpr(VarRef("frame_id")),)),
+                FunctionCallStmt("data_deleteoflist", (VarExpr(VarRef(FRAME_INDEX)), 
                                                                         VarExpr(
                                                                             VarRef(RETURN_STACK)))),
-                FunctionCallStmt("data_deleteoflist", (FunctionCallExpr("data_lengthoflist", 
-                                                                                                        (VarExpr(
-                                                                                                            VarRef(FLAG_STACK)),)), 
-                                                                                        VarExpr(
-                                                                                            VarRef(FLAG_STACK)))),
+                FunctionCallStmt("data_deleteoflist", (VarExpr(VarRef(FRAME_INDEX)), 
+                                                                        VarExpr(
+                                                                            VarRef(RETURN_STACK)))),
+                FunctionCallStmt("data_deleteoflist", (VarExpr(VarRef(FRAME_INDEX)), 
+                                                                        VarExpr(
+                                                                            VarRef(RETURN_STACK)))),
             )
         )
 
-        pre_defines = (push_return_frame, set_return_value, pop_return_frame)
+        pre_defines = (push_return_frame, find_frame, set_return_value, pop_return_frame)
 
-        def emit_statements(statements: tuple[Stmt, ...]):
-            nonlocal x
-            nonlocal y
-            for stmt in statements:
-                block_range = self.emit_stmt(stmt, None, None)
-                if block_range.first is None:
-                    # e.g. a bare VarDefStmt, which doesn't emit a block
-                    continue
-
-                first_block = self.blocks[block_range.first]
-                first_block["topLevel"] = True
-                first_block["parent"] = None
-                first_block["x"] = x
-                first_block["y"] = y
-
-                y += 200
-
-        emit_statements(pre_defines)
-        emit_statements(program.body)
+        self.emit_statements(pre_defines)
+        self.emit_statements(program.body)
 
 
         for variables in self.non_referenced_variables.values():
@@ -481,14 +553,11 @@ class Assembler:
                 )
             )
 
-        
-
-    
     def emit_sequence(
             self,
             statements: tuple[Stmt, ...],
             parent: StrOptional,
-            context: StrOptional
+            context: Context
         ) -> BlockRange:
         first: StrOptional = None
         last: StrOptional = None
@@ -514,8 +583,8 @@ class Assembler:
             
             last = emitted.last
 
-        if context in self.procedures:
-            proc_info = self.procedures[context]
+        if context.function_context in self.procedures:
+            proc_info = self.procedures[context.function_context]
             if final_return_statement is not None and len(final_return_statement.values) > 0 \
             and VariableTypes.NOTHING in proc_info.return_types \
             and proc_info.nothings == 0:
@@ -523,7 +592,7 @@ class Assembler:
         
         return BlockRange(first, last)
     
-    def emit_stmt(self, stmt: Stmt, parent: StrOptional, context: StrOptional) -> BlockRange:
+    def emit_stmt(self, stmt: Stmt, parent: StrOptional, context: Context) -> BlockRange:
         match stmt:
             case BlockStmt(body=body):
                 return self.emit_sequence(body, parent, context)
@@ -547,7 +616,7 @@ class Assembler:
                 if name in self.mark_variable_for_deletion and shared:
                     self.mark_variable_for_deletion.remove(name)
 
-                var_id = self.define_variable(shared, type_name, name, None, stmt.span)
+                var_id = self.define_variable(shared, type_name, name, Context(None, context.thread_id), stmt.span)
 
                 self.register_symbol(SymbolOccurence(
                     span=stmt.span,
@@ -587,6 +656,8 @@ class Assembler:
         if a in b:
             return True
 
+        # scratch represents the contents of a list as a space separated string... for some reason.
+        # so, whenever you use it as a parameter, it is treated is a string. 
         if a == VariableTypes.LIST:
             a = VariableTypes.STRING
 
@@ -603,16 +674,20 @@ class Assembler:
         if a == VariableTypes.UNKNOWN:
             return True
 
+        if VariableTypes.VAR in b:
+            return True
+
         return False
 
 
-    def emit_return(self, stmt: ReturnStmt, parent: StrOptional, context: StrOptional) -> BlockRange:
-        if context is None or not self.procedures.get(context):
+    def emit_return(self, stmt: ReturnStmt, parent: StrOptional, context: Context) -> BlockRange:
+        function_context = context.function_context
+        if function_context is None or not self.procedures.get(function_context):
             return self.raise_or_return(SyntaxError("'return' outside of function", stmt, CompilerErrorCodes.REMOVE_RETURN))
 
-        proc_data = self.procedures[context]
+        proc_data = self.procedures[function_context]
         return_variable = proc_data.name + ":return"
-        self.define_variable(False, "var", return_variable, None, None)
+        self.define_variable(False, "var", return_variable, Context(None, context.thread_id), None)
 
         body: list[Stmt] = []
 
@@ -622,11 +697,17 @@ class Assembler:
         if self.count_args(stmt.values) > 0:
             # technically it's always 1 or 0, but this was left over for future where we might support more than one
             # return expressions (tuples)
+            # for now, we don't. i'm not convinced about multiple threads accessing the same return statement. 
+            return_type = self.emit_expr(stmt.values[0], context, BlockRange(None, None, True), None).return_type
+
+            if VariableTypes.NOTHING in return_type:
+                proc_data.nothings += 1
+
             proc_data.return_types = \
-                proc_data.return_types.union(self.emit_expr(stmt.values[0], context, BlockRange(None, None, True), None).return_type)
+                proc_data.return_types.union(return_type)
             for value in stmt.values:
                 body.append(
-                    FunctionCallStmt(SET_RETURN_VALUE, (value,))
+                    FunctionCallStmt(SET_RETURN_VALUE, (value, VarExpr(VarRef(FRAME_INDEX))))
                 )
         else:
             proc_data.nothings += 1
@@ -638,31 +719,52 @@ class Assembler:
 
         body.append(control_stop)
 
+
         if self.count_args(stmt.values) > 0:
-            return self.emit_if(
-                IfStmt(
-                    branches=(IfBranch(
-                        condition=BinaryOpExpr(FunctionCallExpr("data_itemoflist", (
-                            FunctionCallExpr("data_lengthoflist", (VarExpr(VarRef(FLAG_STACK)),
-                                                                                    )),
-                            VarExpr(VarRef(FLAG_STACK)), 
-                                                                                    
-                                                                                )
-                                                                ), 
-                                                                "==", 
-                                                                StringExpr("false")),
-                        body=tuple(body)
-                    ),),
-                    else_body=()
-                ),
+            return self.emit_sequence(
                 parent=parent,
-                context=context
-            )
+                context=context,
+                statements=(
+                    FunctionCallStmt(FIND_STACK_FRAME, (VarExpr(VarRef(THREAD_ARG)),)),
+                    IfStmt(
+                        branches=(IfBranch(
+                            condition=BinaryOpExpr(
+                                FunctionCallExpr("data_itemoflist", 
+                                                 (BinaryOpExpr(VarExpr(VarRef(FRAME_INDEX)), "+", NumberExpr(2)), 
+                                                  VarExpr(VarRef(RETURN_STACK)))), 
+                                                 "==", 
+                                                 StringExpr("false")),
+                            body=tuple(body),
+                        ),),
+                        else_body=())
+                    )
+                )
+            
+
+            # return self.emit_if(
+            #     IfStmt(
+            #         branches=(IfBranch(
+            #             condition=BinaryOpExpr(FunctionCallExpr("data_itemoflist", (
+            #                 FunctionCallExpr("data_lengthoflist", (VarExpr(VarRef(RETURN_STACK)),
+            #                                                                         )),
+            #                 VarExpr(VarRef(RETURN_STACK)), 
+                                                                                    
+            #                                                                     )
+            #                                                     ), 
+            #                                                     "==", 
+            #                                                     StringExpr("false")),
+            #             body=tuple(body)
+            #         ),),
+            #         else_body=()
+            #     ),
+            #     parent=parent,
+            #     context=context
+            # )
         else:
             return self.emit_function_call(control_stop, parent, context)
         
 
-    def emit_scratch_block(self, stmt: FunctionCallStmt, parent: StrOptional, context: StrOptional) -> BlockRange | None:
+    def emit_scratch_block(self, stmt: FunctionCallStmt, parent: StrOptional, context: Context) -> BlockRange | None:
         if stmt.callee not in SCRATCH_BLOCKS:
             return None
 
@@ -790,7 +892,7 @@ class Assembler:
 
         return block_range
             
-    def emit_function_call(self, stmt: FunctionCallStmt, parent: StrOptional, context: StrOptional) -> BlockRange:
+    def emit_function_call(self, stmt: FunctionCallStmt, parent: StrOptional, context: Context) -> BlockRange:
         if stmt.callee not in self.procedures:
             # is either a custom scratch block or a hallucination :v
             block_range = self.emit_scratch_block(stmt, parent, context)
@@ -800,7 +902,7 @@ class Assembler:
                 SymbolOccurence(
                     span=stmt.span,
                     definition_location=None,
-                    context=context,
+                    context=context.function_context,
                     symbol_type=SymbolType.FUNCTION,
                     name=stmt.callee
                 ), stmt
@@ -815,15 +917,23 @@ class Assembler:
             SymbolOccurence(
                 span=stmt.span,
                 definition_location=info.definition_location,
-                context=context,
+                context=context.function_context,
                 symbol_type=SymbolType.FUNCTION,
                 name=stmt.callee
             ), stmt
         )
 
-        if self.count_args(stmt.args) != len(info.argument_ids):
+        args = stmt.args
+
+        if self.count_args(args) == len(info.argument_names) - 1:
+            if context.function_context in self.procedures:
+                args += (VarExpr(VarRef(THREAD_ARG)),)
+            else:
+                args += (NumberExpr(context.thread_id),)
+
+        if self.count_args(args) != len(info.argument_ids):
             return self.raise_or_return(ArgumentError(
-                f"Function '{stmt.callee}' expects {len(info.argument_ids)} arguments, "
+                f"Function '{stmt.callee}' expects {len(info.argument_ids) - 1} arguments, "
                 f"got {self.count_args(stmt.args)}",
                 stmt
             ))
@@ -843,7 +953,7 @@ class Assembler:
 
         failure: InvalidTypeError | None = None
 
-        for arg_id, arg_type, arg_expr in zip(info.argument_ids, info.argument_types, stmt.args):
+        for arg_id, arg_type, arg_expr in zip(info.argument_ids, info.argument_types, args):
             emitted_arg = self.emit_expr(
                 arg_expr,
                 context,
@@ -877,8 +987,8 @@ class Assembler:
 
         return block_range
     
-    def emit_event_handler(self, stmt: EventHandlerStmt, context: StrOptional) -> BlockRange:
-        if context is not None:
+    def emit_event_handler(self, stmt: EventHandlerStmt, context: Context) -> BlockRange:
+        if context.function_context is not None:
             return self.raise_or_return(CompilerError(f"Cannot start a new thread while inside a function/event", stmt))
 
         if stmt.name not in SCRATCH_BLOCKS:
@@ -896,11 +1006,13 @@ class Assembler:
         # field-shaped arguments (see event_whenbroadcastreceived), so they
         # get counted on top of inputs and fields rather than overlapping.
 
+        context = Context(stmt.name, self.new_thread_id())
+
         self.register_symbol(
             SymbolOccurence(
                 span=stmt.span,
                 definition_location=None,
-                context=context,
+                context=context.function_context,
                 symbol_type=SymbolType.EVENT,
                 name=stmt.name
             ), stmt
@@ -942,7 +1054,8 @@ class Assembler:
             if arg in block_data.broadcasts:
                 if not isinstance(arg_expr, StringExpr):
                     inputs[arg.name] = (
-                        self.emit_expr(arg_expr, None, BlockRange(event_id, event_id), event_id).value
+                        self.emit_expr(arg_expr, Context(None, context.thread_id), 
+                        BlockRange(event_id, event_id), event_id).value
                     )
                 else:
                     broadcast_id = self.define_broadcast(arg_expr.value)
@@ -959,7 +1072,8 @@ class Assembler:
                     else:
                         inputs[arg.name] = (InputType.SHADOW_ONLY, (arg.return_type, arg_expr.value))
                 else:
-                    inputs[arg.name] = self.emit_expr(arg_expr, None, BlockRange(event_id, event_id), event_id).value
+                    inputs[arg.name] = self.emit_expr(arg_expr, Context(None, context.thread_id), 
+                                                      BlockRange(event_id, event_id), event_id).value
             index += 1
 
         field_args = stmt.params[len(block_data.inputs):]
@@ -984,7 +1098,7 @@ class Assembler:
         self.blocks[event_id]["inputs"] = inputs
         self.blocks[event_id]["fields"] = fields
 
-        body = self.emit_sequence(stmt.body, event_id, stmt.name)
+        body = self.emit_sequence(stmt.body, event_id, context)
 
         if body.first is not None:
             self.blocks[event_id]["next"] = body.first
@@ -1007,7 +1121,7 @@ class Assembler:
                 name=stmt.name
             ), stmt
         )
-        self.define_variable(False, "var", stmt.name + ":return", None, None)
+        self.define_variable(False, "var", stmt.name + ":return", Context(None), None)
 
         definition_id = self.make_block(
             opcode="procedures_definition",
@@ -1028,7 +1142,12 @@ class Assembler:
         argument_types: list[VariableTypes] = []
         proccode_parts: list[str] = [stmt.name]
 
-        for param in stmt.params:
+        if len(stmt.params) == 0 or stmt.params[-1].name != THREAD_ARG:
+            params = stmt.params + (Param(THREAD_ARG, "number", dummy=True),)
+        else:
+            params = stmt.params
+
+        for param in params:
             arg_id = self.new_id()
 
             argument_ids.append(arg_id)
@@ -1042,8 +1161,8 @@ class Assembler:
                 proccode_parts.append("%s")
                 argument_defaults.append("")
 
-            var_id = self.define_variable(False, param.type_name, param.name, stmt.name, param.span)
-            self.flag_non_referenced_variable(var_id, param, stmt.name)
+            var_id = self.define_variable(False, param.type_name, param.name, Context(stmt.name), param.span)
+            self.flag_non_referenced_variable(var_id, param, Context(stmt.name))
             self.register_symbol(SymbolOccurence(
                 span=param.span,
                 definition_location=param.span,
@@ -1089,7 +1208,7 @@ class Assembler:
         self.flag_non_referenced_function(stmt)
 
         # for concise' sake, append a return statement always
-        body_range = self.emit_sequence(stmt.body, definition_id, stmt.name)
+        body_range = self.emit_sequence(stmt.body, definition_id, Context(stmt.name))
 
         if body_range.first is not None:
             self.blocks[definition_id]["next"] = body_range.first
@@ -1100,7 +1219,7 @@ class Assembler:
             last=body_range.last or definition_id,
         )
     
-    def emit_for_range(self, stmt: ForRangeStmt, parent: StrOptional, context: StrOptional):
+    def emit_for_range(self, stmt: ForRangeStmt, parent: StrOptional, context: Context):
         # iterable variable
 
         try:
@@ -1191,7 +1310,7 @@ class Assembler:
 
         return BlockRange(set_range.first, repeat_id)
     
-    def emit_for_in(self, stmt: ForInStmt, parent: StrOptional, context: StrOptional):
+    def emit_for_in(self, stmt: ForInStmt, parent: StrOptional, context: Context):
         list_variable_name = "compiler:" + self.new_id()
         try:
             iterable_id = self.get_variable(stmt.iterable, context)
@@ -1319,7 +1438,7 @@ class Assembler:
 
         return BlockRange(set_id, repeat_id)
     
-    def emit_while(self, stmt: WhileStmt, parent: StrOptional, context: StrOptional):
+    def emit_while(self, stmt: WhileStmt, parent: StrOptional, context: Context):
         """
         Scratch does not support while loops normally, but *does* support repeat until blocks. A good way to emulate it is to
         do:
@@ -1350,7 +1469,7 @@ class Assembler:
         
         return block_range
             
-    def emit_if(self, stmt: IfStmt, parent: StrOptional, context: StrOptional) -> BlockRange:
+    def emit_if(self, stmt: IfStmt, parent: StrOptional, context: Context) -> BlockRange:
         return self.emit_if_branch_chain(
             stmt.branches,
             stmt.else_body,
@@ -1359,7 +1478,7 @@ class Assembler:
             context,
         )
 
-    def emit_if_branch_chain(self, branches: tuple[IfBranch, ...], else_body: tuple[Stmt, ...], index: int, parent: StrOptional, context: StrOptional):
+    def emit_if_branch_chain(self, branches: tuple[IfBranch, ...], else_body: tuple[Stmt, ...], index: int, parent: StrOptional, context: Context):
         branch = branches[index]
         has_else = index + 1 < len(branches) or bool(else_body)
 
@@ -1406,8 +1525,9 @@ class Assembler:
         return block_range
     
     
-    def emit_assignment(self, target: VarRef, value: Expr, parent: StrOptional, context: StrOptional) -> BlockRange:
-        if context in self.procedures and target.root in self.procedures[context].argument_names:
+    def emit_assignment(self, target: VarRef, value: Expr, parent: StrOptional, context: Context) -> BlockRange:
+        if context.function_context in self.procedures and \
+            target.root in self.procedures[context.function_context].argument_names:
             return self.raise_or_return(CompilerError(f"Cannot assign read only argument '{target.root}'", target))
 
         inputs: dict[str, ScratchInputRaw] = {}
@@ -1481,7 +1601,7 @@ class Assembler:
 
             return block_range
     
-    def emit_expr(self, expr: Expr, context: StrOptional, block_parent: BlockRange, parent: StrOptional) -> ScratchInput:
+    def emit_expr(self, expr: Expr, context: Context, block_parent: BlockRange, parent: StrOptional) -> ScratchInput:
         # block_id = self.new_id()
         # expression: ScratchInput = [InputType.REPORTER, block_id]
         
@@ -1634,15 +1754,20 @@ class Assembler:
         )
 
         # return expression
-    def emit_function_expr(self, expr: FunctionCallExpr, context: StrOptional, block_parent: BlockRange, parent: StrOptional) -> ScratchInput:
+    def emit_function_expr(self, expr: FunctionCallExpr, context: Context, block_parent: BlockRange, parent: StrOptional) -> ScratchInput:
         if expr.callee not in SCRATCH_BLOCKS and expr.callee in self.procedures:
             proc_info = self.procedures[expr.callee]
+
+            if context.function_context in self.procedures:
+                thread_id = VarExpr(VarRef(THREAD_ARG))
+            else:
+                thread_id = NumberExpr(context.thread_id)
 
             self.register_symbol(
                 SymbolOccurence(
                     span=expr.span,
                     definition_location=proc_info.definition_location,
-                    context=context,
+                    context=context.function_context,
                     symbol_type=SymbolType.FUNCTION,
                     name=expr.callee
                 ), expr
@@ -1652,8 +1777,8 @@ class Assembler:
 
             push_return_frame = self.emit_function_call(FunctionCallStmt(
                 PUSH_RETURN_FRAME,
-                ()
-            ), None, None)
+                (thread_id,)
+            ), None, context)
 
             setup = self.append_range(
                 setup,
@@ -1670,27 +1795,19 @@ class Assembler:
                 function_call,
             )
 
-            
             set_variable = self.emit_assignment(
                 VarRef(expr.callee + ":return"),
                 FunctionCallExpr(
                     "data_itemoflist",
                     (
-                        FunctionCallExpr(
-                            "data_lengthoflist",
-                            (
-                                VarExpr(
-                                    VarRef(RETURN_STACK),
-                                ),
-                            ),
-                        ),
+                        BinaryOpExpr(VarExpr(VarRef(FRAME_INDEX)), "+", NumberExpr(1)),
                         VarExpr(
                             VarRef(RETURN_STACK),
                         ),
                     ),
                 ),
                 None,
-                None,
+                context,
             )
 
             setup = self.append_range(
@@ -1700,8 +1817,8 @@ class Assembler:
 
             pop_return_frame = self.emit_function_call(FunctionCallStmt(
                 POP_RETURN_FRAME,
-                ()
-            ), None, None)
+                (thread_id,)
+            ), None, context)
 
             setup = self.append_range(
                 setup,
@@ -1715,7 +1832,7 @@ class Assembler:
 
             return_input = self.emit_var_ref(
                 VarRef(expr.callee + ":return"),
-                None,
+                context,
                 block_parent,
                 parent,
             )
@@ -1730,7 +1847,7 @@ class Assembler:
                 SymbolOccurence(
                     span=expr.span,
                     definition_location=None,
-                    context=context,
+                    context=context.function_context,
                     symbol_type=SymbolType.FUNCTION,
                     name=expr.callee
                 ), expr
@@ -1839,7 +1956,7 @@ class Assembler:
                 (InputType.BLOCK_ONLY if VariableTypes.BOOL in block_data.return_type else InputType.BLOCK_AND_SHADOW, block_id), block_data.return_type
             )
 
-    def emit_unary_expr(self, op: str, value: Expr, context: StrOptional, block_parent: BlockRange, parent: StrOptional) -> ScratchInput:
+    def emit_unary_expr(self, op: str, value: Expr, context: Context, block_parent: BlockRange, parent: StrOptional) -> ScratchInput:
         block_id = self.new_id()
         if op in {"not", "!"}:
             self.make_block(
@@ -1871,7 +1988,7 @@ class Assembler:
 
         raise NotImplementedError(f"Unsupported unary operator: {op}")
     
-    def emit_binary_expr(self, left: Expr, op: str, right: Expr, context: StrOptional, block_parent: BlockRange, parent: StrOptional) -> ScratchInput:
+    def emit_binary_expr(self, left: Expr, op: str, right: Expr, context: Context, block_parent: BlockRange, parent: StrOptional) -> ScratchInput:
         block_id = self.new_id()
 
         left_expr = self.emit_expr(left, context, block_parent, block_id)
@@ -1943,9 +2060,11 @@ class Assembler:
             {return_type},
         )
 
-    def emit_var_ref(self, ref: VarRef, context: StrOptional, block_parent: BlockRange, parent: StrOptional) -> ScratchInput:
-        if context in self.procedures and ref.root in self.procedures[context].argument_names:
-            procedure_info = self.procedures[context]
+    def emit_var_ref(self, ref: VarRef, context: Context, block_parent: BlockRange, parent: StrOptional) -> ScratchInput:
+        function_context = context.function_context
+        if function_context in self.procedures \
+            and ref.root in self.procedures[function_context].argument_names:
+            procedure_info = self.procedures[function_context]
 
             try:
                 arg_index = procedure_info.argument_names.index(ref.root)
@@ -1962,13 +2081,13 @@ class Assembler:
             else:
                 opcode = "argument_reporter_string_number"
 
-            self.flag_referenced_variable(self.variable_map[(arg_name, context)], context)
+            self.flag_referenced_variable(self.variable_map[(arg_name, function_context)], context)
 
             self.register_symbol(
                 SymbolOccurence(
                     span=ref.span,
-                    definition_location=self.variables[self.variable_map[(arg_name, context)]].definition_location,
-                    context=context,
+                    definition_location=self.variables[self.variable_map[(arg_name, function_context)]].definition_location,
+                    context=function_context,
                     symbol_type=SymbolType.PARAMETER,
                     name=ref.root
                 ), ref
@@ -2101,7 +2220,8 @@ class Assembler:
         return {
             var_id: [variable.name, variable.initial_value]
             for var_id, variable in self.variables.items()
-            if not variable.is_list and variable.shared == is_stage
+            if not variable.is_list and variable.shared == is_stage 
+            and not self.is_parameter(var_id)
         }
 
     def _serialise_lists(self, is_stage: bool=False) -> dict[str, list[Any]]:
@@ -2133,6 +2253,7 @@ class Assembler:
         1. Clears blocks, variables, lists, etc. that are local to the sprite
         2. *Keeps* stage/global data
         """
+        self.thread_number = 0
         self.messages = {}
         self.mark_variable_for_deletion = set()
         self.mark_message_for_deletion = set()
@@ -2144,8 +2265,18 @@ class Assembler:
                 stage = self.get_stage(f)
 
             for var_id, var_data in stage["variables"].items():
+                if "compiler:" in var_data[0]:
+                    continue
+
                 self.variable_map[(var_data[0], None)] = var_id
-                self.variables[var_id] = VariableData(self.uri, var_data[0], var_id, None, VariableTypes.VAR, False, True, var_data[1], None)
+                self.variables[var_id] = VariableData(self.uri, 
+                                                      var_data[0], 
+                                                      var_id, 
+                                                      Context(None), 
+                                                      VariableTypes.VAR, 
+                                                      False, True, 
+                                                      var_data[1], 
+                                                      None)
                 self.overridable.add(var_data[0])
 
             for broadcast_id, broadcast_name in stage["broadcasts"].items():
@@ -2161,7 +2292,7 @@ class Assembler:
                 continue
                 # self.overridable.add(variable_data.name)
 
-            self.variable_map[(variable_data.name, variable_data.context)] = variable_id
+            self.variable_map[(variable_data.name, variable_data.context.function_context)] = variable_id
             self.variables[variable_id] = VariableData(
                 variable_data.uri,
                 variable_data.name,
@@ -2185,7 +2316,7 @@ class Assembler:
             if variable_data.shared:
                 continue
 
-            del self.variable_map[(variable_data.name, variable_data.context)]
+            del self.variable_map[(variable_data.name, variable_data.context.function_context)]
             del self.variables[variable_id]
 
         self.non_referenced_variables = {}
