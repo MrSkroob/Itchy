@@ -133,12 +133,11 @@ class ProcedureInfo:
     # compiler only. does not get serialised
     definition_location: SourceSpan | None
     argument_types: tuple[VariableTypes, ...]
-
-    last_symbol: SymbolOccurence | None=None
+    # occurence of the last bit of code in the function (so you can append to it)
+    last_location: SourceSpan | None=None
 
     # if applicable
     return_types: set[VariableTypes]=field(default_factory=lambda: {VariableTypes.NOTHING})
-    nothings: int = 0
 
 
 class Assembler:
@@ -606,19 +605,14 @@ class Assembler:
                 if isinstance(stmt, ReturnStmt):
                     final_return_statement = stmt
                 if not stmt.dummy and proc_info:
-                    proc_info.last_symbol = SymbolOccurence(span=stmt.span, 
-                                                            definition_location=None, 
-                                                            context=context.function_context,
-                                                            symbol_type=SymbolType.FUNCTION,
-                                                            name="")
+                    proc_info.last_location = stmt.span
             
             last = emitted.last
 
         if context.function_context in self.procedures:
             proc_info = self.procedures[context.function_context]
-            if final_return_statement is not None and len(final_return_statement.values) > 0 \
-            and VariableTypes.NOTHING in proc_info.return_types \
-            and proc_info.nothings == 0:
+            if final_return_statement is not None \
+            and VariableTypes.NOTHING in proc_info.return_types:
                 proc_info.return_types.remove(VariableTypes.NOTHING)
         
         return BlockRange(first, last)
@@ -740,7 +734,7 @@ class Assembler:
             return_type = self.emit_expr(stmt.values[0], context, BlockRange(None, None, True), None).return_type
 
             if VariableTypes.NOTHING in return_type:
-                proc_data.nothings += 1
+                proc_data.return_types.add(VariableTypes.STRING)
 
             proc_data.return_types = \
                 proc_data.return_types.union(return_type)
@@ -748,8 +742,6 @@ class Assembler:
                 body.append(
                     FunctionCallStmt(SET_RETURN_VALUE, (value, VarExpr(VarRef(FRAME_INDEX))))
                 )
-        else:
-            proc_data.nothings += 1
 
 
         control_stop = FunctionCallStmt(
@@ -1784,7 +1776,7 @@ class Assembler:
             proc_info = self.procedures[expr.callee]
 
             if VariableTypes.NOTHING in proc_info.return_types:
-                error = ReturnNothingError(f"{expr.callee}: not all codepaths return something", expr, data={""})
+                error = ReturnNothingError(f"{expr.callee}: not all codepaths have a return statement", expr, data={"name": expr.callee})
                 return self.raise_or_return(error, PLACE_HOLDER_0)
 
             if context.function_context in self.procedures:
