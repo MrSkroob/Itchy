@@ -604,9 +604,9 @@ class Assembler:
 
                 if name not in self.overridable and (name, None) in self.variable_map:
                     error = DuplicateDefinitionError(f"Variable '{stmt.name}' shadowed by variable of same name.", stmt)
-                    if not self.compile_with_warnings:
-                        return self.raise_or_return(error)
-                    self.errors.append(error)
+                    # if not self.compile_with_warnings:
+                    return self.raise_or_return(error)
+                    # self.errors.append(error)
 
                 # allow variable to override existing one in project at least once. 
                 # any subsequent definitions will be counted as duplicates.
