@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "itchy"
-version = "0.3.1"
+version = "0.3.2"
 requires-python = ">=3.12"
 
 [tool.hatch.build.targets.wheel]
