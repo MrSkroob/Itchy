@@ -815,7 +815,7 @@ class ASTBuilder:
             name.literal,
             params,
             body.body if body is not None else (),
-            span=SourceSpan(name.span.start, body.span.end if body else name.span.end)
+            span=name.span
         ) 
     
     
