@@ -7,6 +7,7 @@ from itchy.shared_templates import ASTNode
 
 class CompilerErrorCodes(StrEnum):
     UNDEFINED_VARIABLE = "undefined-variable"
+    NOTHING_RETURN = "nothing-return"
     REMOVE_RETURN = "remove-return"
 
 
@@ -38,6 +39,10 @@ class TypeMismatchError(CompilerWarning):
 
 
 class NotReferencedError(CompilerWarning):
+    pass
+
+
+class ReturnNothingError(CompilerError):
     pass
 
 

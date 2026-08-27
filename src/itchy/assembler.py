@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 from itchy.shared_templates import VariableTypes, DataType, SourceSpan, SPRITE_TEMPLATE, COSTUME_TEMPLATE, ASTNode
 from itchy.errors import CompilerError, CompilerErrorCodes, UnboundError, NotReferencedError, DuplicateDefinitionError,\
-    ArgumentError, NotDefinedError, InvalidTypeError, SyntaxError, TypeMismatchError
+    ArgumentError, NotDefinedError, InvalidTypeError, SyntaxError, TypeMismatchError, ReturnNothingError
 from itchy.scratch_blocks import SCRATCH_BLOCKS, Block, Reporter, Event, Menu
 from itchy.itch_ast import \
     Param, \
@@ -68,7 +68,7 @@ class InputType(Enum):
     BLOCK_AND_SHADOW = 3 # do not use - because compiler does not have default values.
 
 
-PLACE_HOLDER_0 = ScratchInput((InputType.SHADOW_ONLY, (DataType.NUMBER, "0")), {VariableTypes.NUMBER}, True)
+PLACE_HOLDER_0 = ScratchInput((InputType.SHADOW_ONLY, (DataType.NUMBER, "0")), {VariableTypes.VAR}, True)
 
 
 class SymbolType(StrEnum):
@@ -78,10 +78,11 @@ class SymbolType(StrEnum):
     EVENT = "event"
 
 
-@dataclass()
+@dataclass(frozen=True, kw_only=True)
 class Context:
     function_context: StrOptional
-    thread_id: int=1
+    layer: int
+    thread_id: int
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -433,7 +434,10 @@ class Assembler:
         emits statements that do not necessarily have to be linked together.
         """
         for stmt in statements:
-            block_range = self.emit_stmt(stmt, None, Context(None))
+            block_range = self.emit_stmt(stmt, None, Context(
+                function_context=None, 
+                thread_id=1, 
+                layer=0))
             if block_range.first is None:
                 # e.g. a bare VarDefStmt, which doesn't emit a block
                 continue
@@ -451,10 +455,16 @@ class Assembler:
         Takes a program object only and emits each sequence within said program.
         uses .emit_statements() internally so statements do not connect to each other. 
         """
-        self.define_variable(False, "var", FRAME_INDEX, Context(None), None)
-        self.define_variable(False, "list", RETURN_STACK, Context(None), None)
+        context = Context(
+            function_context=None,
+            layer=0,
+            thread_id=1
+        )
+
+        self.define_variable(False, "var", FRAME_INDEX, context, None)
+        self.define_variable(False, "list", RETURN_STACK, context, None)
         # self.define_variable(False, "list", FLAG_STACK, None, None)
-        self.define_variable(False, "var", STACK_ITERABLE, Context(None), None)
+        self.define_variable(False, "var", STACK_ITERABLE, context, None)
 
         # return_helper
         push_return_frame = FunctionDefStmt(
@@ -557,17 +567,22 @@ class Assembler:
             self,
             statements: tuple[Stmt, ...],
             parent: StrOptional,
-            context: Context
+            context: Context,
+            new_layer: bool=True
         ) -> BlockRange:
+
         first: StrOptional = None
         last: StrOptional = None
 
         final_return_statement: ReturnStmt | None = None
 
-        for index, stmt in enumerate(statements):
-            if isinstance(stmt, ReturnStmt) and index == len(statements) - 1:
-                final_return_statement = stmt
+        if new_layer:
+            context = Context(function_context=context.function_context,
+                              layer=context.layer + 1,
+                              thread_id=context.thread_id)
             
+
+        for index, stmt in enumerate(statements):
             emitted = self.emit_stmt(stmt, parent, context)
 
             if emitted.first is None:
@@ -580,6 +595,9 @@ class Assembler:
                 assert last is not None
                 self.blocks[last]["next"] = emitted.first
                 self.blocks[emitted.first]["parent"] = last
+
+                if isinstance(stmt, ReturnStmt) and index == len(statements) - 1 and context.layer == 1:
+                    final_return_statement = stmt
             
             last = emitted.last
 
@@ -589,12 +607,15 @@ class Assembler:
             and VariableTypes.NOTHING in proc_info.return_types \
             and proc_info.nothings == 0:
                 proc_info.return_types.remove(VariableTypes.NOTHING)
+                print("remove nothing", context.function_context)
         
         return BlockRange(first, last)
     
     def emit_stmt(self, stmt: Stmt, parent: StrOptional, context: Context) -> BlockRange:
         match stmt:
             case BlockStmt(body=body):
+                # i don't think this is actually ever used...
+                # all 'wrap' things are consumed. there aren't really any individual {} statements.
                 return self.emit_sequence(body, parent, context)
             case VarDefStmt(shared=shared, type_name=type_name, name=name):
                 if type_name not in {VariableTypes.VAR.value, VariableTypes.LIST.value, VariableTypes.BOOL.value}:
@@ -603,7 +624,7 @@ class Assembler:
 
 
                 if name not in self.overridable and (name, None) in self.variable_map:
-                    error = DuplicateDefinitionError(f"Variable '{stmt.name}' shadowed by variable of same name.", stmt)
+                    error = DuplicateDefinitionError(f"Variable '{stmt.name}' is shadowed by variable of same name", stmt)
                     # if not self.compile_with_warnings:
                     return self.raise_or_return(error)
                     # self.errors.append(error)
@@ -616,7 +637,10 @@ class Assembler:
                 if name in self.mark_variable_for_deletion and shared:
                     self.mark_variable_for_deletion.remove(name)
 
-                var_id = self.define_variable(shared, type_name, name, Context(None, context.thread_id), stmt.span)
+                var_id = self.define_variable(shared, type_name, name, Context(
+                    function_context=None, 
+                    thread_id=context.thread_id, 
+                    layer=context.layer), stmt.span)
 
                 self.register_symbol(SymbolOccurence(
                     span=stmt.span,
@@ -687,7 +711,10 @@ class Assembler:
 
         proc_data = self.procedures[function_context]
         return_variable = proc_data.name + ":return"
-        self.define_variable(False, "var", return_variable, Context(None, context.thread_id), None)
+        self.define_variable(False, "var", return_variable, Context(
+            function_context=None, 
+            thread_id=context.thread_id, 
+            layer=context.layer), None)
 
         body: list[Stmt] = []
 
@@ -719,49 +746,25 @@ class Assembler:
 
         body.append(control_stop)
 
-
-        if self.count_args(stmt.values) > 0:
-            return self.emit_sequence(
-                parent=parent,
-                context=context,
-                statements=(
-                    FunctionCallStmt(FIND_STACK_FRAME, (VarExpr(VarRef(THREAD_ARG)),)),
-                    IfStmt(
-                        branches=(IfBranch(
-                            condition=BinaryOpExpr(
-                                FunctionCallExpr("data_itemoflist", 
-                                                 (BinaryOpExpr(VarExpr(VarRef(FRAME_INDEX)), "+", NumberExpr(2)), 
-                                                  VarExpr(VarRef(RETURN_STACK)))), 
-                                                 "==", 
-                                                 StringExpr("false")),
-                            body=tuple(body),
-                        ),),
-                        else_body=())
-                    )
+        return self.emit_sequence(
+            parent=parent,
+            context=context,
+            new_layer=False,
+            statements=(
+                FunctionCallStmt(FIND_STACK_FRAME, (VarExpr(VarRef(THREAD_ARG)),)),
+                IfStmt(
+                    branches=(IfBranch(
+                        condition=BinaryOpExpr(
+                            FunctionCallExpr("data_itemoflist", 
+                                                (BinaryOpExpr(VarExpr(VarRef(FRAME_INDEX)), "+", NumberExpr(2)), 
+                                                VarExpr(VarRef(RETURN_STACK)))), 
+                                                "==", 
+                                                StringExpr("false")),
+                        body=tuple(body),
+                    ),),
+                    else_body=())
                 )
-            
-
-            # return self.emit_if(
-            #     IfStmt(
-            #         branches=(IfBranch(
-            #             condition=BinaryOpExpr(FunctionCallExpr("data_itemoflist", (
-            #                 FunctionCallExpr("data_lengthoflist", (VarExpr(VarRef(RETURN_STACK)),
-            #                                                                         )),
-            #                 VarExpr(VarRef(RETURN_STACK)), 
-                                                                                    
-            #                                                                     )
-            #                                                     ), 
-            #                                                     "==", 
-            #                                                     StringExpr("false")),
-            #             body=tuple(body)
-            #         ),),
-            #         else_body=()
-            #     ),
-            #     parent=parent,
-            #     context=context
-            # )
-        else:
-            return self.emit_function_call(control_stop, parent, context)
+            )
         
 
     def emit_scratch_block(self, stmt: FunctionCallStmt, parent: StrOptional, context: Context) -> BlockRange | None:
@@ -1006,8 +1009,6 @@ class Assembler:
         # field-shaped arguments (see event_whenbroadcastreceived), so they
         # get counted on top of inputs and fields rather than overlapping.
 
-        context = Context(stmt.name, self.new_thread_id())
-
         self.register_symbol(
             SymbolOccurence(
                 span=stmt.span,
@@ -1050,11 +1051,17 @@ class Assembler:
         # matches how the expected_args check above adds them together.
         index = 0
 
+        context = Context(
+            function_context=None,
+            layer=0,
+            thread_id=context.thread_id
+        )
+
         for arg, arg_expr in zip(block_data.inputs, stmt.params):
             if arg in block_data.broadcasts:
                 if not isinstance(arg_expr, StringExpr):
                     inputs[arg.name] = (
-                        self.emit_expr(arg_expr, Context(None, context.thread_id), 
+                        self.emit_expr(arg_expr, context, 
                         BlockRange(event_id, event_id), event_id).value
                     )
                 else:
@@ -1072,7 +1079,7 @@ class Assembler:
                     else:
                         inputs[arg.name] = (InputType.SHADOW_ONLY, (arg.return_type, arg_expr.value))
                 else:
-                    inputs[arg.name] = self.emit_expr(arg_expr, Context(None, context.thread_id), 
+                    inputs[arg.name] = self.emit_expr(arg_expr, context, 
                                                       BlockRange(event_id, event_id), event_id).value
             index += 1
 
@@ -1112,6 +1119,11 @@ class Assembler:
         if stmt.name in self.procedures:
             return self.raise_or_return(DuplicateDefinitionError(f"Function '{stmt.name}' shadowed by function of same name.", stmt))
 
+        context = Context(
+            function_context=stmt.name, 
+            thread_id=1, 
+            layer=0)
+
         self.register_symbol(
             SymbolOccurence(
                 span=stmt.span,
@@ -1121,7 +1133,7 @@ class Assembler:
                 name=stmt.name
             ), stmt
         )
-        self.define_variable(False, "var", stmt.name + ":return", Context(None), None)
+        self.define_variable(False, "var", stmt.name + ":return", Context(function_context=None, thread_id=1, layer=0), None)
 
         definition_id = self.make_block(
             opcode="procedures_definition",
@@ -1161,8 +1173,8 @@ class Assembler:
                 proccode_parts.append("%s")
                 argument_defaults.append("")
 
-            var_id = self.define_variable(False, param.type_name, param.name, Context(stmt.name), param.span)
-            self.flag_non_referenced_variable(var_id, param, Context(stmt.name))
+            var_id = self.define_variable(False, param.type_name, param.name, context, param.span)
+            self.flag_non_referenced_variable(var_id, param, context)
             self.register_symbol(SymbolOccurence(
                 span=param.span,
                 definition_location=param.span,
@@ -1208,7 +1220,7 @@ class Assembler:
         self.flag_non_referenced_function(stmt)
 
         # for concise' sake, append a return statement always
-        body_range = self.emit_sequence(stmt.body, definition_id, Context(stmt.name))
+        body_range = self.emit_sequence(stmt.body, definition_id, context)
 
         if body_range.first is not None:
             self.blocks[definition_id]["next"] = body_range.first
@@ -1221,7 +1233,6 @@ class Assembler:
     
     def emit_for_range(self, stmt: ForRangeStmt, parent: StrOptional, context: Context):
         # iterable variable
-
         try:
             self.assert_writable_name(stmt.variable, context)
         except NameError:
@@ -1497,10 +1508,10 @@ class Assembler:
             branch.condition, context, block_range, block_id
         ).value
 
-        then_blocks = self.emit_sequence(branch.body, block_id, context)
+        then_body = self.emit_sequence(branch.body, block_id, context)
 
-        if then_blocks.first is not None:
-            self.blocks[block_id]["inputs"]["SUBSTACK"] = (InputType.BLOCK_ONLY, then_blocks.first)
+        if then_body.first is not None:
+            self.blocks[block_id]["inputs"]["SUBSTACK"] = (InputType.BLOCK_ONLY, then_body.first)
 
         if has_else:
             if index + 1 < len(branches):
@@ -1757,6 +1768,10 @@ class Assembler:
     def emit_function_expr(self, expr: FunctionCallExpr, context: Context, block_parent: BlockRange, parent: StrOptional) -> ScratchInput:
         if expr.callee not in SCRATCH_BLOCKS and expr.callee in self.procedures:
             proc_info = self.procedures[expr.callee]
+
+            if VariableTypes.NOTHING in proc_info.return_types:
+                error = ReturnNothingError(f"{expr.callee}: not all codepaths return something", expr)
+                return self.raise_or_return(error, PLACE_HOLDER_0)
 
             if context.function_context in self.procedures:
                 thread_id = VarExpr(VarRef(THREAD_ARG))
@@ -2272,7 +2287,7 @@ class Assembler:
                 self.variables[var_id] = VariableData(self.uri, 
                                                       var_data[0], 
                                                       var_id, 
-                                                      Context(None), 
+                                                      Context(function_context=None, layer=0, thread_id=1), 
                                                       VariableTypes.VAR, 
                                                       False, True, 
                                                       var_data[1], 
