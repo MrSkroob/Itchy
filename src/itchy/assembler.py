@@ -1863,6 +1863,9 @@ class Assembler:
 
             return return_input
         else:
+            if expr.callee not in SCRATCH_BLOCKS:
+                return self.raise_or_return(NotDefinedError(f"Procedure '{expr.callee}' is not defined and is not a valid scratch block", expr), PLACE_HOLDER_0)
+
             block_data = SCRATCH_BLOCKS[expr.callee]
 
             self.register_symbol(
