@@ -614,6 +614,9 @@ class Assembler:
             if final_return_statement is not None \
             and VariableTypes.NOTHING in proc_info.return_types:
                 proc_info.return_types.remove(VariableTypes.NOTHING)
+
+                if len(final_return_statement.values) == 0:
+                    proc_info.return_types.add(VariableTypes.STRING)
         
         return BlockRange(first, last)
     
