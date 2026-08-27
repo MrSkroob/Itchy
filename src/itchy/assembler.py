@@ -1556,6 +1556,13 @@ class Assembler:
             self.flag_non_referenced_variable(var_id, VarDefStmt(
                 variable.var_type.value, target.root, variable.shared, span=target.span
             ), context)
+            self.symbols.append(SymbolOccurence(
+                span=target.span,
+                definition_location=variable.definition_location,
+                context=context.function_context,
+                symbol_type=SymbolType.VARIABLE,
+                name=target.root
+            ))
         except NameError:
             error = UnboundError(f"'{target.root}' is not defined.", target, data={"name": target.root})
             if not self.compile_with_warnings:
