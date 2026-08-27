@@ -134,6 +134,8 @@ class ProcedureInfo:
     definition_location: SourceSpan | None
     argument_types: tuple[VariableTypes, ...]
 
+    last_symbol: SymbolOccurence | None=None
+
     # if applicable
     return_types: set[VariableTypes]=field(default_factory=lambda: {VariableTypes.NOTHING})
     nothings: int = 0
@@ -575,11 +577,15 @@ class Assembler:
         last: StrOptional = None
 
         final_return_statement: ReturnStmt | None = None
+        proc_info: ProcedureInfo | None = None
 
         if new_layer:
             context = Context(function_context=context.function_context,
                               layer=context.layer + 1,
                               thread_id=context.thread_id)
+
+        if context.function_context in self.procedures:
+            proc_info = self.procedures[context.function_context]
             
 
         for index, stmt in enumerate(statements):
@@ -596,8 +602,15 @@ class Assembler:
                 self.blocks[last]["next"] = emitted.first
                 self.blocks[emitted.first]["parent"] = last
 
-                if isinstance(stmt, ReturnStmt) and index == len(statements) - 1 and context.layer == 1:
+            if index == len(statements) - 1 and context.layer == 1:
+                if isinstance(stmt, ReturnStmt):
                     final_return_statement = stmt
+                if not stmt.dummy and proc_info:
+                    proc_info.last_symbol = SymbolOccurence(span=stmt.span, 
+                                                            definition_location=None, 
+                                                            context=context.function_context,
+                                                            symbol_type=SymbolType.FUNCTION,
+                                                            name="")
             
             last = emitted.last
 
@@ -607,7 +620,6 @@ class Assembler:
             and VariableTypes.NOTHING in proc_info.return_types \
             and proc_info.nothings == 0:
                 proc_info.return_types.remove(VariableTypes.NOTHING)
-                print("remove nothing", context.function_context)
         
         return BlockRange(first, last)
     
@@ -1206,7 +1218,7 @@ class Assembler:
         argument_types_tuple = tuple(argument_types)
         proccode = " ".join(proccode_parts)
 
-        self.procedures[stmt.name] = ProcedureInfo(
+        proc_info = ProcedureInfo(
             name=stmt.name,
             prototype_id=prototype_id,
             proccode=proccode,
@@ -1216,6 +1228,8 @@ class Assembler:
             argument_types=argument_types_tuple,
             definition_location=stmt.span
         )
+
+        self.procedures[stmt.name] = proc_info
 
         self.flag_non_referenced_function(stmt)
 
@@ -1770,7 +1784,7 @@ class Assembler:
             proc_info = self.procedures[expr.callee]
 
             if VariableTypes.NOTHING in proc_info.return_types:
-                error = ReturnNothingError(f"{expr.callee}: not all codepaths return something", expr)
+                error = ReturnNothingError(f"{expr.callee}: not all codepaths return something", expr, data={""})
                 return self.raise_or_return(error, PLACE_HOLDER_0)
 
             if context.function_context in self.procedures:

@@ -43,7 +43,9 @@ class NotReferencedError(CompilerWarning):
 
 
 class ReturnNothingError(CompilerError):
-    pass
+    def __init__(self, message: str, error_node: ASTNode | None, *,
+                    error_code: str | None = CompilerErrorCodes.NOTHING_RETURN, data: dict[str, Any]={}) -> None:
+        super().__init__(message, error_node, error_code, data)
 
 
 class ArgumentError(CompilerError):
