@@ -786,9 +786,9 @@ class ASTBuilder:
         return Param(name.literal, type_name.literal, span=SourceSpan(name.span.start, type_name.span.end), dummy=node.dummy_node)
     
     
-    def build_funcbody(self, node: ParsedNode) -> tuple[tuple[Param, ...], tuple[Stmt, ...]]:
+    def build_funcbody(self, node: ParsedNode) -> tuple[tuple[Param, ...], BlockStmt | None]:
         params: tuple[Param, ...] = ()
-        body: tuple[Stmt, ...] = ()
+        body: BlockStmt | None = None
     
         for child in flat_children(node):
             if isinstance(child, ParsedNode) and child.name == "paramlist":
@@ -814,8 +814,8 @@ class ASTBuilder:
         return FunctionParts(
             name.literal,
             params,
-            body,
-            span=name.span
+            body.body if body is not None else (),
+            span=SourceSpan(name.span.start, body.span.end if body else name.span.end)
         ) 
     
     
@@ -858,7 +858,7 @@ class ASTBuilder:
         return EventHandlerStmt(
             name.literal, 
             args,
-            wrap_nodes,
+            wrap_nodes.body,
             span=name.span, 
             dummy=node.dummy_node
         )
@@ -915,14 +915,7 @@ class ASTBuilder:
     
         body_spec = self.build_for_body(forbody)
         body = self.build_wrap(wrap)
-    
-        end = None
-    
-        if len(body) > 0:
-            end = body[-1].span.end
-    
-        if not end:
-            end = body_spec.span.end
+
     
         if isinstance(body_spec, ForRangeBody):
             return ForRangeStmt(
@@ -930,10 +923,10 @@ class ASTBuilder:
                 body_spec.start,
                 body_spec.stop,
                 body_spec.step,
-                body,
+                body.body,
                 span=SourceSpan(
                     start=for_token.span.start,
-                    end=end
+                    end=body.span.end
                 ), dummy=node.dummy_node
             )
         else:
@@ -941,10 +934,10 @@ class ASTBuilder:
             return ForInStmt(
                 var_name,
                 body_spec.iterable,
-                body,
+                body.body,
                 span=SourceSpan(
                     start=for_token.span.start,
-                    end=end
+                    end=body.span.end
                 ), dummy=node.dummy_node
             )
     
@@ -953,7 +946,7 @@ class ASTBuilder:
         children = flat_children(node)
     
         branches: list[IfBranch] = []
-        else_body: tuple[Stmt, ...] = ()
+        else_body: BlockStmt | None = None
     
         if_token = children[0]
         assert isinstance(if_token, Token) and if_token.kind.name == Definitions.If.name
@@ -962,8 +955,8 @@ class ASTBuilder:
         body = self.build_wrap(expect_node(children[2], "wrap"))
         i = 3
     
-        branches.append(IfBranch(condition, body, 
-                                 span=SourceSpan(if_token.span.start, body[-1].span.end if len(body) > 0 else condition.span.end), 
+        branches.append(IfBranch(condition, body.body, 
+                                 span=SourceSpan(if_token.span.start, body.span.end), 
                                  dummy=node.dummy_node))
     
         while i < len(children) and is_token(children[i], "ElseIf"):
@@ -979,8 +972,8 @@ class ASTBuilder:
             body = self.build_wrap(expect_node(children[i], "wrap"))
             i += 1
     
-            branches.append(IfBranch(condition, body, 
-                                     span=SourceSpan(elseif_token.span.start, body[-1].span.end if len(body) > 0 else condition.span.end),
+            branches.append(IfBranch(condition, body.body, 
+                                     span=SourceSpan(elseif_token.span.start, body.span.end),
                                      dummy=node.dummy_node))
         
         if i < len(children) and is_token(children[i], "Else"):
@@ -989,17 +982,15 @@ class ASTBuilder:
             # self.emit_token(else_token, "keyword")
             i += 1
             else_body = self.build_wrap(expect_node(children[i], "wrap"))
-    
-        if len(else_body) > 0:
-            end = else_body[-1].span.end
+
+        if else_body is None:
+            end = body.span.end
         else:
-            # branches guaranteed to have at least one member.
-            end = branches[-1].span.end
-        
+            end = else_body.span.end
     
         return IfStmt(
             tuple(branches),
-            else_body,
+            () if else_body is None else else_body.body,
             span=SourceSpan(if_token.span.start, end),
             dummy=node.dummy_node
         ) 
@@ -1016,10 +1007,10 @@ class ASTBuilder:
     
         return WhileStmt(
             equation,
-            wrap,
+            wrap.body,
             span=SourceSpan(
                 while_token.span.start,
-                wrap[-1].span.end if len(wrap) > 0 else equation.span.end
+                wrap.span.end
             ),
             dummy=node.dummy_node
         )
@@ -1027,19 +1018,28 @@ class ASTBuilder:
     
     def build_wrap(self, node: ParsedNode):
         chunk = ()
+        brackets: list[Token[Definitions]] = []
+
         for child in flat_children(node):
             # if it passed the parser, we can sort of guarantee that the next node will be a chunk node,
             # but whatever...
     
             if isinstance(child, ParsedNode) and child.name == "chunk":
                 chunk = self.build_chunk(child)
-                break
+
+            if isinstance(child, Token)\
+                and child.kind in {
+                    Definitions.OpenCurlyBracket,
+                    Definitions.CloseCurlyBracket,
+                }:
+                brackets.append(child)
     
         if has_node(node, "laststat"):
             chunk = chunk + (self.build_laststat(find_first_node(node, "laststat")),)
+
         
         # chunks are allowed to be empty
-        return chunk
+        return BlockStmt(chunk, span=SourceSpan(brackets[0].span.start, brackets[-1].span.end), dummy=node.dummy_node)
     
     
     def build_laststat(self, node: ParsedNode) -> ReturnStmt:
@@ -1103,19 +1103,8 @@ class ASTBuilder:
             match child.name:
                 case "wrap":
                     wrap = self.build_wrap(child)
-    
-                    bracket_tokens = [
-                        child
-                        for child in flat_children(child)
-                        if isinstance(child, Token)
-                        and child.kind in {
-                            Definitions.OpenCurlyBracket,
-                            Definitions.CloseCurlyBracket,
-                        }
-                    ]
                     
-                    return BlockStmt(wrap, span=SourceSpan(bracket_tokens[0].span.start, bracket_tokens[-1].span.end), dummy=node.dummy_node)
-                
+                    return wrap
                 case "whilestat":
                     return self.build_whilestat(child)
                 
