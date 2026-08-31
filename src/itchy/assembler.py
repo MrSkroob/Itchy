@@ -6,6 +6,9 @@ import zipfile
 
 import tempfile
 import os
+import hashlib
+import wave
+
 
 from typing import TypeVar, Iterable
 from dataclasses import dataclass, field
@@ -22,6 +25,7 @@ from itchy.itch_ast import \
     Param, \
     Stmt, VarRef, BlockStmt, IfStmt, BreakStmt, ForInStmt, WhileStmt, AssignStmt, ReturnStmt, VarDefStmt, ForRangeStmt, FunctionCallStmt, FunctionDefStmt, EventHandlerStmt, \
     IfBranch, Expr, NumberExpr, BoolExpr, StringExpr, VarExpr, UnaryOpExpr, BinaryOpExpr, TableExpr, FunctionCallExpr, Program
+from itchy.mp3_parser import mp3_metadata
 
 
 T = TypeVar("T")
@@ -2360,193 +2364,289 @@ class Assembler:
         self.current_token = None
 
 
-    def add_temp_files(self):
-        pass
+    def _asset_id(self, path: Path) -> str:
+        return hashlib.md5(path.read_bytes()).hexdigest()
+
+
+    def _load_costumes(self, dir: Path, assets: list[tuple[Path, str]]) -> list[dict[str, Any]]:
+        costumes: list[dict[str, Any]] = []
+
+        if not dir.exists():
+            return costumes
+
+        for path in sorted(dir.iterdir()):
+            if not path.is_file():
+                continue
+
+            extension = path.suffix.lower().lstrip(".")
+
+            if extension not in {"svg", "png", "jpg", "jpeg"}:
+                continue
+
+            asset_id = self._asset_id(path)
+            archive_name = f"{asset_id}.{extension}"
+
+            # shallow copy for this dictionary is okay. 
+            costume = COSTUME_TEMPLATE.copy()
+
+            costumes.append(costume)
+            assets.append(
+                (path, archive_name)
+            )
+
+        return costumes
+
+
+    def _load_wav(self, dir: Path) -> dict[str, Any]:
+        asset_id = self._asset_id(dir)
+
+        with wave.open(str(dir), "rb") as f:
+            rate = f.getframerate()
+            sample_count = f.getnframes()
+
+        return {
+            "name": dir.stem,
+            "assetId": asset_id,
+            "dataFormat": "wav",
+            "md5ext": f"{asset_id}.wav",
+            "rate": rate,
+            "sampleCount": sample_count
+        }
+
+
+    def _load_mp3(self, dir: Path) -> dict[str, Any]:
+        try:
+            sample_rate, sample_count = mp3_metadata(dir)
+        except ValueError as e:
+            raise CompilerError(str(e), None)
+
+        asset_id = self._asset_id(dir)
+
+        return {
+            "name": dir.stem,
+            "assetId": asset_id,
+            "dataFormat": "mp3",
+            "md5ext": f"{asset_id}.mp3",
+            "rate": sample_rate,
+            "sampleCount": sample_count
+        }
+
+
+    def _load_sounds(self, dir: Path, assets: list[tuple[Path, str]]) -> list[dict[str, Any]]:
+        # TODO: WAV/MP3 metadata extraction
+        sounds: list[dict[str, Any]] = []
+        
+        if not dir.exists():
+            return sounds
+
+        # we sort the files for consistency. 
+        # iterdir() does not guarantee any order, so each compilation will result in files
+        # being in different places.
+        # this is especially bad if you expect `costume2` to go after `costume1` in your code.
+        for path in sorted(dir.iterdir()):
+            if not path.is_file():
+                continue
+
+            if path.suffix.lower() == ".wav":
+                sounds.append(self._load_wav(path))
+            elif path.suffix.lower() == ".mp3":
+                sounds.append(self._load_mp3(path))
+
+        return sounds
 
 
     def assemble(
         self,
         program: Program,
-        project_file: str | None,
+        project_directory: str | Path,
+        project_file: str | Path | None,
         target: str,
-        output_file: str | None = None,
     ) -> None:
         """
-        Compiles `program` into a Scratch project.
+        Project folder will be your project's root folder. Output file will be the existing `.sb3` file (if it exists)
+        and will create one if not. 
 
-        If `project_file` is supplied, the compiled result is injected into that
-        existing .sb3 project.
+        Compiles the target from an Itchy project into a Scratch .sb3.
 
-        If `project_file` is None, a new Scratch project is created from
-        PROJECT_TEMPLATE.
+        Layout is expected to be like:
 
-        `target` is the name of the sprite to inject the compiled
-        blocks/variables/lists/broadcasts into.
-
-        When creating a new project, `output_file` determines where the new .sb3
-        is written. If omitted, "project.sb3" is used.
+        ProjectName/
+            Stage/
+                CodeFile.itch
+                costumes/
+                sounds/
+            
+            Sprite1/
+                CodeFile.itch
+                costumes/
+                sounds/
         """
+
         if not self.is_strict:
             raise CompilerError(
-                f"is_strict mode is {self.is_strict}. Remove the parameter before continuing.",
-                None,
+                f"is_strict mode is {self.is_strict}. Please remove the parameter or set it to true before continuing.", None
             )
 
-        # Keep the source path separate from the destination path.
-        source_project_file = project_file
+        project_directory = Path(project_directory)
 
-        if source_project_file is not None:
-            with zipfile.ZipFile(source_project_file, "r") as f:
+        if project_file:
+            project_file = Path(project_file)
+        else:
+            project_file = project_directory / "Scratch Project.sb3"
+
+        target_dir = project_directory / target
+
+        if not target_dir.is_dir():
+            raise CompilerError(
+                f"Target directory '{target}' does not exist.",
+                None
+            )
+
+        if project_file.exists():
+            with zipfile.ZipFile(project_file, "r") as f:
                 project = json.loads(
                     f.read("project.json").decode("utf-8")
                 )
-
-            destination_path = os.path.abspath(
-                output_file or source_project_file
-            )
         else:
             project = deepcopy(PROJECT_TEMPLATE)
 
-            destination_path = os.path.abspath(
-                output_file or "project.sb3"
-            )
+        targets: list[dict[str, Any]] = project["targets"]
 
-        targets: list[dict[str, Any]] = project.get("targets", [])
-
-        stage_target = None
-        sprite_target = None
+        stage_target: dict[str, Any] | None = None
+        sprite_target: dict[str, Any] | None = None
 
         for candidate in targets:
-            if candidate.get("isStage", False):
+            if candidate.get("isStage", True):
                 stage_target = candidate
 
-            elif candidate.get("name") == target:
+            if candidate.get("name") == target:
                 sprite_target = candidate
 
-        assets_to_move: list[str] = []
-
         if stage_target is None:
-            raise CompilerError(
-                "Target project does not have stage.",
-                None,
-            )
-        elif project_file is None:
-            costume = deepcopy(COSTUME_TEMPLATE)
-            # We don't use self.new_id() because asset IDs are 32 characters.
-            asset_id = uuid.uuid4().hex
+            raise CompilerError(f"This project doesn't have a stage file.", None)
 
-            costume["assetId"] = asset_id
-            costume["md5ext"] = asset_id + ".svg"
+        target_is_stage = target.lower() == "stage"
 
-            stage_target["costumes"].append(costume)
-
-            assets_to_move.append(asset_id + ".svg")
-
-        if sprite_target is None:
-            next_layer_order = (
-                max(
-                    (
-                        candidate.get("layerOrder", 0)
-                        for candidate in targets
-                    ),
-                    default=0,
-                )
-                + 1
-            )
-
+        if target_is_stage:
+            sprite_target = stage_target
+        elif sprite_target is None:
             sprite_target = deepcopy(SPRITE_TEMPLATE)
             sprite_target["name"] = target
-            sprite_target["layerOrder"] = next_layer_order
 
-            costume = deepcopy(COSTUME_TEMPLATE)
-
-            # We don't use self.new_id() because asset IDs are 32 characters.
-            asset_id = uuid.uuid4().hex
-
-            costume["assetId"] = asset_id
-            costume["md5ext"] = asset_id + ".svg"
-
-            sprite_target["costumes"].append(costume)
-
-            assets_to_move.append(asset_id + ".svg")
+            sprite_target["layoutOrder"] = (
+                max(
+                    (candidate.get("layoutOrder", 0)  for candidate in targets),
+                    default=9
+                ) + 1
+            )
 
             targets.append(sprite_target)
 
-            print(f"Sprite {target} not found. Creating a new one.")
+        # compilation stage
 
-        self.emit_program(program)
+        # self.emit_program(program)
+        # sprite_target["blocks"] = self._serialise_blocks()
+        # sprite_target["comments"] = {}
 
-        sprite_target["variables"] = self._serialise_variables()
-        sprite_target["lists"] = self._serialise_lists()
-        sprite_target["broadcasts"] = self._serialise_broadcasts()
-        sprite_target["blocks"] = self._serialise_blocks()
-        sprite_target["comments"] = {}
+        # if target != "Stage":
+        #     sprite_target["variables"] = self._serialise_variables()
+        #     sprite_target["lists"] = self._serialise_lists()
 
-        stage_target["variables"] = self._serialise_variables(True)
-        stage_target["lists"] = self._serialise_lists(True)
+        # stage_target["variables"] = self._serialise_variables(True)
+        # stage_target["lists"]  = self._serialise_lists(True)
+        # stage_target["broadcasts"] = self._serialise_broadcasts()
 
-        json_dumped = json.dumps(project, ensure_ascii=True)
+        costumes_dir = target_dir / "costumes"
+        sounds_dir = target_dir / "sounds"
 
-        project_directory = os.path.dirname(destination_path)
+        assets: list[tuple[Path, str]] = []
+
+        # loading assets
+
+        sprite_target["costumes"] = self._load_costumes(
+            costumes_dir,
+            assets
+        )
+
+        sprite_target["sounds"] = self._load_sounds(
+            sounds_dir,
+            assets
+        )
+
+        if not sprite_target["costumes"]:
+            costume = COSTUME_TEMPLATE.copy()
+
+            asset_id = uuid.uuid4().hex
+            asset_name = f"{asset_id}.svg"
+
+            costume["assetId"] = asset_id
+            costume["md5ext"] = asset_name
+
+            sprite_target["costumes"] = [costume]
+
+            assets.append(
+                (TEMP_FILE_SRC, asset_name)
+            )
+
+        # writing .sb3
+        dumped = json.dumps(project, ensure_ascii=True)
+
+        # project_file.parent.mkdir(
+        #     parents=True,
+        #     exist_ok=True
+        # )
 
         temporary_fd, temporary_path = tempfile.mkstemp(
             suffix=".sb3",
             dir=project_directory,
         )
+
         os.close(temporary_fd)
 
         try:
             with zipfile.ZipFile(
-                temporary_path,
-                mode="w",
+                temporary_path, mode="w", 
                 compression=zipfile.ZIP_DEFLATED,
-                compresslevel=9,
-            ) as destination:
+                compresslevel=9) as destination:
 
-                # If we're modifying an existing project, preserve all of its
-                # existing assets.
-                if source_project_file is not None:
-                    with zipfile.ZipFile(
-                        source_project_file,
-                        "r",
-                    ) as source:
+                if project_file.exists():
+                    with zipfile.ZipFile(project_file, "r") as source:
                         destination.comment = source.comment
 
                         for archive_entry in source.infolist():
                             if archive_entry.filename == "project.json":
                                 continue
 
+                            if any(archive_name == archive_entry.filename for _, archive_name in assets):
+                                continue
+
                             destination.writestr(
                                 archive_entry,
-                                source.read(archive_entry.filename),
+                                source.read(archive_entry.filename)   
                             )
 
-                # Add assets created by the compiler.
-                for asset_name in assets_to_move:
+                for path, name in assets:
                     destination.write(
-                        str(TEMP_FILE_SRC.absolute()),
-                        arcname=asset_name,
+                        str(path.absolute()),
+                        arcname=name
                     )
 
                 destination.writestr(
                     "project.json",
-                    json_dumped,
+                    dumped
                 )
 
-            # Validate the completed archive before moving it into place.
-            with zipfile.ZipFile(temporary_path, "r") as completed_archive:
-                bad_file = completed_archive.testzip()
-
-                if bad_file is not None:
+            # validate output is good
+            with zipfile.ZipFile(temporary_path, "r") as output:
+                if bad_file := output.testzip():
                     raise CompilerError(
-                        f"Generated Scratch archive contains a corrupt file: "
-                        f"{bad_file}",
-                        None,
+                        f"Generated project has a corrupt file: {bad_file}",
+                        None
                     )
 
             os.replace(
                 temporary_path,
-                destination_path,
+                project_file
             )
 
         finally:

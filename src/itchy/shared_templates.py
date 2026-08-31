@@ -79,6 +79,8 @@ PROJECT_TEMPLATE: dict[str, Any] = {
 
     "meta": {
         "semver": "3.0.0",
+        "vm": "0.2.0",
+        "agent": "itchy"
     },
 }
 

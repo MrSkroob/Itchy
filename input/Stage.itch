@@ -1,4 +1,0 @@
-// global variables
-define foo() {
-    c = 0
-}

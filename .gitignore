@@ -3,3 +3,4 @@ mypy.ini
 output/*
 __pycache__
 *.pyc
+test_workspace
