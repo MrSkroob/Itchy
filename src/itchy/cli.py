@@ -206,12 +206,16 @@ def main() -> int:
     project_path = Path(args.source)
     output_path = Path(args.output) if args.output else None
 
+    compile_file = False
+
     if not project_path.is_dir():
         print(
             f"Provided source '{project_path}' "
             "is not a project directory."
         )
-        return 1
+        compile_file = True
+        # return 1
+    
 
     if output_path and output_path.suffix.lower() != ".sb3":
         print(
@@ -220,11 +224,20 @@ def main() -> int:
         )
         return 1
 
-    if not compile_project(
-        project_path,
-        output_path,
-    ):
-        return 1
+    if compile_file:
+        if not compile_target(
+            project_path,
+            project_path.parent,
+            output=output_path,
+            target=project_path.stem
+        ):
+            return 1
+    else:
+        if not compile_project(
+            project_path,
+            output_path,
+        ):
+            return 1
 
     return 0
 
