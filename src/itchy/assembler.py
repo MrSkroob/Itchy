@@ -2544,17 +2544,17 @@ class Assembler:
 
         # compilation stage
 
-        # self.emit_program(program)
-        # sprite_target["blocks"] = self._serialise_blocks()
-        # sprite_target["comments"] = {}
+        self.emit_program(program)
+        sprite_target["blocks"] = self._serialise_blocks()
+        sprite_target["comments"] = {}
 
-        # if target != "Stage":
-        #     sprite_target["variables"] = self._serialise_variables()
-        #     sprite_target["lists"] = self._serialise_lists()
+        if target != "Stage":
+            sprite_target["variables"] = self._serialise_variables()
+            sprite_target["lists"] = self._serialise_lists()
 
-        # stage_target["variables"] = self._serialise_variables(True)
-        # stage_target["lists"]  = self._serialise_lists(True)
-        # stage_target["broadcasts"] = self._serialise_broadcasts()
+        stage_target["variables"] = self._serialise_variables(True)
+        stage_target["lists"]  = self._serialise_lists(True)
+        stage_target["broadcasts"] = self._serialise_broadcasts()
 
         costumes_dir = target_dir / "costumes"
         sounds_dir = target_dir / "sounds"

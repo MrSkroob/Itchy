@@ -189,7 +189,7 @@ def main() -> int:
 
     cli_parser.add_argument(
         "source",
-        help="Path to the Itchy project directory",
+        help="Path to the Itchy project directory or script",
         type=str,
     )
 
@@ -209,10 +209,6 @@ def main() -> int:
     compile_file = False
 
     if not project_path.is_dir():
-        print(
-            f"Provided source '{project_path}' "
-            "is not a project directory."
-        )
         compile_file = True
         # return 1
     
