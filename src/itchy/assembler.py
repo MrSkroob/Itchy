@@ -14,7 +14,7 @@ from enum import Enum, StrEnum
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
-from itchy.shared_templates import VariableTypes, DataType, SourceSpan, SPRITE_TEMPLATE, COSTUME_TEMPLATE, ASTNode
+from itchy.shared_templates import VariableTypes, DataType, SourceSpan, SPRITE_TEMPLATE, COSTUME_TEMPLATE, PROJECT_TEMPLATE, ASTNode
 from itchy.errors import CompilerError, CompilerErrorCodes, UnboundError, NotReferencedError, DuplicateDefinitionError,\
     ArgumentError, NotDefinedError, InvalidTypeError, SyntaxError, TypeMismatchError, ReturnNothingError
 from itchy.scratch_blocks import SCRATCH_BLOCKS, Block, Reporter, Event, Menu
@@ -2360,23 +2360,56 @@ class Assembler:
         self.current_token = None
 
 
-    def assemble(self, program: Program, project_file: str, target: str) -> None:
-        """
-        Compiles `program` and injects the result into an existing Scratch
-        project file.
+    def add_temp_files(self):
+        pass
 
-        `project_file` is the path to a project.json (or an already-unzipped
-        project.json from inside an .sb3) that already contains at least one
-        sprite target. `target` is the name of the sprite to inject the
-        compiled blocks/variables/lists/broadcasts into. `context` is
-        forwarded to the emitter to establish variable scoping and should be
-        None for a normal top-level program.
+
+    def assemble(
+        self,
+        program: Program,
+        project_file: str | None,
+        target: str,
+        output_file: str | None = None,
+    ) -> None:
+        """
+        Compiles `program` into a Scratch project.
+
+        If `project_file` is supplied, the compiled result is injected into that
+        existing .sb3 project.
+
+        If `project_file` is None, a new Scratch project is created from
+        PROJECT_TEMPLATE.
+
+        `target` is the name of the sprite to inject the compiled
+        blocks/variables/lists/broadcasts into.
+
+        When creating a new project, `output_file` determines where the new .sb3
+        is written. If omitted, "project.sb3" is used.
         """
         if not self.is_strict:
-            raise CompilerError(f"is_strict mode is False. Remove the parameter before continuing.", None)
-        
-        with zipfile.ZipFile(project_file, "r") as f:
-            project = json.loads(f.read("project.json").decode("utf-8"))
+            raise CompilerError(
+                f"is_strict mode is {self.is_strict}. Remove the parameter before continuing.",
+                None,
+            )
+
+        # Keep the source path separate from the destination path.
+        source_project_file = project_file
+
+        if source_project_file is not None:
+            with zipfile.ZipFile(source_project_file, "r") as f:
+                project = json.loads(
+                    f.read("project.json").decode("utf-8")
+                )
+
+            destination_path = os.path.abspath(
+                output_file or source_project_file
+            )
+        else:
+            project = deepcopy(PROJECT_TEMPLATE)
+
+            destination_path = os.path.abspath(
+                output_file or "project.sb3"
+            )
 
         targets: list[dict[str, Any]] = project.get("targets", [])
 
@@ -2384,24 +2417,52 @@ class Assembler:
         sprite_target = None
 
         for candidate in targets:
-            if candidate.get("name") == target:
-                sprite_target = candidate
             if candidate.get("isStage", False):
                 stage_target = candidate
 
+            elif candidate.get("name") == target:
+                sprite_target = candidate
+
         assets_to_move: list[str] = []
 
+        if stage_target is None:
+            raise CompilerError(
+                "Target project does not have stage.",
+                None,
+            )
+        elif project_file is None:
+            costume = deepcopy(COSTUME_TEMPLATE)
+            # We don't use self.new_id() because asset IDs are 32 characters.
+            asset_id = uuid.uuid4().hex
+
+            costume["assetId"] = asset_id
+            costume["md5ext"] = asset_id + ".svg"
+
+            stage_target["costumes"].append(costume)
+
+            assets_to_move.append(asset_id + ".svg")
+
         if sprite_target is None:
-            next_layer_order = max((candidate.get("layerOrder", 0) for candidate in targets), default=0)
+            next_layer_order = (
+                max(
+                    (
+                        candidate.get("layerOrder", 0)
+                        for candidate in targets
+                    ),
+                    default=0,
+                )
+                + 1
+            )
+
             sprite_target = deepcopy(SPRITE_TEMPLATE)
             sprite_target["name"] = target
             sprite_target["layerOrder"] = next_layer_order
 
-            costume = COSTUME_TEMPLATE.copy()
-            # clone the empty svg
+            costume = deepcopy(COSTUME_TEMPLATE)
 
-            # we don't use the self.new_id() because we want 36 characters
+            # We don't use self.new_id() because asset IDs are 32 characters.
             asset_id = uuid.uuid4().hex
+
             costume["assetId"] = asset_id
             costume["md5ext"] = asset_id + ".svg"
 
@@ -2410,11 +2471,8 @@ class Assembler:
             assets_to_move.append(asset_id + ".svg")
 
             targets.append(sprite_target)
+
             print(f"Sprite {target} not found. Creating a new one.")
-        
-        # shouldn't be possible if provided an .sb3 file, but here for sanity's sake. 
-        if stage_target is None:
-            raise CompilerError(f"Target project does not have stage.", None)
 
         self.emit_program(program)
 
@@ -2429,7 +2487,8 @@ class Assembler:
 
         json_dumped = json.dumps(project, ensure_ascii=True)
 
-        project_directory = os.path.dirname(os.path.abspath(project_file))
+        project_directory = os.path.dirname(destination_path)
+
         temporary_fd, temporary_path = tempfile.mkstemp(
             suffix=".sb3",
             dir=project_directory,
@@ -2437,97 +2496,59 @@ class Assembler:
         os.close(temporary_fd)
 
         try:
-            # create a temporary file that contains the archive of existing assets so we don't override them when writing
-            # to the file. 
-            with zipfile.ZipFile(project_file, "r") as source:
-                
-                # open the temporary file and copy the contents over.
-                with zipfile.ZipFile(
-                    temporary_path,
-                    mode="w",
-                    compression=zipfile.ZIP_DEFLATED,
-                    compresslevel=9,
-                ) as destination:
-                    destination.comment = source.comment
+            with zipfile.ZipFile(
+                temporary_path,
+                mode="w",
+                compression=zipfile.ZIP_DEFLATED,
+                compresslevel=9,
+            ) as destination:
 
-                    for archive_entry in source.infolist():
-                        if archive_entry.filename == "project.json":
-                            continue
+                # If we're modifying an existing project, preserve all of its
+                # existing assets.
+                if source_project_file is not None:
+                    with zipfile.ZipFile(
+                        source_project_file,
+                        "r",
+                    ) as source:
+                        destination.comment = source.comment
 
-                        destination.writestr(
-                            archive_entry,
-                            source.read(archive_entry.filename),
-                        )
+                        for archive_entry in source.infolist():
+                            if archive_entry.filename == "project.json":
+                                continue
 
-                    # move over the created temporary assets
-                    for asset_name in assets_to_move:
-                        destination.write(str(TEMP_FILE_SRC.absolute()), arcname=asset_name)
+                            destination.writestr(
+                                archive_entry,
+                                source.read(archive_entry.filename),
+                            )
 
-                    destination.writestr("project.json", json_dumped)
-
-            # Validate the completed archive before replacing the original.
-            with zipfile.ZipFile(temporary_path, "r") as completed_archive:
-                bad_file = completed_archive.testzip()
-                if bad_file is not None:
-                    raise CompilerError(
-                        f"Generated Scratch archive contains a corrupt file: {bad_file}",
-                        None
+                # Add assets created by the compiler.
+                for asset_name in assets_to_move:
+                    destination.write(
+                        str(TEMP_FILE_SRC.absolute()),
+                        arcname=asset_name,
                     )
 
-            os.replace(temporary_path, project_file)
+                destination.writestr(
+                    "project.json",
+                    json_dumped,
+                )
+
+            # Validate the completed archive before moving it into place.
+            with zipfile.ZipFile(temporary_path, "r") as completed_archive:
+                bad_file = completed_archive.testzip()
+
+                if bad_file is not None:
+                    raise CompilerError(
+                        f"Generated Scratch archive contains a corrupt file: "
+                        f"{bad_file}",
+                        None,
+                    )
+
+            os.replace(
+                temporary_path,
+                destination_path,
+            )
+
         finally:
             if os.path.exists(temporary_path):
                 os.remove(temporary_path)
-
-    
-"""
-"targets": [
-        {
-            "isStage": True,
-            "name": "Stage",
-            "variables": {},
-            "lists": {},
-            "broadcasts": {},
-            "blocks": {},
-            "comments": {},
-            "currentCostume": 0,
-            "costumes": [],
-            "sounds": [],
-            "volume": 100,
-            "layerOrder": 0,
-            "tempo": 60,
-            "videoTransparency": 50,
-            "videoState": "on",
-            "textToSpeechLanguage": None,
-        },
-        {
-            "isStage": False,
-            "name": "Sprite1",
-            "variables": self.variables,
-            "lists": {},
-            "broadcasts": {},
-            "blocks": self.blocks,
-            "comments": {},
-            "currentCostume": 0,
-            "costumes": [],
-            "sounds": [],
-            "volume": 100,
-            "layerOrder": 1,
-            "visible": True,
-            "x": 0,
-            "y": 0,
-            "size": 100,
-            "direction": 90,
-            "draggable": False,
-            "rotationStyle": "all around",
-        },
-    ],
-    "monitors": [],
-    "extensions": [],
-    "meta": {
-        "semver": "3.0.0",
-        "vm": "0.2.0",
-        "agent": "python",
-    },
-}
-"""

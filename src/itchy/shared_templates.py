@@ -23,7 +23,6 @@ class ASTNode:
     dummy: bool=False
 
 
-
 SPRITE_TEMPLATE: dict[str, Any] = {
     "isStage": False,
     "name": "",
@@ -44,6 +43,43 @@ SPRITE_TEMPLATE: dict[str, Any] = {
     "direction": 90,
     "draggable": False,
     "rotationStyle": "all around",
+}
+
+
+PROJECT_TEMPLATE: dict[str, Any] = {
+    "targets": [
+        {
+            "isStage": True,
+            "name": "Stage",
+
+            "variables": {},
+            "lists": {},
+            "broadcasts": {},
+
+            "blocks": {},
+            "comments": {},
+
+            "currentCostume": 0,
+            "costumes": [],
+
+            "sounds": [],
+
+            "volume": 100,
+            "layerOrder": 0,
+
+            "tempo": 60,
+            "videoTransparency": 50,
+            "videoState": "on",
+            "textToSpeechLanguage": None,
+        }
+    ],
+
+    "monitors": [],
+    "extensions": [],
+
+    "meta": {
+        "semver": "3.0.0",
+    },
 }
 
 

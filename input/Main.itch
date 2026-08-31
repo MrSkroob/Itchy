@@ -1,16 +1,15 @@
 shared var c
+var a
 
 
-define foo(arg: var) {
-    c += 1
-    return arg
+define bar() {
+    while true {
+
+    }
+    return
 }
 
 
 event event_whenflagclicked() {
-    c = 0
-    foo(c)
-
-    c = 1
-    foo(c)
+    a = bar()
 }
