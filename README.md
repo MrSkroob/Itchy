@@ -9,19 +9,6 @@ Repo features:
 - Language specific AST builder
 - Assembler where its output becomes an .sb3 file
 
-Your workspace should be something like this:
-```
-projectName/
-    Stage/
-        Stage.itch
-        costumes/
-        sounds/
-    Sprite1/
-        Sprite1.itch
-        costumes/
-        sounds/
-```
-
 Information for things such as the opcode, json format and others was used from: <br />
 https://en.scratch-wiki.info/wiki/Scratch_File_Format <br />
 https://en.scratch-wiki.info/wiki/Blocks <br />
@@ -106,6 +93,18 @@ event event_whenflagclicked() {
 The LSP is here (use at your own risk): https://github.com/MrSkroob/Itchy-LSP<br />
 I've avoided using anything that isn't part of the standard library, so no need to install anything other than python :].
 
+Your workspace should be something like this:
+```
+projectName/
+    Stage/
+        Stage.itch
+        costumes/
+        sounds/
+    Sprite1/
+        Sprite1.itch
+        costumes/
+        sounds/
+```
 ```
 python -m itchy <PROJECT_LOCATION> [optional]<OUTPUT_SB3_FILE>
 ```
