@@ -41,6 +41,8 @@ def compile_target(
 
     if output is None:
         output = project / "Scratch Project.sb3"
+    if output.is_dir():
+        output = output / "Scratch Project.sb3"
 
     try:
         # Once the output exists, prepare() can load project-wide
@@ -155,7 +157,7 @@ def compile_project(
     #
     # Otherwise, if Sprite2 was present in an earlier build and its
     # directory is later deleted, Sprite2 could remain in the old .sb3.
-    if output and output.exists():
+    if output and output.exists() and not output.is_dir():
         output.unlink()
 
     # Stage must be assembled first because it owns project-wide
@@ -213,10 +215,10 @@ def main() -> int:
         # return 1
     
 
-    if output_path and output_path.suffix.lower() != ".sb3":
+    if output_path and output_path.suffix.lower() != ".sb3" and not output_path.is_dir():
         print(
             f"Provided output '{output_path}' "
-            "is not an .sb3 file."
+            "is not an .sb3 file or a directory."
         )
         return 1
 
