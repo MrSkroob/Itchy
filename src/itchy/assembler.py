@@ -2293,6 +2293,7 @@ class Assembler:
         self.messages = {}
         self.mark_variable_for_deletion = set()
         self.mark_message_for_deletion = set()
+        self.variable_map = {}
         self.variables = {}
         self.overridable = set()
 
