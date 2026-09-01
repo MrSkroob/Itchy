@@ -151,7 +151,6 @@ SCRATCH_BLOCKS: dict[str, Block | Reporter | Event] = {
     "sound_volume": Reporter(return_type={VariableTypes.NUMBER}),
 
     # --- operator ----------------------------------------------------------
-    "operator_random": Reporter((ReturnType("FROM"), ReturnType("TO")), return_type={VariableTypes.NUMBER}),
     "operator_mod": Reporter((ReturnType("NUM1"), ReturnType("NUM2")), return_type={VariableTypes.NUMBER}),
     "operator_round": Reporter((ReturnType("NUM"),), return_type={VariableTypes.NUMBER}),
     "operator_random": Reporter((ReturnType("FROM"), ReturnType("TO")), return_type={VariableTypes.NUMBER}),
