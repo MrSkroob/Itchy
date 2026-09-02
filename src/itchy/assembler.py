@@ -1056,12 +1056,14 @@ class Assembler:
         for arg, arg_expr in zip(block_data.inputs, stmt.params):
             if arg in block_data.broadcasts:
                 if not isinstance(arg_expr, StringExpr):
-                                    return self.raise_or_return(InvalidTypeError(
-                                        f"{stmt.name}: argument {index} must be a string literal", arg_expr
-                                    ))
-                broadcast_id = self.define_broadcast(arg_expr.value)
-                inputs[arg.name] = (InputType.SHADOW_ONLY,
-                                    (DataType.BROADCAST, arg_expr.value, broadcast_id))
+                    inputs[arg.name] = (
+                        self.emit_expr(arg_expr, context, 
+                        BlockRange(event_id, event_id), event_id).value
+                    )
+                else:
+                    broadcast_id = self.define_broadcast(arg_expr.value)
+                    inputs[arg.name] = (InputType.SHADOW_ONLY,
+                                        (DataType.BROADCAST, arg_expr.value, broadcast_id))
             else:
                 if isinstance(arg_expr, StringExpr):
                     if isinstance(arg, Menu):
