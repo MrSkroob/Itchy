@@ -212,3 +212,9 @@ ANALYSIS_STRATEGIES: Strategy = {
     # Definitions.CloseCurlyBracket.name: dummy_token_factory(Definitions.CloseCurlyBracket, "}"),
     # Definitions.OpenBracket.name: dummy_token_factory(Definitions.OpenBracket, "(")
 }
+
+
+FUNC_SIGNATURE_STRATEGIES: Strategy = {
+    **ANALYSIS_STRATEGIES,
+    "args": make_args
+}

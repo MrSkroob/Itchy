@@ -17,7 +17,7 @@ from enum import Enum, StrEnum
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
-from itchy.shared_templates import VariableTypes, DataType, SourceSpan, SPRITE_TEMPLATE, COSTUME_TEMPLATE, PROJECT_TEMPLATE, ASTNode
+from itchy.shared_templates import VariableTypes, DataType, SourceSpan, SPRITE_TEMPLATE, COSTUME_TEMPLATE, PROJECT_TEMPLATE, DATA_TO_VARIABLE_TYPE, ASTNode
 from itchy.errors import CompilerError, CompilerErrorCodes, UnboundError, NotReferencedError, DuplicateDefinitionError,\
     ArgumentError, NotDefinedError, InvalidTypeError, SyntaxError, TypeMismatchError, ReturnNothingError
 from itchy.scratch_blocks import SCRATCH_BLOCKS, Block, Reporter, Event, Menu
@@ -142,6 +142,14 @@ class ProcedureInfo:
 
     # if applicable
     return_types: set[VariableTypes]=field(default_factory=lambda: {VariableTypes.NOTHING})
+
+
+def type_error_factory(name: str, index: int, expected: VariableTypes, actual: set[VariableTypes], stmt: ASTNode):
+    if len(actual) == 1:
+        return InvalidTypeError(f"{name}: expected '{expected.value}' not '{list(actual)[0].value}'", stmt)
+    else:
+        return InvalidTypeError(f"{name}: not one of ({", ".join(i.value for i in actual)}) \
+                                                        matches argument {index} of type {expected.value}", stmt)
 
 
 class Assembler:
@@ -804,12 +812,13 @@ class Assembler:
             # arg.return_type
             if arg.name in block_data.broadcasts:
                 if not isinstance(arg_expr, StringExpr):
-                    return self.raise_or_return(InvalidTypeError(
-                        f"{stmt.callee}: argument {index} must be a string literal", arg_expr
-                    ))
-                broadcast_id = self.define_broadcast(arg_expr.value)
-                inputs[arg.name] = (InputType.SHADOW_ONLY,
-                                    (DataType.BROADCAST, arg_expr.value, broadcast_id))
+                    inputs[arg.name] = (
+                        self.emit_expr(arg_expr, context, block_range, block_id).value
+                    )
+                else:
+                    broadcast_id = self.define_broadcast(arg_expr.value)
+                    inputs[arg.name] = (InputType.SHADOW_ONLY,
+                                        (DataType.BROADCAST, arg_expr.value, broadcast_id))
             elif arg.name in block_data.variables:
                 if not isinstance(arg_expr, VarExpr):
                     inputs[arg.name] = (
@@ -843,10 +852,26 @@ class Assembler:
 
                         inputs[arg.name] = (InputType.SHADOW_ONLY, menu_id)
                     else:
+                        if not self.type_check(DATA_TO_VARIABLE_TYPE[arg.return_type], {VariableTypes.STRING,}):
+                            error = type_error_factory(stmt.callee, index, DATA_TO_VARIABLE_TYPE[arg.return_type], {VariableTypes.STRING,}, stmt)
+                            if not self.compile_with_warnings:
+                                return self.raise_or_return(error)
+                            self.errors.append(error)
+
                         inputs[arg.name] = (InputType.SHADOW_ONLY, 
                             (arg.return_type, arg_expr.value))
                 else:
-                    inputs[arg.name] = self.emit_expr(arg_expr, context, block_range, block_id).value
+                    expected_type = None
+                    if isinstance(arg, Menu):
+                        expected_type = VariableTypes.STRING
+                    else:
+                        expected_type = DATA_TO_VARIABLE_TYPE[arg.return_type]
+
+                    expr = self.emit_expr(arg_expr, context, block_range, block_id)
+
+                    if not self.type_check(expected_type, expr.return_type):
+                        return self.raise_or_return(type_error_factory(stmt.callee, index, expected_type, expr.return_type, arg_expr))
+                    inputs[arg.name] = expr.value
 
             index += 1
 
@@ -966,8 +991,7 @@ class Assembler:
                 self.get_variable(arg_expr, context)
 
             if not self.type_check(arg_type, user_arg_type):
-                failure = InvalidTypeError(
-                    f"{stmt.callee}: not one of ({", ".join(i.value for i in user_arg_type)}) matches argument {index} of type {arg_type.value}", arg_expr)
+                failure = type_error_factory(stmt.callee, index, arg_type, user_arg_type, arg_expr)
                 self.errors.append(failure)
             
             inputs[arg_id] = emitted_arg.value
@@ -1073,10 +1097,26 @@ class Assembler:
                             fields={(arg.field_name or arg.name): (arg_expr.value, None)})
                         inputs[arg.name] = (InputType.SHADOW_ONLY, menu_id)
                     else:
+                        if not self.type_check(DATA_TO_VARIABLE_TYPE[arg.return_type], {VariableTypes.STRING,}):
+                            error = type_error_factory(stmt.name, index, DATA_TO_VARIABLE_TYPE[arg.return_type], {VariableTypes.STRING,}, stmt)
+                            if not self.compile_with_warnings:
+                                return self.raise_or_return(error)
+                            self.errors.append(error)
                         inputs[arg.name] = (InputType.SHADOW_ONLY, (arg.return_type, arg_expr.value))
                 else:
-                    inputs[arg.name] = self.emit_expr(arg_expr, context, 
-                                                      BlockRange(event_id, event_id), event_id).value
+                    expected_type = None
+                    if isinstance(arg, Menu):
+                        expected_type = VariableTypes.STRING
+                    else:
+                        expected_type = DATA_TO_VARIABLE_TYPE[arg.return_type]
+
+                    expr = self.emit_expr(arg_expr, context, BlockRange(event_id, event_id), event_id)
+                    if not self.type_check(expected_type, expr.return_type):
+                        error = type_error_factory(stmt.name, index, expected_type, expr.return_type, stmt)
+                        if not self.compile_with_warnings:
+                            return self.raise_or_return(error)
+                        self.errors.append(error)
+                    inputs[arg.name] = expr.value
             index += 1
 
         field_args = stmt.params[len(block_data.inputs):]
