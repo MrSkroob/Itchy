@@ -161,10 +161,6 @@ class Assembler:
         # variable name -> id
         self.variable_map: dict[tuple[str, StrOptional], str] = {}
 
-        # when we receive global variables that we defined and have removed since, we should mark for deletion.
-        self.mark_variable_for_deletion: set[str] = set()
-        self.mark_message_for_deletion: set[str] = set()
-
         # set of variable ids that can be overriden because they were defined in the project.
         self.overridable: set[str] = set()
 
@@ -314,10 +310,8 @@ class Assembler:
     def define_broadcast(self, name: str) -> str:
         message = self.messages.get(name)
 
-        if message and message.name in self.messages:
-            if message.name in self.mark_message_for_deletion and message.uri == self.uri:
-                self.mark_message_for_deletion.remove(name)
-            return self.messages[name].id
+        if message:
+            return message.id
 
         broadcast_id = self.new_id()
         self.messages[name] = MessageData(self.uri, name, broadcast_id)
@@ -397,12 +391,10 @@ class Assembler:
             return
 
         self.non_referenced_functions[function.name] = function
-        
 
     def flag_referenced_function(self, function_name: str):
         if function_name in self.non_referenced_functions:
             del self.non_referenced_functions[function_name]
-
 
     def flag_non_referenced_variable(self, var_id: str, stmt: VarDefStmt | VarRef | Param, context: Context):
         variable = self.variables[var_id]
@@ -644,9 +636,6 @@ class Assembler:
                 if name in self.overridable:
                     self.overridable.remove(name)
 
-                if name in self.mark_variable_for_deletion and shared:
-                    self.mark_variable_for_deletion.remove(name)
-
                 var_id = self.define_variable(shared, type_name, name, Context(
                     function_context=None, 
                     thread_id=context.thread_id, 
@@ -734,7 +723,6 @@ class Assembler:
         if self.count_args(stmt.values) > 0:
             # technically it's always 1 or 0, but this was left over for future where we might support more than one
             # return expressions (tuples)
-            # for now, we don't. i'm not convinced about multiple threads accessing the same return statement. 
             return_type = self.emit_expr(stmt.values[0], context, BlockRange(None, None, True), None).return_type
 
             if VariableTypes.NOTHING in return_type:
@@ -816,13 +804,12 @@ class Assembler:
             # arg.return_type
             if arg.name in block_data.broadcasts:
                 if not isinstance(arg_expr, StringExpr):
-                    inputs[arg.name] = (
-                        self.emit_expr(arg_expr, context, block_range, block_id).value
-                    )
-                else:
-                    broadcast_id = self.define_broadcast(arg_expr.value)
-                    inputs[arg.name] = (InputType.SHADOW_ONLY,
-                                        (DataType.BROADCAST, arg_expr.value, broadcast_id))
+                    return self.raise_or_return(InvalidTypeError(
+                        f"{stmt.callee}: argument {index} must be a string literal", arg_expr
+                    ))
+                broadcast_id = self.define_broadcast(arg_expr.value)
+                inputs[arg.name] = (InputType.SHADOW_ONLY,
+                                    (DataType.BROADCAST, arg_expr.value, broadcast_id))
             elif arg.name in block_data.variables:
                 if not isinstance(arg_expr, VarExpr):
                     inputs[arg.name] = (
@@ -1069,14 +1056,12 @@ class Assembler:
         for arg, arg_expr in zip(block_data.inputs, stmt.params):
             if arg in block_data.broadcasts:
                 if not isinstance(arg_expr, StringExpr):
-                    inputs[arg.name] = (
-                        self.emit_expr(arg_expr, context, 
-                        BlockRange(event_id, event_id), event_id).value
-                    )
-                else:
-                    broadcast_id = self.define_broadcast(arg_expr.value)
-                    inputs[arg.name] = (InputType.SHADOW_ONLY,
-                                        (DataType.BROADCAST, arg_expr.value, broadcast_id))
+                                    return self.raise_or_return(InvalidTypeError(
+                                        f"{stmt.name}: argument {index} must be a string literal", arg_expr
+                                    ))
+                broadcast_id = self.define_broadcast(arg_expr.value)
+                inputs[arg.name] = (InputType.SHADOW_ONLY,
+                                    (DataType.BROADCAST, arg_expr.value, broadcast_id))
             else:
                 if isinstance(arg_expr, StringExpr):
                     if isinstance(arg, Menu):
@@ -2291,8 +2276,6 @@ class Assembler:
         """
         self.thread_number = 0
         self.messages = {}
-        self.mark_variable_for_deletion = set()
-        self.mark_message_for_deletion = set()
         self.variable_map = {}
         self.variables = {}
         self.overridable = set()
@@ -2325,7 +2308,6 @@ class Assembler:
             # do not add to existing variables if WE were the ones defining it.
             if variable_data.uri == self.uri:
                 # signal to external LSP that we might want to delete this variable
-                self.mark_variable_for_deletion.add(variable_data.name)
                 continue
                 # self.overridable.add(variable_data.name)
 
@@ -2344,17 +2326,9 @@ class Assembler:
 
         for message, message_data in global_messages.items():
             if message_data.uri == self.uri:
-                self.mark_message_for_deletion.add(message)
-            self.messages[message] = message_data
-
-        for variable_id in list(self.variables):
-            variable_data = self.variables[variable_id]
-            
-            if variable_data.shared:
                 continue
 
-            del self.variable_map[(variable_data.name, variable_data.context.function_context)]
-            del self.variables[variable_id]
+            self.messages[message] = message_data
 
         self.non_referenced_variables = {}
         self.non_referenced_functions = {}
