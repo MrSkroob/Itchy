@@ -198,6 +198,7 @@ SCRATCH_BLOCKS: dict[str, Block | Reporter | Event] = {
     "control_wait": Block((ReturnType("DURATION", DataType.POSITIVE_NUMBER),)),
     "control_wait_until": Block((ReturnType("CONDITION"),)),
     "control_stop": Block(fields=(Field("STOP_OPTION", ("this script", "all", "other scripts in sprite")),)), # this is basically the return block. though we'll need to figure out how to return variables.
+    "control_start_as_clone": Event(),
     "control_create_clone_of": Block((Menu("control_create_clone_of_menu", "CLONE_OPTION", expected=("_myself_",)),)),
     "control_delete_this_clone": Block(()),
 
