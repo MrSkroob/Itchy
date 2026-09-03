@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "itchy"
-version = "0.4.2"
+version = "0.4.3"
 requires-python = ">=3.12"
 
 [project.scripts]
