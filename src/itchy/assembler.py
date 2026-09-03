@@ -20,7 +20,7 @@ from typing import Any
 from itchy.shared_templates import VariableTypes, DataType, SourceSpan, SPRITE_TEMPLATE, COSTUME_TEMPLATE, PROJECT_TEMPLATE, DATA_TO_VARIABLE_TYPE, ASTNode
 from itchy.errors import CompilerError, CompilerErrorCodes, UnboundError, NotReferencedError, DuplicateDefinitionError,\
     ArgumentError, NotDefinedError, InvalidTypeError, SyntaxError, TypeMismatchError, ReturnNothingError
-from itchy.scratch_blocks import SCRATCH_BLOCKS, Block, Reporter, Event, Menu
+from itchy.scratch_blocks import SCRATCH_BLOCKS, STAGE_BLOCKS, Block, Reporter, Event, Menu
 from itchy.itch_ast import \
     Param, \
     Stmt, VarRef, BlockStmt, IfStmt, BreakStmt, ForInStmt, WhileStmt, AssignStmt, ReturnStmt, VarDefStmt, ForRangeStmt, FunctionCallStmt, FunctionDefStmt, EventHandlerStmt, \
@@ -160,6 +160,8 @@ class Assembler:
         self.variables: dict[str, VariableData] = {} # includes lists.
         self.blocks: dict[str, ScratchBlock] = {}
         self.procedures: dict[str, ProcedureInfo] = {}
+
+        self.block_pool = SCRATCH_BLOCKS
 
         self.is_strict = is_strict
         self.uri = uri
@@ -392,7 +394,7 @@ class Assembler:
 
 
     def flag_non_referenced_function(self, function: FunctionDefStmt):
-        if function.name in SCRATCH_BLOCKS:
+        if function.name in self.block_pool:
             return
 
         if function.name not in self.procedures:
@@ -773,10 +775,10 @@ class Assembler:
         
 
     def emit_scratch_block(self, stmt: FunctionCallStmt, parent: StrOptional, context: Context) -> BlockRange | None:
-        if stmt.callee not in SCRATCH_BLOCKS:
+        if stmt.callee not in self.block_pool:
             return None
 
-        block_data = SCRATCH_BLOCKS[stmt.callee]
+        block_data = self.block_pool[stmt.callee]
 
         if not isinstance(block_data, Block):
             return self.raise_or_return(
@@ -1014,10 +1016,10 @@ class Assembler:
         if context.function_context is not None:
             return self.raise_or_return(CompilerError(f"Cannot start a new thread while inside a function/event", stmt))
 
-        if stmt.name not in SCRATCH_BLOCKS:
+        if stmt.name not in self.block_pool:
             return self.raise_or_return(NotDefinedError(f"'{stmt.name}' is not a known event", stmt))
 
-        block_data = SCRATCH_BLOCKS[stmt.name]
+        block_data = self.block_pool[stmt.name]
 
         if not isinstance(block_data, Event):
             return self.raise_or_return(CompilerError(
@@ -1811,7 +1813,7 @@ class Assembler:
 
         # return expression
     def emit_function_expr(self, expr: FunctionCallExpr, context: Context, block_parent: BlockRange, parent: StrOptional) -> ScratchInput:
-        if expr.callee not in SCRATCH_BLOCKS and expr.callee in self.procedures:
+        if expr.callee not in self.block_pool and expr.callee in self.procedures:
             proc_info = self.procedures[expr.callee]
 
             if VariableTypes.NOTHING in proc_info.return_types:
@@ -1901,10 +1903,10 @@ class Assembler:
 
             return return_input
         else:
-            if expr.callee not in SCRATCH_BLOCKS:
+            if expr.callee not in self.block_pool:
                 return self.raise_or_return(NotDefinedError(f"Procedure '{expr.callee}' is not defined and is not a valid scratch block", expr), PLACE_HOLDER_0)
 
-            block_data = SCRATCH_BLOCKS[expr.callee]
+            block_data = self.block_pool[expr.callee]
 
             self.register_symbol(
                 SymbolOccurence(
@@ -2546,7 +2548,9 @@ class Assembler:
 
         if target_is_stage:
             sprite_target = stage_target
+            self.block_pool = STAGE_BLOCKS
         elif sprite_target is None:
+            self.block_pool = SCRATCH_BLOCKS
             sprite_target = deepcopy(SPRITE_TEMPLATE)
             sprite_target["name"] = target
 

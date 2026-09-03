@@ -12,6 +12,7 @@ class ReturnType:
 class Field:
     name: str
     expected: tuple[str, ...]
+    is_variable: bool=False # field not strictly in expected
 
 
 @dataclass(frozen=True)
@@ -66,8 +67,8 @@ class Event:
 VALID_KEYS: tuple[str, ...] = tuple([i for i in "abcdefghijklmnopqrstuvwxyz"] + ["space", "up arrow", "down arrow", "right arrow", "left arrow", "any"])
 
 
-LIST_FIELD = Field("LIST", ())
-VARIABLE_FIELD = Field("VARIABLE", ())
+LIST_FIELD = Field("LIST", (), is_variable=True)
+VARIABLE_FIELD = Field("VARIABLE", (), is_variable=True)
 EFFECT_FIELD = Field("EFFECT", (
     "color", "fisheye", "whirl", "pixelate", "mosaic", "brightness", "ghost"
 ))
@@ -85,53 +86,13 @@ STAGE_OPTIONS = (
 )
 
 # opcode -> ordered slots.
-SCRATCH_BLOCKS: dict[str, Block | Reporter | Event] = {
-    # --- motion -------------------------------------------------------
-    "motion_movesteps": Block((ReturnType("STEPS"),)),
-    "motion_turnright": Block((ReturnType("DEGREES"),)),
-    "motion_turnleft": Block((ReturnType("DEGREES"),)),
-    "motion_goto": Block((Menu("motion_goto_menu", "TO", expected=("_mouse_", "_random_")),)),
-    "motion_glideto": Block((ReturnType("SECS"), Menu("motion_glideto_menu", "TO", expected=("_mouse_", "_random_")))),
-    "motion_gotoxy": Block((ReturnType("X"), ReturnType("Y"))),
-    "motion_glidesecstoxy": Block((ReturnType("SECS"), ReturnType("X"), ReturnType("Y"))),
-    "motion_pointindirection": Block((ReturnType("DIRECTION", DataType.ANGLE),)),
-    "motion_pointtowards": Block((Menu("motion_pointtowards_menu", "TOWARDS", expected=("_mouse_",)),)),
-    "motion_changexby": Block((ReturnType("DX"),)),
-    "motion_setx": Block((ReturnType("X"),)),
-    "motion_changeyby": Block((ReturnType("DY"),)),
-    "motion_sety": Block((ReturnType("Y"),)),
-    "motion_ifonedgebounce": Block(()),
-    "motion_setrotationstyle": Block(fields=(Field("STYLE", ("left-right", "don't rotate", "all around")),)),
-
-    "motion_xposition": Reporter(return_type={VariableTypes.NUMBER}),
-    "motion_yposition": Reporter(return_type={VariableTypes.NUMBER}),
-    "motion_direction": Reporter(return_type={VariableTypes.NUMBER}),
-
+STAGE_BLOCKS: dict[str, Block | Reporter | Event] = {
     # --- looks ----------------------------------------------------------
-    "looks_sayforsecs": Block((ReturnType("MESSAGE", DataType.STRING), ReturnType("SECS"))),
-    "looks_say": Block((ReturnType("MESSAGE", DataType.STRING),)),
-    "looks_thinkforsecs": Block((ReturnType("MESSAGE", DataType.STRING), ReturnType("SECS"))),
-    "looks_think": Block((ReturnType("MESSAGE", DataType.STRING),)),
-    "looks_switchcostumeto": Block((Menu("looks_costume", "COSTUME"),)),
-    "looks_nextcostume": Block(()),
     "looks_switchbackdropto": Block((Menu("looks_backdrops", "BACKDROP", expected=("next backdrop", "previous backdrop", "random backdrop")),)),
     "looks_nextbackdrop": Block(()),
-    "looks_show": Block(()),
-    "looks_hide": Block(()),
-    "looks_changesizeby": Block((ReturnType("CHANGE"),)),
-    "looks_setsizeto": Block((ReturnType("SIZE"),)),
     "looks_changeeffectby": Block((ReturnType("CHANGE"),), (EFFECT_FIELD,)),
     "looks_seteffectto":  Block((ReturnType("VALUE"),), (EFFECT_FIELD,)),
     "looks_cleargraphiceffects": Block(()),
-    "looks_gotofrontback": Block(fields=(Field("FRONT_BACK", ("front", "back")),)),
-    "looks_goforwardbackwardlayers": Block((ReturnType("NUM"),), (Field("FORWARD_BACKWARD", ("forward", "backward")),)),
-    
-
-    "looks_size": Reporter(return_type={VariableTypes.NUMBER}),
-    "looks_costumenumbername": Reporter(
-        fields=(Field("NUMBER_NAME", ("name", "number")),), 
-        return_type={VariableTypes.STRING, VariableTypes.NUMBER}
-    ),
     "looks_backdropnumbername": Reporter(
         (), fields=(Field("NUMBER_NAME", ("name", "number")),), 
         return_type={VariableTypes.STRING, VariableTypes.NUMBER}
@@ -184,33 +145,26 @@ SCRATCH_BLOCKS: dict[str, Block | Reporter | Event] = {
         ), 
         return_type={VariableTypes.NUMBER}
     ),
+    # events
+    "event_whenflagclicked": Event(),
+    "event_whenkeypressed": Event(fields=(Field("KEY_OPTION", VALID_KEYS),)),
+    "event_whenthisspriteclicked": Event(),
+    "event_whenbackdropswitchesto": Event(fields=(Field("BACKDROP", (), is_variable=True),)),
+    "event_whengreaterthan": Event((ReturnType("VALUE"),), (Field("WHENGREATERTHANMENU", ("LOUDNESS", "TIMER")),)),
+    "event_whenbroadcastreceived": Event(fields=(Field("BROADCAST_OPTION", (), is_variable=True),), broadcasts=("BROADCAST_OPTION",)),
+    "event_broadcast": Block((ReturnType("BROADCAST_INPUT", DataType.STRING),), broadcasts=("BROADCAST_INPUT",)),
+    "event_broadcastandwait": Block((ReturnType("BROADCAST_INPUT", DataType.STRING),), broadcasts=("BROADCAST_INPUT",)),
 
     # --- control ----------------------------------------------------
     # note: control_wait_until takes a CONDITION input like control_repeat_until
     # does elsewhere in the assembler -- it's still just a plain command block.
-    "event_whenflagclicked": Event(),
-    "event_whenkeypressed": Event(fields=(Field("KEY_OPTION", VALID_KEYS),)),
-    "event_whenthisspriteclicked": Event(),
-    "event_whenbackdropswitchesto": Event(fields=(Field("BACKDROP", ()),)),
-    "event_whengreaterthan": Event((ReturnType("VALUE"),), (Field("WHENGREATERTHANMENU", ("LOUDNESS", "TIMER")),)),
-    "event_whenbroadcastreceived": Event(fields=(Field("BROADCAST_OPTION", ()),), broadcasts=("BROADCAST_OPTION",)),
-
     "control_wait": Block((ReturnType("DURATION", DataType.POSITIVE_NUMBER),)),
     "control_wait_until": Block((ReturnType("CONDITION"),)),
     "control_stop": Block(fields=(Field("STOP_OPTION", ("this script", "all", "other scripts in sprite")),)), # this is basically the return block. though we'll need to figure out how to return variables.
-    "control_start_as_clone": Event(),
     "control_create_clone_of": Block((Menu("control_create_clone_of_menu", "CLONE_OPTION", expected=("_myself_",)),)),
     "control_delete_this_clone": Block(()),
 
-    "event_broadcast": Block((ReturnType("BROADCAST_INPUT", DataType.STRING),), broadcasts=("BROADCAST_INPUT",)),
-    "event_broadcastandwait": Block((ReturnType("BROADCAST_INPUT", DataType.STRING),), broadcasts=("BROADCAST_INPUT",)),
-
     # --- sensing ----------------------------------------------------
-    "sensing_touchingobject": Reporter((Menu("sensing_touchingobjectmenu", "TOUCHINGOBJECTMENU"),), return_type={VariableTypes.BOOL}),
-    "sensing_touchingcolor": Reporter((ReturnType("COLOR", DataType.COLOR),), return_type={VariableTypes.BOOL}),
-    "sensing_coloristouchingcolor": Reporter((ReturnType("COLOR", DataType.COLOR), ReturnType("COLOR2", DataType.COLOR)), return_type={VariableTypes.BOOL}),
-    "sensing_distanceto": Reporter((Menu("sensing_distancetomenu", "DISTANCETOMENU"),), return_type={VariableTypes.NUMBER}),
-
     "sensing_askandwait": Block((ReturnType("QUESTION", DataType.STRING),)),
     "sensing_answer": Reporter(return_type={VariableTypes.STRING}),
 
@@ -219,12 +173,11 @@ SCRATCH_BLOCKS: dict[str, Block | Reporter | Event] = {
     "sensing_mousex": Reporter(return_type={VariableTypes.NUMBER}),
     "sensing_mousey": Reporter(return_type={VariableTypes.NUMBER}),
 
-    "sensing_setdragmode": Block(fields=(Field("DRAG_MODE", ("draggable", "not draggable")),)),
     "sensing_loudness": Reporter(return_type={VariableTypes.NUMBER}),
     "sensing_timer": Reporter(return_type={VariableTypes.NUMBER}),
     "sensing_resettimer": Block(),
 
-    "sensing_of": Reporter((Menu("sensing_of_object_menu", "OBJECT", expected=("_stage_",)),), (Field("PROPERTY", ()),), return_type={
+    "sensing_of": Reporter((Menu("sensing_of_object_menu", "OBJECT", expected=("_stage_",)),), (Field("PROPERTY", (), is_variable=True),), return_type={
         VariableTypes.STRING, VariableTypes.NUMBER, VariableTypes.VAR
     }),
     "sensing_current": Reporter(fields=(Field("CURRENTMENU", (
@@ -270,4 +223,63 @@ SCRATCH_BLOCKS: dict[str, Block | Reporter | Event] = {
     "pen_setPenColorParamTo": Block((Menu("COLOR_PARAM", "pen_menu_colorParam", "colorParam", ("color", "saturation", "brightness", "transparency")), ReturnType("VALUE"))),
     "pen_changePenSizeBy": Block((ReturnType("SIZE"),)),
     "pen_setPenSizeTo": Block((ReturnType("SIZE"),))
+}
+
+SCRATCH_BLOCKS: dict[str, Block | Reporter | Event] = {
+    **STAGE_BLOCKS,
+    # --- motion -------------------------------------------------------
+    "motion_movesteps": Block((ReturnType("STEPS"),)),
+    "motion_turnright": Block((ReturnType("DEGREES"),)),
+    "motion_turnleft": Block((ReturnType("DEGREES"),)),
+    "motion_goto": Block((Menu("motion_goto_menu", "TO", expected=("_mouse_", "_random_")),)),
+    "motion_glideto": Block((ReturnType("SECS"), Menu("motion_glideto_menu", "TO", expected=("_mouse_", "_random_")))),
+    "motion_gotoxy": Block((ReturnType("X"), ReturnType("Y"))),
+    "motion_glidesecstoxy": Block((ReturnType("SECS"), ReturnType("X"), ReturnType("Y"))),
+    "motion_pointindirection": Block((ReturnType("DIRECTION", DataType.ANGLE),)),
+    "motion_pointtowards": Block((Menu("motion_pointtowards_menu", "TOWARDS", expected=("_mouse_",)),)),
+    "motion_changexby": Block((ReturnType("DX"),)),
+    "motion_setx": Block((ReturnType("X"),)),
+    "motion_changeyby": Block((ReturnType("DY"),)),
+    "motion_sety": Block((ReturnType("Y"),)),
+    "motion_ifonedgebounce": Block(()),
+    "motion_setrotationstyle": Block(fields=(Field("STYLE", ("left-right", "don't rotate", "all around")),)),
+
+    "motion_xposition": Reporter(return_type={VariableTypes.NUMBER}),
+    "motion_yposition": Reporter(return_type={VariableTypes.NUMBER}),
+    "motion_direction": Reporter(return_type={VariableTypes.NUMBER}),
+
+    # --- looks ----------------------------------------------------------
+    "looks_sayforsecs": Block((ReturnType("MESSAGE", DataType.STRING), ReturnType("SECS"))),
+    "looks_say": Block((ReturnType("MESSAGE", DataType.STRING),)),
+    "looks_thinkforsecs": Block((ReturnType("MESSAGE", DataType.STRING), ReturnType("SECS"))),
+    "looks_think": Block((ReturnType("MESSAGE", DataType.STRING),)),
+    "looks_switchcostumeto": Block((Menu("looks_costume", "COSTUME"),)),
+    "looks_nextcostume": Block(()),
+    "looks_show": Block(()),
+    "looks_hide": Block(()),
+    "looks_changesizeby": Block((ReturnType("CHANGE"),)),
+    "looks_setsizeto": Block((ReturnType("SIZE"),)),
+
+    "looks_gotofrontback": Block(fields=(Field("FRONT_BACK", ("front", "back")),)),
+    "looks_goforwardbackwardlayers": Block((ReturnType("NUM"),), (Field("FORWARD_BACKWARD", ("forward", "backward")),)),
+    
+
+    "looks_size": Reporter(return_type={VariableTypes.NUMBER}),
+    "looks_costumenumbername": Reporter(
+        fields=(Field("NUMBER_NAME", ("name", "number")),), 
+        return_type={VariableTypes.STRING, VariableTypes.NUMBER}
+    ),
+
+    # --- control ------------------------------------------------------------
+    "control_start_as_clone": Event(),
+    "control_delete_this_clone": Block(()),
+
+
+    # --- sensing ----------------------------------------------------
+    "sensing_touchingobject": Reporter((Menu("sensing_touchingobjectmenu", "TOUCHINGOBJECTMENU"),), return_type={VariableTypes.BOOL}),
+    "sensing_touchingcolor": Reporter((ReturnType("COLOR", DataType.COLOR),), return_type={VariableTypes.BOOL}),
+    "sensing_coloristouchingcolor": Reporter((ReturnType("COLOR", DataType.COLOR), ReturnType("COLOR2", DataType.COLOR)), return_type={VariableTypes.BOOL}),
+    "sensing_distanceto": Reporter((Menu("sensing_distancetomenu", "DISTANCETOMENU"),), return_type={VariableTypes.NUMBER}),
+
+    "sensing_setdragmode": Block(fields=(Field("DRAG_MODE", ("draggable", "not draggable")),)),
 }
