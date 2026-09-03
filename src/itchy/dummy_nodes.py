@@ -10,11 +10,11 @@ def find_token(node: ParsedNode, kind: Definitions) -> Token[Definitions] | None
         if token.kind == kind:
             return token
 
-    for child in node.children:
-        if isinstance(child, ParsedNode):
-            result = find_token(child, kind)
-            if result is not None:
-                return result
+    # for child in node.children:
+    #     if isinstance(child, ParsedNode):
+    #         result = find_token(child, kind)
+    #         if result is not None:
+    #             return result
 
     return None
 
