@@ -2480,7 +2480,7 @@ class Assembler:
         project_directory: str | Path,
         project_file: str | Path | None,
         target: str,
-    ) -> None:
+    ) -> Path:
         """
         Project directory will be your project's root folder. Output file will be the existing `.sb3` file (if it exists)
         and will create one if not. 
@@ -2673,3 +2673,5 @@ class Assembler:
         finally:
             if os.path.exists(temporary_path):
                 os.remove(temporary_path)
+
+        return project_directory

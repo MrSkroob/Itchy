@@ -55,12 +55,14 @@ def compile_target(
         parsed = parser.read(source)
         tree = ast_builder.build(parsed.tree)
 
-        assembler.assemble(
+        output_path = assembler.assemble(
             tree,
             str(project),
             str(output),
             target,
         )
+
+        print(f"Compiled output at: {str(output_path)}")
 
     except (ParseError, CompilerError) as e:
         if isinstance(e, ParseError):
