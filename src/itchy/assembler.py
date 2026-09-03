@@ -477,7 +477,7 @@ class Assembler:
         push_return_frame = FunctionDefStmt(
             name=PUSH_RETURN_FRAME,
             warp=True,
-            params=(Param("frame_id", "number"),),
+            params=(Param("frame_id", "var"),),
             body=(
                 FunctionCallStmt("data_addtolist", (VarExpr(VarRef("frame_id")), VarExpr(VarRef(RETURN_STACK)))),
                 FunctionCallStmt("data_addtolist", (StringExpr(""), VarExpr(VarRef(RETURN_STACK)))),
@@ -489,7 +489,7 @@ class Assembler:
         find_frame = FunctionDefStmt(
             name=FIND_STACK_FRAME,
             warp=True,
-            params=(Param("frame_id", "number"),),
+            params=(Param("frame_id", "var"),),
             body=(
                 ForRangeStmt(STACK_ITERABLE, start=NumberExpr(1), 
                              stop=FunctionCallExpr("data_lengthoflist", (VarExpr(VarRef(RETURN_STACK)),)), 
@@ -513,7 +513,7 @@ class Assembler:
         set_return_value = FunctionDefStmt(
             name=SET_RETURN_VALUE,
             warp=True,
-            params=(Param("value", "var"), Param("frame_id", "number")),
+            params=(Param("value", "var"), Param("frame_id", "var")),
             body=(
                 FunctionCallStmt(FIND_STACK_FRAME, (VarExpr(VarRef("frame_id")),)),
                 # FunctionCallStmt("data_replaceitemoflist", (VarExpr(VarRef("stack_id")), VarExpr(VarRef("value")))),
@@ -532,7 +532,7 @@ class Assembler:
         pop_return_frame = FunctionDefStmt(
             name=POP_RETURN_FRAME,
             warp=True,
-            params=(Param("frame_id", "number"),),
+            params=(Param("frame_id", "var"),),
             body=(
                 FunctionCallStmt(FIND_STACK_FRAME, (VarExpr(VarRef("frame_id")),)),
                 FunctionCallStmt("data_deleteoflist", (VarExpr(VarRef(FRAME_INDEX)), 
@@ -2482,7 +2482,7 @@ class Assembler:
         target: str,
     ) -> None:
         """
-        Project folder will be your project's root folder. Output file will be the existing `.sb3` file (if it exists)
+        Project directory will be your project's root folder. Output file will be the existing `.sb3` file (if it exists)
         and will create one if not. 
 
         Compiles the target from an Itchy project into a Scratch .sb3.
@@ -2511,10 +2511,10 @@ class Assembler:
         if project_file:
             project_file = Path(project_file)
         else:
-            project_file = project_directory / "Scratch Project.sb3"
+            project_file = project_directory / f"Scratch Project.sb3"
 
         target_dir = project_directory / target
-
+    
         if not target_dir.is_dir():
             raise CompilerError(
                 f"Target directory '{target}' does not exist.",

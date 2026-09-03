@@ -89,6 +89,7 @@ def compile_target(
 def compile_project(
     project: Path,
     output: Path | None,
+    exact_target: str | None=None
 ) -> bool:
     """
     Compiles an Itchy project directory into an .sb3.
@@ -139,6 +140,9 @@ def compile_project(
             continue
 
         if directory.name == "Stage":
+            continue
+
+        if exact_target and directory.name != exact_target:
             continue
 
         source_file = directory / f"{directory.name}.itch"
@@ -223,11 +227,10 @@ def main() -> int:
         return 1
 
     if compile_file:
-        if not compile_target(
-            project_path,
-            project_path.parent,
-            output=output_path,
-            target=project_path.stem
+        if not compile_project(
+            project_path.parent.parent,
+            output_path,
+            project_path.stem,
         ):
             return 1
     else:
