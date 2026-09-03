@@ -114,7 +114,7 @@ SCRATCH_BLOCKS: dict[str, Block | Reporter | Event] = {
     "looks_think": Block((ReturnType("MESSAGE", DataType.STRING),)),
     "looks_switchcostumeto": Block((Menu("looks_costume", "COSTUME"),)),
     "looks_nextcostume": Block(()),
-    "looks_switchbackdropto": Block((Menu("looks_backdrops", "BACKDROP", expected=("next backdrop", "previous backdrop")),)),
+    "looks_switchbackdropto": Block((Menu("looks_backdrops", "BACKDROP", expected=("next backdrop", "previous backdrop", "random backdrop")),)),
     "looks_nextbackdrop": Block(()),
     "looks_show": Block(()),
     "looks_hide": Block(()),
