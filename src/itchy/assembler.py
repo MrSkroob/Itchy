@@ -2674,4 +2674,4 @@ class Assembler:
             if os.path.exists(temporary_path):
                 os.remove(temporary_path)
 
-        return project_directory
+        return project_file
