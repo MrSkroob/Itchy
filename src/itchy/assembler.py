@@ -904,7 +904,7 @@ class Assembler:
                         f"{stmt.callee}: argument {index} must be a string literal", arg_expr
                     ))
                 
-                if arg_expr.value not in field.expected and len(field.expected) > 0:
+                if arg_expr.value not in field.expected and not field.is_variable:
                     return self.raise_or_return(
                         ArgumentError(f"'{arg_expr.value}' is not one of {field.expected}", arg_expr)
                     )
@@ -1130,7 +1130,7 @@ class Assembler:
             if field.name in block_data.broadcasts:
                 fields[field.name] = (arg_expr.value, self.define_broadcast(arg_expr.value))
             else:
-                if arg_expr.value not in field.expected and len(field.expected) > 0:
+                if arg_expr.value not in field.expected and not field.is_variable:
                     return self.raise_or_return(ArgumentError(f"{arg_expr.value} is not one of {field.expected}", arg_expr))
                 fields[field.name] = (arg_expr.value, None)
             index += 1
@@ -2006,7 +2006,7 @@ class Assembler:
                             arg_expr
                         ), PLACE_HOLDER_0)
 
-                    if arg_expr.value not in field.expected and len(field.expected) > 0:
+                    if arg_expr.value not in field.expected and not field.is_variable:
                         return self.raise_or_return(ArgumentError(f"'{arg_expr.value}' is not one of {field.expected}", arg_expr),
                                                     PLACE_HOLDER_0)
 
