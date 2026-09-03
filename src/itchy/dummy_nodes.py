@@ -3,12 +3,12 @@ from itchy.tokenizer import Definitions, Token
 from itchy.tree import ParsedNode, Alternative, Sequence, OptionalNode
 
 
-def find_token(node: ParsedNode, kind: Definitions) -> tuple[Token[Definitions], int] | None:
+def find_token(node: ParsedNode, kind: Definitions) -> tuple[Token[Definitions], bool] | None:
     for index, token in enumerate(node.children):
         if not isinstance(token, Token):
             continue
         if token.kind == kind:
-            return token, index
+            return token, index == len(node.children) - 1
 
     for child in node.children:
         if isinstance(child, ParsedNode):
