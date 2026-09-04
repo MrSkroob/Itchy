@@ -578,14 +578,8 @@ class ASTBuilder:
 
     def build_soundasset(self, node: ParsedNode) -> SoundAssetExpr:
         label = find_first_token(node, Definitions.SoundAsset.name)
+        self.emit_token(label, "type")
         name_token = find_first_token(node, Definitions.String.name)
-
-        self.semantic_tokens[label.span] = SemanticToken(
-            line = label.line - 1, 
-            character=label.char - 1,
-            length=utf16_length(label.literal),
-            token_type="type"
-        )
 
         return SoundAssetExpr(
             name=parse_string(name_token.literal),
@@ -597,14 +591,8 @@ class ASTBuilder:
 
     def build_imageasset(self, node: ParsedNode) -> ImageAssetExpr:
         label = find_first_token(node, Definitions.ImageAsset.name)
+        self.emit_token(label, "type")
         name_token = find_first_token(node, Definitions.String.name)
-
-        self.semantic_tokens[label.span] = SemanticToken(
-            line = label.line - 1, 
-            character=label.char - 1,
-            length=utf16_length(label.literal),
-            token_type="type"
-        )
 
         return ImageAssetExpr(
             name=parse_string(name_token.literal),
@@ -690,6 +678,7 @@ class ASTBuilder:
         # children = flat_children(node)
     
         symbol: Token[Definitions] = find_first_token(node, Definitions.Symbol.name)
+        self.emit_token(symbol, "variable", modifiers)
         slice_expr: Expr | None = None
         has_slice = has_node(node, "slice")
         if has_slice:
@@ -697,9 +686,7 @@ class ASTBuilder:
     
         if not symbol:
             raise ValueError(f"how u gonna want a variable with no name: {node!r}")
-    
-        self.emit_token(symbol, "variable", modifiers)
-    
+        
         return VarRef(
             root=symbol.literal,
             slice_expr=slice_expr,
@@ -826,9 +813,10 @@ class ASTBuilder:
         shared = has_token(node, "Shared")
     
         type_token = find_first_token(node, "Type")
+        self.emit_token(type_token, "type")
+
         symbol_token = find_first_token(node, "Symbol")
     
-        self.emit_token(type_token, "type")
         self.emit_token(symbol_token, "variable", ("declaration",))
     
         stmt = VarDefStmt(
@@ -855,9 +843,9 @@ class ASTBuilder:
         children = flat_children(node)
     
         name = expect_token(children[0], name="Symbol")
-        type_name = expect_token(children[2], name="Type")
-    
         self.emit_token(name, "parameter", ("declaration", "readonly"))
+        
+        type_name = expect_token(children[2], name="Type")
         self.emit_token(type_name, "type")
     
         return Param(name.literal, type_name.literal, span=SourceSpan(name.span.start, type_name.span.end), dummy=node.dummy_node)
