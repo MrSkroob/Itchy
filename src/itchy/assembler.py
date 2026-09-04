@@ -187,7 +187,7 @@ class Assembler:
         self.non_referenced_functions: dict[str, FunctionDefStmt] = {} 
         self.non_referenced_variables: dict[tuple[str, StrOptional], list[VarDefStmt | Param]] = {}
 
-        self.symbols: list[SymbolOccurence] = []
+        self.symbols: list[tuple[SymbolOccurence, ASTNode]] = []
 
         # for debugging/error messages
         self.current_token = None
@@ -218,7 +218,7 @@ class Assembler:
         if stmt.dummy:
             return
 
-        self.symbols.append(symbol)
+        self.symbols.append((symbol, stmt))
     
     def make_block(
             self,
@@ -1607,13 +1607,13 @@ class Assembler:
             self.flag_non_referenced_variable(var_id, VarDefStmt(
                 variable.var_type.value, target.root, variable.shared, span=target.span
             ), context)
-            self.symbols.append(SymbolOccurence(
+            self.register_symbol(SymbolOccurence(
                 span=target.span,
                 definition_location=variable.definition_location,
                 context=context.function_context,
                 symbol_type=SymbolType.VARIABLE,
                 name=target.root
-            ))
+            ), target)
         except NameError:
             error = UnboundError(f"'{target.root}' is not defined.", target, data={"name": target.root})
             if not self.compile_with_warnings:
@@ -1704,14 +1704,14 @@ class Assembler:
                     return self.raise_or_return(InvalidTypeError(
                         f"{expr.asset_type.value}: argument 0 must be a string literal", expr.args[0]
                     ), PLACE_HOLDER_0)
-
-                self.symbols.append(SymbolOccurence(
+                self.register_symbol(SymbolOccurence(
                     span=expr.span,
                     definition_location=expr.args[0].span,
                     context=context.function_context,
                     symbol_type=SymbolType.ASSET,
                     name=expr.args[0].value
-                ))  
+                ), expr)
+
                 return ScratchInput((InputType.SHADOW_ONLY, (DataType.STRING, expr.args[0].value)), {VariableTypes.STRING})
             case BoolExpr(value=value):
                 # in scratch:
