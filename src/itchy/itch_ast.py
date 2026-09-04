@@ -584,7 +584,7 @@ class ASTBuilder:
             line = label.line, 
             character=label.char,
             length=len(label.literal),
-            token_type="asset"
+            token_type="type"
         )
 
         return SoundAssetExpr(
@@ -603,7 +603,7 @@ class ASTBuilder:
             line = label.line, 
             character=label.char,
             length=len(label.literal),
-            token_type="asset"
+            token_type="type"
         )
 
         return ImageAssetExpr(
