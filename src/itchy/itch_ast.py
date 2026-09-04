@@ -188,6 +188,18 @@ class StringExpr(Expr):
 
 
 @dataclass(frozen=True)
+class SoundAssetExpr(Expr):
+    name: str
+    name_span: SourceSpan
+
+
+@dataclass(frozen=True)
+class ImageAssetExpr(Expr):
+    name: str
+    name_span: SourceSpan
+
+
+@dataclass(frozen=True)
 class UnaryOpExpr(Expr):
     op: str
     value: Expr
@@ -543,10 +555,75 @@ class ASTBuilder:
         raise ValueError(f"this ain't a primary g: {node!r}")
     
     
+    def build_asset_span(
+        self,
+        node: ParsedNode,
+        name_token: Token[Definitions],
+    ) -> SourceSpan:
+        """Returns the span of the complete @sound(...)/@image(...) expression."""
+        tokens = [
+            child
+            for child in flat_children(node)
+            if isinstance(child, Token) and not child.dummy_token
+        ]
+
+        if not tokens:
+            return name_token.span
+
+        return SourceSpan(
+            start=tokens[0].span.start,
+            end=tokens[-1].span.end,
+        )
+
+
+    def build_soundasset(self, node: ParsedNode) -> SoundAssetExpr:
+        label = find_first_token(node, Definitions.SoundAsset.name)
+        name_token = find_first_token(node, Definitions.String.name)
+
+        self.semantic_tokens[label.span] = SemanticToken(
+            line = label.line, 
+            character=label.char,
+            length=len(label.literal),
+            token_type="asset"
+        )
+
+        return SoundAssetExpr(
+            name=parse_string(name_token.literal),
+            name_span=name_token.span,
+            span=self.build_asset_span(node, name_token),
+            dummy=node.dummy_node,
+        )
+
+
+    def build_imageasset(self, node: ParsedNode) -> ImageAssetExpr:
+        label = find_first_token(node, Definitions.ImageAsset.name)
+        name_token = find_first_token(node, Definitions.String.name)
+
+        self.semantic_tokens[label.span] = SemanticToken(
+            line = label.line, 
+            character=label.char,
+            length=len(label.literal),
+            token_type="asset"
+        )
+
+        return ImageAssetExpr(
+            name=parse_string(name_token.literal),
+            name_span=name_token.span,
+            span=self.build_asset_span(node, name_token),
+            dummy=node.dummy_node,
+        )
+
+
     def build_literals(self, node: ParsedNode) -> Expr:
         children = flat_children(node)
     
         for child in children:
+            if isinstance(child, ParsedNode) and child.name == "soundasset":
+                return self.build_soundasset(child)
+
+            if isinstance(child, ParsedNode) and child.name == "imageasset":
+                return self.build_imageasset(child)
+
             if is_token(child, name="Bool"):
                 assert isinstance(child, Token)
                 # self.emit_token(child, "boolean")

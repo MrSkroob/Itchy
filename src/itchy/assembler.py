@@ -24,7 +24,7 @@ from itchy.scratch_blocks import SCRATCH_BLOCKS, STAGE_BLOCKS, Block, Reporter, 
 from itchy.itch_ast import \
     Param, \
     Stmt, VarRef, BlockStmt, IfStmt, BreakStmt, ForInStmt, WhileStmt, AssignStmt, ReturnStmt, VarDefStmt, ForRangeStmt, FunctionCallStmt, FunctionDefStmt, EventHandlerStmt, \
-    IfBranch, Expr, NumberExpr, BoolExpr, StringExpr, VarExpr, UnaryOpExpr, BinaryOpExpr, TableExpr, FunctionCallExpr, Program
+    IfBranch, Expr, NumberExpr, BoolExpr, StringExpr, VarExpr, UnaryOpExpr, BinaryOpExpr, TableExpr, FunctionCallExpr, ImageAssetExpr, SoundAssetExpr, Program
 from itchy.mp3_parser import mp3_metadata
 
 
@@ -80,6 +80,7 @@ class SymbolType(StrEnum):
     VARIABLE = "variable"
     FUNCTION = "function"
     EVENT = "event"
+    ASSET = "asset"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -162,6 +163,8 @@ class Assembler:
         self.procedures: dict[str, ProcedureInfo] = {}
 
         self.block_pool = SCRATCH_BLOCKS
+
+        self.emitted_return = False
 
         self.is_strict = is_strict
         self.uri = uri
@@ -456,12 +459,16 @@ class Assembler:
             first_block["y"] = y
 
             y += 200
-    
-    def emit_program(self, program: Program) -> None:
+
+
+    def emit_return_helpers(self):
         """
-        Takes a program object only and emits each sequence within said program.
-        uses .emit_statements() internally so statements do not connect to each other. 
+        This was originally part of emit_program(), but having return statement related
+        helpers polluting your workspace even if you didn't use any felt a bit wrong. 
         """
+        if self.emitted_return:
+            return
+        self.emitted_return = True
         context = Context(
             function_context=None,
             layer=0,
@@ -492,20 +499,20 @@ class Assembler:
             params=(Param("frame_id", "var"),),
             body=(
                 ForRangeStmt(STACK_ITERABLE, start=NumberExpr(1), 
-                             stop=FunctionCallExpr("data_lengthoflist", (VarExpr(VarRef(RETURN_STACK)),)), 
-                             step=NumberExpr(3), 
-                             body=(
-                                 IfStmt(
-                                     branches=(IfBranch(
-                                         BinaryOpExpr(VarExpr(VarRef(STACK_ITERABLE)), "==", VarExpr(VarRef("frame_id"))),
-                                         body=(
-                                             AssignStmt(VarRef(FRAME_INDEX), VarExpr(VarRef(STACK_ITERABLE))),
-                                             FunctionCallStmt("control_stop", (StringExpr("this script"),)),
-                                         )
-                                     ),),
-                                     else_body=()
-                                 ),
-                             )),
+                                stop=FunctionCallExpr("data_lengthoflist", (VarExpr(VarRef(RETURN_STACK)),)), 
+                                step=NumberExpr(3), 
+                                body=(
+                                    IfStmt(
+                                        branches=(IfBranch(
+                                            BinaryOpExpr(VarExpr(VarRef(STACK_ITERABLE)), "==", VarExpr(VarRef("frame_id"))),
+                                            body=(
+                                                AssignStmt(VarRef(FRAME_INDEX), VarExpr(VarRef(STACK_ITERABLE))),
+                                                FunctionCallStmt("control_stop", (StringExpr("this script"),)),
+                                            )
+                                        ),),
+                                        else_body=()
+                                    ),
+                                )),
             )
         )
 
@@ -550,6 +557,13 @@ class Assembler:
         pre_defines = (push_return_frame, find_frame, set_return_value, pop_return_frame)
 
         self.emit_statements(pre_defines)
+    
+    
+    def emit_program(self, program: Program) -> None:
+        """
+        Takes a program object only and emits each sequence within said program.
+        uses .emit_statements() internally so statements do not connect to each other. 
+        """
         self.emit_statements(program.body)
 
 
@@ -691,11 +705,12 @@ class Assembler:
 
         # scratch represents the contents of a list as a space separated string... for some reason.
         # so, whenever you use it as a parameter, it is treated is a string. 
-        if a == VariableTypes.LIST:
-            a = VariableTypes.STRING
+
+        # if a == VariableTypes.LIST:
+        #     a = VariableTypes.STRING
 
         if VariableTypes.LIST in b:
-            b.add(VariableTypes.VAR)
+            b.add(VariableTypes.STRING)
             b.remove(VariableTypes.LIST)
 
         if a == VariableTypes.NOTHING:
@@ -729,6 +744,8 @@ class Assembler:
 
         if self.count_args(stmt.values) > 1:
             return self.raise_or_return(SyntaxError("Can only return one value at a time", stmt))
+
+        self.emit_return_helpers()
 
         if self.count_args(stmt.values) > 0:
             # technically it's always 1 or 0, but this was left over for future where we might support more than one
@@ -812,10 +829,11 @@ class Assembler:
 
         for arg, arg_expr in zip(block_data.inputs, stmt.args):
             # arg.return_type
+            expr = self.emit_expr(arg_expr, context, block_range, block_id)
             if arg.name in block_data.broadcasts:
                 if not isinstance(arg_expr, StringExpr):
                     inputs[arg.name] = (
-                        self.emit_expr(arg_expr, context, block_range, block_id).value
+                        expr.value
                     )
                 else:
                     broadcast_id = self.define_broadcast(arg_expr.value)
@@ -824,7 +842,7 @@ class Assembler:
             elif arg.name in block_data.variables:
                 if not isinstance(arg_expr, VarExpr):
                     inputs[arg.name] = (
-                        self.emit_expr(arg_expr, context, block_range, block_id).value
+                        expr.value
                     )
                 else:
                     try:
@@ -869,8 +887,6 @@ class Assembler:
                     else:
                         expected_type = DATA_TO_VARIABLE_TYPE[arg.return_type]
 
-                    expr = self.emit_expr(arg_expr, context, block_range, block_id)
-
                     if not self.type_check(expected_type, expr.return_type):
                         return self.raise_or_return(type_error_factory(stmt.callee, index, expected_type, expr.return_type, arg_expr))
                     inputs[arg.name] = expr.value
@@ -878,6 +894,7 @@ class Assembler:
             index += 1
 
         for field, arg_expr in zip(block_data.fields, stmt.args[len(block_data.inputs):]):
+            expr = self.emit_expr(arg_expr, context, block_range, parent)
             if field.name in block_data.variables:
                 if not isinstance(arg_expr, VarExpr):
                     return self.raise_or_return(InvalidTypeError(
@@ -1079,12 +1096,14 @@ class Assembler:
             thread_id=context.thread_id
         )
 
+        block_parent = BlockRange(event_id, event_id)
+
         for arg, arg_expr in zip(block_data.inputs, stmt.params):
+            expr = self.emit_expr(arg_expr, context, block_parent, event_id)
             if arg in block_data.broadcasts:
                 if not isinstance(arg_expr, StringExpr):
                     inputs[arg.name] = (
-                        self.emit_expr(arg_expr, context, 
-                        BlockRange(event_id, event_id), event_id).value
+                        expr.value
                     )
                 else:
                     broadcast_id = self.define_broadcast(arg_expr.value)
@@ -1112,7 +1131,6 @@ class Assembler:
                     else:
                         expected_type = DATA_TO_VARIABLE_TYPE[arg.return_type]
 
-                    expr = self.emit_expr(arg_expr, context, BlockRange(event_id, event_id), event_id)
                     if not self.type_check(expected_type, expr.return_type):
                         error = type_error_factory(stmt.name, index, expected_type, expr.return_type, stmt)
                         if not self.compile_with_warnings:
@@ -1124,6 +1142,7 @@ class Assembler:
         field_args = stmt.params[len(block_data.inputs):]
 
         for field, arg_expr in zip(block_data.fields, field_args):
+            self.emit_expr(arg_expr, context, block_parent, event_id)
             if not isinstance(arg_expr, StringExpr):
                 return self.raise_or_return(InvalidTypeError(f"{stmt.name}: argument {index} must be a string literal", arg_expr))
             
@@ -1667,10 +1686,23 @@ class Assembler:
             case NumberExpr(value=value):
                 return ScratchInput((InputType.SHADOW_ONLY, (DataType.NUMBER, str(value))), {VariableTypes.NUMBER})
             case StringExpr(value=value):
+                if block_parent.first is not None:
+                    block = self.blocks[block_parent.first]
+                    argument_number = len(block["inputs"]) + len(block["fields"])
+                    print(block, argument_number)
                 if re.match(HEXCODE, value) is not None:
                     return ScratchInput((InputType.SHADOW_ONLY, (DataType.COLOR, value)), {VariableTypes.STRING})
                 else:
                     return ScratchInput((InputType.SHADOW_ONLY, (DataType.STRING, value)), {VariableTypes.STRING})
+            case SoundAssetExpr(name=name) | ImageAssetExpr(name=name):
+                self.symbols.append(SymbolOccurence(
+                    span=expr.name_span,
+                    definition_location=expr.name_span,
+                    context=context.function_context,
+                    symbol_type=SymbolType.ASSET,
+                    name=name
+                ))  
+                return ScratchInput((InputType.SHADOW_ONLY, (DataType.STRING, name)), {VariableTypes.STRING})
             case BoolExpr(value=value):
                 # in scratch:
                 # if (0 == 0) == "true" is true, so we can just use strings without any fancy conversion
@@ -1819,6 +1851,8 @@ class Assembler:
             if VariableTypes.NOTHING in proc_info.return_types:
                 error = ReturnNothingError(f"{expr.callee}: not all codepaths have a return statement", expr, data={"name": expr.callee})
                 return self.raise_or_return(error, PLACE_HOLDER_0)
+
+            self.emit_return_helpers()
 
             if context.function_context in self.procedures:
                 thread_id = VarExpr(VarRef(THREAD_ARG))
@@ -2318,6 +2352,7 @@ class Assembler:
         1. Clears blocks, variables, lists, etc. that are local to the sprite
         2. *Keeps* stage/global data
         """
+        self.emitted_return = False
         self.thread_number = 0
         self.messages = {}
         self.variable_map = {}

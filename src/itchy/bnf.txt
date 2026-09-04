@@ -11,6 +11,9 @@
 <varassignstat> ::= <var> <Assign> <equation>
 <functioncall> ::= <Symbol> <args>
 
+<soundasset> ::= "@sound" "(" <String> ")"
+<imageasset> ::= "@image" "(" <String> ")"
+
 <forbody> ::= "=" <equation> <FieldSeperator> <equation> <FieldSeperator> <equation> | <In> <var>
 <tableconstructor> ::= "[" [<varlist1>] "]"
 <wrap> ::= "{" [<chunk>] [<laststat>] "}"
@@ -26,7 +29,7 @@
 <unary> ::= ["-" | "not"] <primary>
 <primary> ::= <literals> | "(" <equation> ")"
 <var> ::= <Symbol> [<slice>]
-<literals> ::= <functioncall> | <tableconstructor> | <var> | <Bool> | <Number> | <String> 
+<literals> ::= <functioncall> | <tableconstructor> | <var> | <Bool> | <Number> | <String> | <soundasset> | <imageasset>
 // <explist1> ::= <equation> {<FieldSeperator> <explist1>}
 <laststat> ::= <Return> [<varlist1>]
 <varlist1> ::= <equation> {<FieldSeperator> <equation>} [<FieldSeperator>]

@@ -99,6 +99,8 @@ class Definitions(StrEnum):
     Bool = r"\b(?:true|false)\b"
     Assign = r"\*=|\+=|-=|/=|=(?!=)"
     Binop = r"\.\.|<=|>=|==|!=|\+|-|\*|/|<|>|\b(?:and|or)\b|\b(not)\b"
+    SoundAsset = r"@sound"
+    ImageAsset = r"@image"
     String = r"[a-z0-9]*(\"(?:\\.|[^\\\"])*\"|\'(?:\\.|[^\\'])*\')"
     Symbol = r"([a-zA-Z_][a-zA-Z0-9_]*)|\$"
     Colon = r":"
