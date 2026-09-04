@@ -581,8 +581,8 @@ class ASTBuilder:
         name_token = find_first_token(node, Definitions.String.name)
 
         self.semantic_tokens[label.span] = SemanticToken(
-            line = label.line, 
-            character=label.char,
+            line = label.line - 1, 
+            character=label.char - 1,
             length=utf16_length(label.literal),
             token_type="type"
         )
@@ -600,8 +600,8 @@ class ASTBuilder:
         name_token = find_first_token(node, Definitions.String.name)
 
         self.semantic_tokens[label.span] = SemanticToken(
-            line = label.line, 
-            character=label.char,
+            line = label.line - 1, 
+            character=label.char - 1,
             length=utf16_length(label.literal),
             token_type="type"
         )
