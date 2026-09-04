@@ -24,7 +24,7 @@ from itchy.scratch_blocks import SCRATCH_BLOCKS, STAGE_BLOCKS, Block, Reporter, 
 from itchy.itch_ast import \
     Param, \
     Stmt, VarRef, BlockStmt, IfStmt, BreakStmt, ForInStmt, WhileStmt, AssignStmt, ReturnStmt, VarDefStmt, ForRangeStmt, FunctionCallStmt, FunctionDefStmt, EventHandlerStmt, \
-    IfBranch, Expr, NumberExpr, BoolExpr, StringExpr, VarExpr, UnaryOpExpr, BinaryOpExpr, TableExpr, FunctionCallExpr, ImageAssetExpr, SoundAssetExpr, Program
+    IfBranch, Expr, NumberExpr, BoolExpr, StringExpr, VarExpr, UnaryOpExpr, BinaryOpExpr, TableExpr, FunctionCallExpr, AssetExpr, Program
 from itchy.mp3_parser import mp3_metadata
 
 
@@ -394,7 +394,6 @@ class Assembler:
         self.variable_map[key] = var_id
 
         return var_id
-
 
     def flag_non_referenced_function(self, function: FunctionDefStmt):
         if function.name in self.block_pool:
@@ -1694,15 +1693,26 @@ class Assembler:
                     return ScratchInput((InputType.SHADOW_ONLY, (DataType.COLOR, value)), {VariableTypes.STRING})
                 else:
                     return ScratchInput((InputType.SHADOW_ONLY, (DataType.STRING, value)), {VariableTypes.STRING})
-            case SoundAssetExpr(name=name) | ImageAssetExpr(name=name):
+            case AssetExpr():
+                if self.count_args(expr.args) != 1:
+                    return self.raise_or_return(ArgumentError(
+                            f"'{expr.asset_type.value}' expects 1 argument, got {self.count_args(expr.args)}",
+                            expr
+                        ), PLACE_HOLDER_0)
+
+                if not isinstance(expr.args[0], StringExpr):
+                    return self.raise_or_return(InvalidTypeError(
+                        f"{expr.asset_type.value}: argument 0 must be a string literal", expr.args[0]
+                    ), PLACE_HOLDER_0)
+
                 self.symbols.append(SymbolOccurence(
-                    span=expr.name_span,
-                    definition_location=expr.name_span,
+                    span=expr.span,
+                    definition_location=expr.args[0].span,
                     context=context.function_context,
                     symbol_type=SymbolType.ASSET,
-                    name=name
+                    name=expr.args[0].value
                 ))  
-                return ScratchInput((InputType.SHADOW_ONLY, (DataType.STRING, name)), {VariableTypes.STRING})
+                return ScratchInput((InputType.SHADOW_ONLY, (DataType.STRING, expr.args[0].value)), {VariableTypes.STRING})
             case BoolExpr(value=value):
                 # in scratch:
                 # if (0 == 0) == "true" is true, so we can just use strings without any fancy conversion

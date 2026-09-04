@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Generic, Iterator, TypeVar
 from enum import StrEnum
-from itchy.shared_templates import SourceSpan, SourcePosition, VariableTypes
+from itchy.shared_templates import SourceSpan, SourcePosition, VariableTypes, AssetTypes
 import re
 
 # these tend to be treated specially other than the other rules below:
@@ -96,11 +96,10 @@ class Definitions(StrEnum):
     In = r"\b(in)\b"
     Number = r"[0-9][_0-9]*(\.[0-9][_0-9]*)?"
     Type = fr"\b(?:{"|".join([i.value for i in VariableTypes])})\b"
+    AssetType = fr"@(?:{"|".join([i.value for i in AssetTypes])})"
     Bool = r"\b(?:true|false)\b"
     Assign = r"\*=|\+=|-=|/=|=(?!=)"
     Binop = r"\.\.|<=|>=|==|!=|\+|-|\*|/|<|>|\b(?:and|or)\b|\b(not)\b"
-    SoundAsset = r"@sound"
-    ImageAsset = r"@image"
     String = r"[a-z0-9]*(\"(?:\\.|[^\\\"])*\"|\'(?:\\.|[^\\'])*\')"
     Symbol = r"([a-zA-Z_][a-zA-Z0-9_]*)|\$"
     Colon = r":"

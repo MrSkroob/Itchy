@@ -122,6 +122,11 @@ class VariableTypes(StrEnum):
     NOTHING = "nothing"
 
 
+class AssetTypes(StrEnum):
+    SPRITE = "sprite"
+    COSTUME = "costume"
+    SOUND = "sound"
+
 # 
 VARIABLE_TYPE_TO_USER_TYPES: dict[VariableTypes, VariableTypes] = {
     VariableTypes.VAR: VariableTypes.VAR,

@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from itchy.tree import ParsedNode
 from itchy.parser import Token, Sequence, Repeat, OptionalNode, Alternative
-from itchy.shared_templates import ASTNode
+from itchy.shared_templates import ASTNode, AssetTypes
 from itchy.tokenizer import GenericRules, Definitions, Tokenizer
 from itchy.shared_templates import SourceSpan, SourcePosition
 from typing import Callable
@@ -188,16 +188,9 @@ class StringExpr(Expr):
 
 
 @dataclass(frozen=True)
-class SoundAssetExpr(Expr):
-    name: str
-    name_span: SourceSpan
-
-
-@dataclass(frozen=True)
-class ImageAssetExpr(Expr):
-    name: str
-    name_span: SourceSpan
-
+class AssetExpr(Expr):
+    asset_type: AssetTypes
+    args: tuple[Expr, ...]
 
 @dataclass(frozen=True)
 class UnaryOpExpr(Expr):
@@ -576,29 +569,14 @@ class ASTBuilder:
         )
 
 
-    def build_soundasset(self, node: ParsedNode) -> SoundAssetExpr:
-        label = find_first_token(node, Definitions.SoundAsset.name)
+    def build_asset(self, node: ParsedNode) -> AssetExpr:
+        label = find_first_token(node, Definitions.AssetType.name)
         self.emit_token(label, "type")
-        name_token = find_first_token(node, Definitions.String.name)
-
-        return SoundAssetExpr(
-            name=parse_string(name_token.literal),
-            name_span=name_token.span,
-            span=self.build_asset_span(node, name_token),
-            dummy=node.dummy_node,
-        )
-
-
-    def build_imageasset(self, node: ParsedNode) -> ImageAssetExpr:
-        label = find_first_token(node, Definitions.ImageAsset.name)
-        self.emit_token(label, "type")
-        name_token = find_first_token(node, Definitions.String.name)
-
-        return ImageAssetExpr(
-            name=parse_string(name_token.literal),
-            name_span=name_token.span,
-            span=self.build_asset_span(node, name_token),
-            dummy=node.dummy_node,
+        arg_list = self.build_varlist1(find_first_node(node, "args"))
+        return AssetExpr(
+            asset_type=AssetTypes(label.literal.strip()[1:]),
+            span=label.span,
+            args=arg_list
         )
 
 
@@ -606,11 +584,8 @@ class ASTBuilder:
         children = flat_children(node)
     
         for child in children:
-            if isinstance(child, ParsedNode) and child.name == "soundasset":
-                return self.build_soundasset(child)
-
-            if isinstance(child, ParsedNode) and child.name == "imageasset":
-                return self.build_imageasset(child)
+            if isinstance(child, ParsedNode) and child.name == "asset":
+                return self.build_asset(child)
 
             if is_token(child, name="Bool"):
                 assert isinstance(child, Token)
