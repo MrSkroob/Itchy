@@ -583,7 +583,7 @@ class ASTBuilder:
         self.semantic_tokens[label.span] = SemanticToken(
             line = label.line, 
             character=label.char,
-            length=len(label.literal),
+            length=utf16_length(label.literal),
             token_type="type"
         )
 
@@ -602,7 +602,7 @@ class ASTBuilder:
         self.semantic_tokens[label.span] = SemanticToken(
             line = label.line, 
             character=label.char,
-            length=len(label.literal),
+            length=utf16_length(label.literal),
             token_type="type"
         )
 
