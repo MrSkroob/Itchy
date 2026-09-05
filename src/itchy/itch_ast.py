@@ -573,9 +573,16 @@ class ASTBuilder:
         label = find_first_token(node, Definitions.AssetType.name)
         self.emit_token(label, "type")
         arg_list = self.build_varlist1(find_first_node(node, "args"))
+
+        span = None
+        if len(arg_list) > 0:
+            span = arg_list[0].span
+        else:
+            span = label.span
+
         return AssetExpr(
             asset_type=AssetTypes(label.literal.strip()[1:]),
-            span=label.span,
+            span=span,
             args=arg_list
         )
 
