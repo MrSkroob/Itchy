@@ -698,7 +698,8 @@ class Assembler:
                 raise TypeError("Bad statement type")
 
 
-    def type_check(self, a: VariableTypes, b: set[VariableTypes]):
+    @staticmethod
+    def type_check(a: VariableTypes, b: set[VariableTypes]):
         if a in b:
             return True
 
