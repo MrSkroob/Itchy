@@ -1604,9 +1604,6 @@ class Assembler:
         try:
             var_id = self.get_variable(target, context)
             variable = self.variables[var_id]
-            self.flag_non_referenced_variable(var_id, VarDefStmt(
-                variable.var_type.value, target.root, variable.shared, span=target.span
-            ), context)
             self.register_symbol(SymbolOccurence(
                 span=target.span,
                 definition_location=variable.definition_location,
