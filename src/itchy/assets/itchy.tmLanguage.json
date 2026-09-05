@@ -85,6 +85,17 @@
           "match": "\\\\."
         }
       ]
+    },
+    {
+      "name": "string.quoted.single.itchy",
+      "begin": "'",
+      "end": "'",
+      "patterns": [
+        {
+          "name": "constant.character.escape.itchy",
+          "match": "\\\\."
+        }
+      ]
     }
   ]
 }
