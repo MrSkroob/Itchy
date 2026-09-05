@@ -12,9 +12,7 @@ import argparse
 from pathlib import Path
 
 
-parser = Parser(
-    skip_bad_tokens=False,
-)
+parser = Parser()
 
 ast_builder = ASTBuilder()
 assembler = Assembler("")

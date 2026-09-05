@@ -1683,10 +1683,6 @@ class Assembler:
             case NumberExpr(value=value):
                 return ScratchInput((InputType.SHADOW_ONLY, (DataType.NUMBER, str(value))), {VariableTypes.NUMBER})
             case StringExpr(value=value):
-                if block_parent.first is not None:
-                    block = self.blocks[block_parent.first]
-                    argument_number = len(block["inputs"]) + len(block["fields"])
-                    print(block, argument_number)
                 if re.match(HEXCODE, value) is not None:
                     return ScratchInput((InputType.SHADOW_ONLY, (DataType.COLOR, value)), {VariableTypes.STRING})
                 else:
@@ -2588,12 +2584,12 @@ class Assembler:
             raise CompilerError(f"This project doesn't have a stage file.", None)
 
         target_is_stage = target.lower() == "stage"
+        self.block_pool = SCRATCH_BLOCKS
 
         if target_is_stage:
             sprite_target = stage_target
             self.block_pool = STAGE_BLOCKS
         elif sprite_target is None:
-            self.block_pool = SCRATCH_BLOCKS
             sprite_target = deepcopy(SPRITE_TEMPLATE)
             sprite_target["name"] = target
 
