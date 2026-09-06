@@ -8,7 +8,8 @@ import tempfile
 import os
 import hashlib
 import wave
-
+from collections.abc import Mapping
+import shutil
 
 from typing import TypeVar, Iterable
 from dataclasses import dataclass, field
@@ -163,7 +164,7 @@ class Assembler:
         self.procedures: dict[str, ProcedureInfo] = {}
 
         self.block_pool = SCRATCH_BLOCKS
-
+        self.compiling = None
         self.emitted_return = False
 
         self.is_strict = is_strict
@@ -862,7 +863,7 @@ class Assembler:
                         # create the menu
                         menu_id = self.make_block(
                             opcode=arg.opcode, 
-                            id=block_id,
+                            parent=block_id, # FIXME: this might be wrong (used to be id=block_id)
                             fields={
                                 (arg.field_name or arg.name): (
                                     arg_expr.value,
@@ -1113,8 +1114,8 @@ class Assembler:
                 if isinstance(arg_expr, StringExpr):
                     if isinstance(arg, Menu):
                         menu_id = self.make_block(
-                            arg.opcode,
-                            event_id,
+                            opcode=arg.opcode,
+                            parent=event_id,
                             fields={(arg.field_name or arg.name): (arg_expr.value, None)})
                         inputs[arg.name] = (InputType.SHADOW_ONLY, menu_id)
                     else:
@@ -2515,49 +2516,185 @@ class Assembler:
 
     def assemble(
         self,
-        program: Program,
+        programs: Mapping[str, Program],
         project_directory: str | Path,
-        project_file: str | Path | None,
-        target: str,
+        project_file: str | Path | None = None,
     ) -> Path:
         """
-        Project directory will be your project's root folder. Output file will be the existing `.sb3` file (if it exists)
-        and will create one if not. 
+        Compiles an entire Itchy project into one Scratch .sb3.
 
-        Compiles the target from an Itchy project into a Scratch .sb3.
+        `programs` maps Scratch target names to their parsed Itchy programs:
 
-        Layout is expected to be like:
+            {
+                "Stage": stage_program,
+                "Sprite1": sprite1_program,
+                "Enemy": enemy_program,
+            }
 
-        ProjectName/
-            Stage/
-                CodeFile.itch
-                costumes/
-                sounds/
-            
-            Sprite1/
-                CodeFile.itch
-                costumes/
-                sounds/
+        The Stage is always compiled first so that project-wide variables,
+        lists, and broadcasts exist before sprites are compiled.
+
+        Layout:
+
+            ProjectName/
+                Stage/
+                    CodeFile.itch
+                    costumes/
+                    sounds/
+
+                Sprite1/
+                    CodeFile.itch
+                    costumes/
+                    sounds/
         """
-
         if not self.is_strict:
             raise CompilerError(
-                f"is_strict mode is {self.is_strict}. Please remove the parameter or set it to true before continuing.", None
+                f"is_strict mode is {self.is_strict}. "
+                "Please remove the parameter or set it to true before continuing.",
+                None,
             )
 
         project_directory = Path(project_directory)
 
-        if project_file:
-            project_file = Path(project_file)
+        if not project_directory.is_dir():
+            raise CompilerError(
+                f"Project directory '{project_directory}' does not exist.",
+                None,
+            )
+
+        if project_file is None:
+            project_file = project_directory / "Scratch Project.sb3"
         else:
-            project_file = project_directory / f"Scratch Project.sb3"
+            project_file = Path(project_file)
+
+        if not programs:
+            raise CompilerError(
+                "No targets were provided for compilation.",
+                None,
+            )
+
+        # This is the project that gets modified target-by-target.
+        #
+        # The real output file is left untouched until every target has
+        # successfully compiled.
+        temporary_fd, temporary_path = tempfile.mkstemp(
+            suffix=".sb3",
+            dir=project_directory,
+        )
+
+        os.close(temporary_fd)
+
+        working_project = Path(temporary_path)
+
+        # mkstemp creates an empty file, which isn't a valid .sb3.
+        working_project.unlink()
+
+        try:
+            # Start from the existing Scratch project when one exists.
+            if project_file.exists():
+                shutil.copy2(
+                    project_file,
+                    working_project,
+                )
+
+            # Stable sort: Stage first, everything else keeps the order
+            # supplied by `programs`.
+            ordered_programs = sorted(
+                programs.items(),
+                key=lambda item: item[0].lower() != "stage",
+            )
+
+            for target, program in ordered_programs:
+                self.compiling = target
+                # prepare() already does exactly what we need here:
+                #
+                # - clears target-local compilation state
+                # - reloads Stage variables/lists/broadcasts
+                # - therefore preserves their Scratch IDs
+                #
+                # On the very first target there may not be a project yet.
+                if project_file.exists():
+                    self.prepare(str(project_file))
+                else:
+                    self.prepare()
+                self._assemble_target(
+                    program=program,
+                    project_directory=project_directory,
+                    project_file=working_project,
+                    target=target,
+                )
+
+            # Final sanity check before touching the user's actual output.
+            with zipfile.ZipFile(working_project, "r") as output:
+                if bad_file := output.testzip():
+                    raise CompilerError(
+                        f"Generated project has a corrupt file: {bad_file}",
+                        None,
+                    )
+
+                if "project.json" not in output.namelist():
+                    raise CompilerError(
+                        "Generated project does not contain project.json.",
+                        None,
+                    )
+
+                # Also make sure project.json itself is valid JSON.
+                json.loads(
+                    output.read("project.json").decode("utf-8")
+                )
+
+            # The actual .sb3 is replaced only after the complete project
+            # has compiled successfully.
+            os.replace(
+                working_project,
+                project_file,
+            )
+
+        finally:
+            if working_project.exists():
+                working_project.unlink()
+
+        return project_file
+
+
+    def _ensure_costume(self, sprite_target: dict[str, Any], assets: list[tuple[Path, str]]) -> None:
+        if sprite_target.get("costumes"):
+            return
+
+        costume = deepcopy(COSTUME_TEMPLATE)
+
+        asset_id = uuid.uuid4().hex
+        asset_name = f"{asset_id}.svg"
+
+        costume["assetId"] = asset_id
+        costume["md5ext"] = asset_name
+
+        sprite_target["costumes"] = [costume]
+
+        assets.append(
+            (TEMP_FILE_SRC, asset_name)
+        )
+
+
+    def _assemble_target(
+        self,
+        program: Program,
+        project_directory: Path,
+        project_file: Path,
+        target: str,
+    ) -> None:
+        """
+        Compiles one target into the temporary working .sb3.
+
+        This should only be called by assemble().
+        """
 
         target_dir = project_directory / target
-    
+
         if not target_dir.is_dir():
             raise CompilerError(
                 f"Target directory '{target}' does not exist.",
-                None
+                None,
             )
 
         if project_file.exists():
@@ -2574,87 +2711,156 @@ class Assembler:
         sprite_target: dict[str, Any] | None = None
 
         for candidate in targets:
-            if candidate.get("isStage", True):
+            # Do NOT default this to True.
+            #
+            # Otherwise a malformed/non-stage target missing `isStage`
+            # accidentally becomes the Stage.
+            if candidate.get("isStage", False):
                 stage_target = candidate
 
             if candidate.get("name") == target:
                 sprite_target = candidate
 
         if stage_target is None:
-            raise CompilerError(f"This project doesn't have a stage file.", None)
+            raise CompilerError(
+                "This project doesn't have a stage target.",
+                None,
+            )
 
         target_is_stage = target.lower() == "stage"
-        self.block_pool = SCRATCH_BLOCKS
 
         if target_is_stage:
             sprite_target = stage_target
             self.block_pool = STAGE_BLOCKS
-        elif sprite_target is None:
-            sprite_target = deepcopy(SPRITE_TEMPLATE)
-            sprite_target["name"] = target
 
-            sprite_target["layoutOrder"] = (
-                max(
-                    (candidate.get("layoutOrder", 0)  for candidate in targets),
-                    default=9
-                ) + 1
-            )
+        else:
+            self.block_pool = SCRATCH_BLOCKS
 
-            targets.append(sprite_target)
+            if sprite_target is None:
+                sprite_target = deepcopy(SPRITE_TEMPLATE)
+                sprite_target["name"] = target
 
-        # compilation stage
+                sprite_target["layoutOrder"] = (
+                    max(
+                        (
+                            candidate.get("layoutOrder", 0)
+                            for candidate in targets
+                        ),
+                        default=0,
+                    )
+                    + 1
+                )
+
+                targets.append(sprite_target)
+
+        assert sprite_target is not None
+
+        # -------------------------------------------------------------
+        # Remember the assets belonging to this target before replacing
+        # its costume/sound lists.
+        # -------------------------------------------------------------
+
+        old_target_assets: set[str] = set()
+
+        for asset in (
+            sprite_target.get("costumes", [])
+            + sprite_target.get("sounds", [])
+        ):
+            md5ext = asset.get("md5ext")
+
+            if isinstance(md5ext, str):
+                old_target_assets.add(md5ext)
+
+        # An asset may be shared by more than one Scratch target because
+        # Scratch assets are content-addressed. Don't delete it if another
+        # target still refers to it.
+        other_target_assets: set[str] = set()
+
+        for candidate in targets:
+            if candidate is sprite_target:
+                continue
+
+            for asset in (
+                candidate.get("costumes", [])
+                + candidate.get("sounds", [])
+            ):
+                md5ext = asset.get("md5ext")
+
+                if isinstance(md5ext, str):
+                    other_target_assets.add(md5ext)
+
+        removable_old_assets = (
+            old_target_assets - other_target_assets
+        )
+
+        # -------------------------------------------------------------
+        # Compilation
+        # -------------------------------------------------------------
 
         self.emit_program(program)
+
         sprite_target["blocks"] = self._serialise_blocks()
         sprite_target["comments"] = {}
 
-        if target != "Stage":
-            sprite_target["variables"] = self._serialise_variables()
-            sprite_target["lists"] = self._serialise_lists()
+        # Use the same stage test everywhere.
+        if not target_is_stage:
+            sprite_target["variables"] = (
+                self._serialise_variables()
+            )
 
-        stage_target["variables"] = self._serialise_variables(True)
-        stage_target["lists"]  = self._serialise_lists(True)
-        stage_target["broadcasts"] = self._serialise_broadcasts()
+            sprite_target["lists"] = (
+                self._serialise_lists()
+            )
+
+        # prepare() loaded the previously generated Stage state before
+        # this target was emitted, so these serializers contain the
+        # accumulated project-wide state while preserving existing IDs.
+        stage_target["variables"] = (
+            self._serialise_variables(True)
+        )
+
+        stage_target["lists"] = (
+            self._serialise_lists(True)
+        )
+
+        stage_target["broadcasts"] = (
+            self._serialise_broadcasts()
+        )
+
+        # -------------------------------------------------------------
+        # Assets
+        # -------------------------------------------------------------
 
         costumes_dir = target_dir / "costumes"
         sounds_dir = target_dir / "sounds"
 
         assets: list[tuple[Path, str]] = []
 
-        # loading assets
-
         sprite_target["costumes"] = self._load_costumes(
             costumes_dir,
-            assets
+            assets,
         )
 
         sprite_target["sounds"] = self._load_sounds(
             sounds_dir,
-            assets
+            assets,
         )
 
-        if not sprite_target["costumes"]:
-            costume = COSTUME_TEMPLATE.copy()
+        self._ensure_costume(sprite_target, assets)
 
-            asset_id = uuid.uuid4().hex
-            asset_name = f"{asset_id}.svg"
+        dumped = json.dumps(
+            project,
+            ensure_ascii=True,
+        )
 
-            costume["assetId"] = asset_id
-            costume["md5ext"] = asset_name
+        new_asset_names = {
+            archive_name
+            for _, archive_name in assets
+        }
 
-            sprite_target["costumes"] = [costume]
-
-            assets.append(
-                (TEMP_FILE_SRC, asset_name)
-            )
-
-        # writing .sb3
-        dumped = json.dumps(project, ensure_ascii=True)
-
-        # project_file.parent.mkdir(
-        #     parents=True,
-        #     exist_ok=True
-        # )
+        # -------------------------------------------------------------
+        # Rewrite the working .sb3 atomically
+        # -------------------------------------------------------------
 
         temporary_fd, temporary_path = tempfile.mkstemp(
             suffix=".sb3",
@@ -2665,52 +2871,66 @@ class Assembler:
 
         try:
             with zipfile.ZipFile(
-                temporary_path, mode="w", 
+                temporary_path,
+                mode="w",
                 compression=zipfile.ZIP_DEFLATED,
-                compresslevel=9) as destination:
+                compresslevel=9,
+            ) as destination:
 
                 if project_file.exists():
-                    with zipfile.ZipFile(project_file, "r") as source:
+                    with zipfile.ZipFile(
+                        project_file,
+                        "r",
+                    ) as source:
+
                         destination.comment = source.comment
 
                         for archive_entry in source.infolist():
-                            if archive_entry.filename == "project.json":
+                            archive_name = archive_entry.filename
+
+                            if archive_name == "project.json":
                                 continue
 
-                            if any(archive_name == archive_entry.filename for _, archive_name in assets):
+                            # This target used to own the asset and no
+                            # other target still references it.
+                            if archive_name in removable_old_assets:
+                                continue
+
+                            # We're about to write the new version below.
+                            if archive_name in new_asset_names:
                                 continue
 
                             destination.writestr(
                                 archive_entry,
-                                source.read(archive_entry.filename)   
+                                source.read(archive_name),
                             )
 
                 for path, name in assets:
                     destination.write(
                         str(path.absolute()),
-                        arcname=name
+                        arcname=name,
                     )
 
                 destination.writestr(
                     "project.json",
-                    dumped
+                    dumped,
                 )
 
-            # validate output is good
-            with zipfile.ZipFile(temporary_path, "r") as output:
+            with zipfile.ZipFile(
+                temporary_path,
+                "r",
+            ) as output:
                 if bad_file := output.testzip():
                     raise CompilerError(
                         f"Generated project has a corrupt file: {bad_file}",
-                        None
+                        None,
                     )
 
             os.replace(
                 temporary_path,
-                project_file
+                project_file,
             )
 
         finally:
             if os.path.exists(temporary_path):
                 os.remove(temporary_path)
-
-        return project_file

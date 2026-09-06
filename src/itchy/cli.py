@@ -3,7 +3,7 @@
 # AI-generated suggestions were reviewed, modified, and integrated by the author.
 
 from itchy.parser import Parser, ParseError
-from itchy.itch_ast import ASTBuilder
+from itchy.itch_ast import ASTBuilder, Program
 from itchy.errors import format_syntax_error, format_compiler_error
 from itchy.assembler import Assembler, CompilerError
 
@@ -15,53 +15,38 @@ from pathlib import Path
 parser = Parser()
 
 ast_builder = ASTBuilder()
-assembler = Assembler("")
+assembler = Assembler("", compile_with_warnings=True)
 
 
-def compile_target(
-    file: Path,
+def compile_targets(
+    files: list[Path],
     project: Path,
-    output: Path | None,
-    target: str,
-) -> bool:
-    """
-    Compiles one Itchy target into the output Scratch project.
-
-    `file` is the target's .itch source file.
-    `project` is the root Itchy project directory.
-    `output` is the generated .sb3 file.
-    `target` is the Scratch target name.
-    """
-
-    source = file.read_text(encoding="utf-8")
-
-    if output is None:
-        output = project / "Scratch Project.sb3"
-    if output.is_dir():
-        output = output / "Scratch Project.sb3"
-
-    try:
-        # Once the output exists, prepare() can load project-wide
-        # variables/broadcasts from the already-compiled Stage.
-        if output.exists():
-            assembler.prepare(str(output))
-        else:
-            assembler.prepare()
-
-        parsed = parser.read(source)
-        tree = ast_builder.build(parsed.tree)
-
-        output_path = assembler.assemble(
-            tree,
-            str(project),
-            str(output),
-            target,
-        )
-
-        print(f"Compiled output at: {str(output_path)}")
-
-    except (ParseError, CompilerError) as e:
-        if isinstance(e, ParseError):
+    output: Path | None
+) -> Path | None:
+    programs: dict[str, Program] = {}
+    metadata: dict[str, tuple[str, Path]] = {}
+    
+    for file in files:
+        source = file.read_text(encoding="utf-8")
+        
+        if output is None:
+            output = project / "Scratch Project.sb3"
+        if output.is_dir():
+            output = output / "Scratch Project.sb3"
+    
+        try:
+            # Once the output exists, prepare() can load project-wide
+            # variables/broadcasts from the already-compiled Stage.
+            # if output.exists():
+            #     assembler.prepare(str(output))
+            # else:
+            #     assembler.prepare()
+    
+            parsed = parser.read(source)
+            tree = ast_builder.build(parsed.tree)
+            programs[file.stem] = tree
+            metadata[file.stem] = (source, file)
+        except ParseError as e:
             print(
                 format_syntax_error(
                     e,
@@ -70,18 +55,25 @@ def compile_target(
                     str(file),
                 )
             )
+            return None
+            # else:
+            
+    try:
+        return assembler.assemble(programs, project, output)
+    except CompilerError as e:
+        if assembler.compiling is None:
+            print(e.message)
         else:
+            file_metadata = metadata[assembler.compiling]
             print(
                 format_compiler_error(
                     e,
-                    source,
-                    str(file),
+                    file_metadata[0],
+                    str(file_metadata[1]),
                 )
             )
 
-        return False
-
-    return True
+        return None
 
 
 def compile_project(
@@ -131,16 +123,13 @@ def compile_project(
     #
     # This means unrelated directories such as .git and .vscode are
     # automatically ignored.
-    sprites: list[tuple[str, Path]] = []
+    sprites: list[Path] = []
 
     for directory in project.iterdir():
         if not directory.is_dir():
             continue
 
-        if directory.name == "Stage":
-            continue
-
-        if exact_target and directory.name != exact_target:
+        if exact_target and directory.stem.casefold() != exact_target.casefold() and directory.stem.casefold() != "stage":
             continue
 
         source_file = directory / f"{directory.name}.itch"
@@ -149,39 +138,46 @@ def compile_project(
             continue
 
         sprites.append(
-            (directory.name, source_file)
+            source_file
         )
 
-    # Keep build order deterministic.
-    sprites.sort(key=lambda sprite: sprite[0])
+    output_path = compile_targets(sprites, project, output)
 
-    # Start from a clean Scratch project.
-    #
-    # Otherwise, if Sprite2 was present in an earlier build and its
-    # directory is later deleted, Sprite2 could remain in the old .sb3.
-    if output and output.exists() and not output.is_dir():
-        output.unlink()
-
-    # Stage must be assembled first because it owns project-wide
-    # Scratch state such as shared variables and broadcasts.
-
-    if not compile_target(
-        stage_file,
-        project,
-        output,
-        "Stage",
-    ):
+    if output_path is None:
         return False
+    # # Keep build order deterministic.
+    # sprites.sort(key=lambda sprite: sprite[0])
 
-    for target, source_file in sprites:
-        if not compile_target(
-            source_file,
-            project,
-            output,
-            target,
-        ):
-            return False
+    # # Start from a clean Scratch project.
+    # #
+    # # Otherwise, if Sprite2 was present in an earlier build and its
+    # # directory is later deleted, Sprite2 could remain in the old .sb3.
+    # if output and output.exists() and not output.is_dir():
+    #     output.unlink()
 
+    # # Stage must be assembled first because it owns project-wide
+    # # Scratch state such as shared variables and broadcasts.
+
+    # output_path = compile_target(
+    #     stage_file,
+    #     project,
+    #     output,
+    #     "Stage",
+    # )
+        
+    # if output_path is None:
+    #     return False
+
+    # for target, source_file in sprites:
+    #     if not compile_target(
+    #         source_file,
+    #         project,
+    #         output,
+    #         target,
+    #     ):            
+    #         return False
+
+    print(f"Done. Output: {str(output_path)}")
     return True
 
 
