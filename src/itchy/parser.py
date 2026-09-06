@@ -150,22 +150,25 @@ class Parser:
         
         if self.furthest_error is None or pos > self.furthest_error.pos:
             self.furthest_error = error
+
+        if pos in self.speculative_errors:
+            self.speculative_errors[pos] = self.furthest_error
         
         return error
     
 
-    def parse_rule(self, rule: Rule, tokens: list[Token[Definitions]], pos: int) -> ParseResult:
+    def parse_rule(self, rule: Rule, tokens: list[Token[Definitions]], pos: int, *, allow_recovery: bool=False) -> ParseResult:
         if self.halt:
             raise InterruptedError()
 
   
         self.rule_stack.append(rule.name)
         try:
-            result = self.parse_node(rule, pos, rule.body, tokens, pos)
+            result = self.parse_node(rule, pos, rule.body, tokens, pos, allow_recovery=allow_recovery)
             debug_print(f"Rule completed: {rule.name}")
             self.rule_stack.pop()
         except ParseError as error:
-            if rule.name not in self.skip_rules_on_fail:
+            if (rule.name not in self.skip_rules_on_fail) or not allow_recovery:
 
                 # On success this wraps the matched body in a ParsedNode named
                 # after the rule (e.g. "ifstat", "wrap"). Do the same for a
@@ -196,14 +199,15 @@ class Parser:
 
         return ParseResult(ParsedNode(rule.name, (result.tree, )), result.pos)
 
-    def parse_node(self, current_rule: Rule, start_pos: int, node: GrammarNode, tokens: list[Token[Definitions]], pos: int) -> ParseResult:
+    def parse_node(self, current_rule: Rule, start_pos: int, node: GrammarNode, tokens: list[Token[Definitions]], pos: int, *,
+                   allow_recovery: bool=False) -> ParseResult:
         match node:
             case Terminal(value):
                 if pos < len(tokens) and value.name == tokens[pos].kind.name \
                     and (node.literal and node.literal == tokens[pos].literal or not node.literal):
                     debug_print(f"{print_token_safe(tokens, pos)}. Matched {value.name}")
 
-                    if pos in self.speculative_errors and not tokens[pos].dummy_token:
+                    if pos in self.speculative_errors and not tokens[pos].dummy_token and allow_recovery:
                         del self.speculative_errors[pos]
 
                     return ParseResult(tokens[pos], pos + 1)
@@ -223,14 +227,14 @@ class Parser:
                     raise InvalidTreeError("Invalid tree - no linking rule")
 
                 debug_print(f"{print_token_safe(tokens, pos)}. Trying {node}")
-                return self.parse_rule(rule, tokens, pos)
+                return self.parse_rule(rule, tokens, pos, allow_recovery=allow_recovery)
             
             case Sequence(children):
                 parsed_children: list[ParsedNode | Token[Definitions]] = []
                 result = None
                 for child in children:
                     try:
-                        result = self.parse_node(current_rule, start_pos, child, tokens, pos)
+                        result = self.parse_node(current_rule, start_pos, child, tokens, pos, allow_recovery=allow_recovery)
                             
                         parsed_children.append(result.tree)
                         pos = result.pos
@@ -282,7 +286,7 @@ class Parser:
 
                 for option in options:
                     try:
-                        result = self.parse_node(current_rule, start_pos, option, tokens, pos)
+                        result = self.parse_node(current_rule, start_pos, option, tokens, pos, allow_recovery=allow_recovery)
                         debug_print(f"{print_token_safe(tokens, pos)}. Matched {node}")
                         return ParseResult(
                             ParsedNode(Alternative.__name__, (result.tree,)),
@@ -319,7 +323,7 @@ class Parser:
             case OptionalNode(child):
                 start_pos = pos
                 try:
-                    result = self.parse_node(current_rule, start_pos, child, tokens, pos)
+                    result = self.parse_node(current_rule, start_pos, child, tokens, pos, allow_recovery=False)
                     debug_print(f"{print_token_safe(tokens, pos)}. Matched {node}")
                     return ParseResult(
                         ParsedNode(
@@ -369,7 +373,7 @@ class Parser:
                 while True:
                     attempt_pos = pos
                     try:
-                        result = self.parse_node(current_rule, start_pos, child, tokens, pos)
+                        result = self.parse_node(current_rule, start_pos, child, tokens, pos, allow_recovery=False)
                     except ParseError as error:
                         """
                         dying here could mean one of two things:
@@ -427,7 +431,7 @@ class Parser:
         self.reset_expected()
         self.rule_stack.clear()
 
-        result = self.parse_rule(root, tokens, 0)
+        result = self.parse_rule(root, tokens, 0, allow_recovery=self.skip_bad_tokens)
         return result
 
 
@@ -495,7 +499,7 @@ class Parser:
                             # self.accumulated_errors = list(self.speculative_errors.values()) + \
                                 # [i for i in self.accumulated_errors if i.pos not in self.speculative_errors]
                             # self.speculative_errors = {}
-                            self.accumulated_errors.append(e)
+                            self.accumulated_errors.append(error)
                     else:
                         # delete the line above until something works.
                         line = (error.tokens[error_pos].line - offset) + shift
