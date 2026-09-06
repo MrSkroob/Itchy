@@ -199,7 +199,8 @@ class Parser:
     def parse_node(self, current_rule: Rule, start_pos: int, node: GrammarNode, tokens: list[Token[Definitions]], pos: int) -> ParseResult:
         match node:
             case Terminal(value):
-                if pos < len(tokens) and value.name == tokens[pos].kind.name:
+                if pos < len(tokens) and value.name == tokens[pos].kind.name \
+                    and (node.literal and node.literal == tokens[pos].literal or not node.literal):
                     debug_print(f"{print_token_safe(tokens, pos)}. Matched {value.name}")
 
                     if pos in self.speculative_errors and not tokens[pos].dummy_token:

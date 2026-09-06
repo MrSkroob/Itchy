@@ -1,4 +1,5 @@
 from __future__ import annotations
+import pprint
 import uuid
 import json
 import re
@@ -19,7 +20,7 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 from itchy.shared_templates import VariableTypes, DataType, SourceSpan, SPRITE_TEMPLATE, COSTUME_TEMPLATE, PROJECT_TEMPLATE, DATA_TO_VARIABLE_TYPE, ASTNode
-from itchy.errors import CompilerError, CompilerErrorCodes, UnboundError, NotReferencedError, DuplicateDefinitionError,\
+from itchy.errors import CompilerError, CompilerErrorCodes, UnboundError, NotReferencedError, ShadowError, DuplicateDefinitionError,\
     ArgumentError, NotDefinedError, InvalidTypeError, SyntaxError, TypeMismatchError, ReturnNothingError
 from itchy.scratch_blocks import SCRATCH_BLOCKS, STAGE_BLOCKS, Block, Reporter, Event, Menu
 from itchy.itch_ast import \
@@ -43,7 +44,8 @@ SET_RETURN_VALUE = "compiler:set_return_value"
 POP_RETURN_FRAME = "compiler:pop_return_frame"
 THREAD_ARG = "compiler:frame_id"
 
-
+DEFAULT_LAYER = 0
+DEFAULT_THREAD = 1
 
 HEXCODE = re.compile(r"^#(?:[0-9a-fA-F]{3}){1,2}$")
 ROOT = Path(__file__).parent
@@ -271,6 +273,28 @@ class Assembler:
             length += 1
         return length
 
+    @staticmethod
+    def _menu_literal_value(expr: Expr) -> str | None:
+        """
+        Returns the literal value of an expression when it can be represented
+        by one of Scratch's menu shadow blocks.
+
+        Asset expressions such as @costume("walk1") are compile-time string
+        literals too, so keeping them as menu shadows preserves Scratch's
+        dropdown UI instead of replacing the menu with a plain string input.
+        """
+        if isinstance(expr, StringExpr):
+            return expr.value
+
+        if (
+            isinstance(expr, AssetExpr)
+            and len(expr.args) == 1
+            and isinstance(expr.args[0], StringExpr)
+        ):
+            return expr.args[0].value
+
+        return None
+
     def get_variable_safe(self, stmt: VarRef, context: Context) -> tuple[str, StrOptional] | None:
         """
         Returns a variable key without any extra functionality. Returns none instead of raising an 
@@ -327,9 +351,8 @@ class Assembler:
         if message:
             return message.id
 
-        broadcast_id = self.new_id()
-        self.messages[name] = MessageData(self.uri, name, broadcast_id)
-        return broadcast_id
+        self.messages[name] = MessageData(self.uri, name, name)
+        return name
     
     def assert_writable_name(self, var_name: str, context: Context) -> None:
         function_context = context.function_context
@@ -382,7 +405,7 @@ class Assembler:
         variable = VariableData(
             name=name, 
             uri=self.uri,
-            id=self.new_id(),
+            id=var_id,
             context=context,
             var_type=VariableTypes(type_name),
             is_list=is_list,
@@ -446,8 +469,8 @@ class Assembler:
         for stmt in statements:
             block_range = self.emit_stmt(stmt, None, Context(
                 function_context=None, 
-                thread_id=1, 
-                layer=0))
+                thread_id=DEFAULT_THREAD, 
+                layer=DEFAULT_LAYER))
             if block_range.first is None:
                 # e.g. a bare VarDefStmt, which doesn't emit a block
                 continue
@@ -461,7 +484,7 @@ class Assembler:
             y += 200
 
 
-    def emit_return_helpers(self):
+    def _emit_return_helpers(self):
         """
         This was originally part of emit_program(), but having return statement related
         helpers polluting your workspace even if you didn't use any felt a bit wrong. 
@@ -471,8 +494,8 @@ class Assembler:
         self.emitted_return = True
         context = Context(
             function_context=None,
-            layer=0,
-            thread_id=1
+            layer=DEFAULT_LAYER,
+            thread_id=DEFAULT_THREAD
         )
 
         self.define_variable(False, "var", FRAME_INDEX, context, None)
@@ -557,7 +580,42 @@ class Assembler:
         pre_defines = (push_return_frame, find_frame, set_return_value, pop_return_frame)
 
         self.emit_statements(pre_defines)
-    
+
+
+    def _collect_variables(self, program: Program, owner: str):
+        """
+        Since the grammar forces you to define variables at the top, we need to collect the variables
+        of all files first and then pass them into `global_variables` when calling `prepare`. 
+        """
+        global_vars: dict[str, VariableData] = {}
+
+        for stmt in program.body:
+            if not isinstance(stmt, VarDefStmt):
+                break
+
+            if not stmt.shared and owner.casefold() != "stage":
+                continue
+
+            # this has an added benefit of making sure that stage variables are actually global
+
+            global_vars[stmt.name] = VariableData(
+                uri=owner,
+                name=stmt.name,
+                id=self.new_id(),
+                context=Context(
+                    function_context=None,
+                    layer=DEFAULT_LAYER,
+                    thread_id=DEFAULT_THREAD,
+                ),
+                var_type=VariableTypes(stmt.type_name),
+                is_list=stmt.type_name == "list",
+                shared=True,
+                initial_value=[] if stmt.type_name == "list" else 0,
+                definition_location=stmt.span,
+            )
+
+        return global_vars
+
     
     def emit_program(self, program: Program) -> None:
         """
@@ -650,10 +708,12 @@ class Assembler:
 
 
                 if name not in self.overridable and (name, None) in self.variable_map:
-                    error = DuplicateDefinitionError(f"Variable '{stmt.name}' is shadowed by variable of same name", stmt)
+                    error = ShadowError(f"Variable '{stmt.name}' is shadowed by variable of same name", stmt)
                     # if not self.compile_with_warnings:
-                    return self.raise_or_return(error)
-                    # self.errors.append(error)
+                    if not self.compile_with_warnings:
+                        return self.raise_or_return(error)
+                    self.errors.append(error)
+                    return BlockRange(None, None)
 
                 # allow variable to override existing one in project at least once. 
                 # any subsequent definitions will be counted as duplicates.
@@ -746,7 +806,7 @@ class Assembler:
         if self.count_args(stmt.values) > 1:
             return self.raise_or_return(SyntaxError("Can only return one value at a time", stmt))
 
-        self.emit_return_helpers()
+        self._emit_return_helpers()
 
         if self.count_args(stmt.values) > 0:
             # technically it's always 1 or 0, but this was left over for future where we might support more than one
@@ -858,38 +918,74 @@ class Assembler:
                     inputs[arg.name] = (InputType.SHADOW_ONLY,
                                         (DataType.VARIABLE, arg_expr.ref.root, var_id))
             else:
-                if isinstance(arg_expr, StringExpr):
-                    if isinstance(arg, Menu):
-                        # create the menu
+                if isinstance(arg, Menu):
+                    menu_value = self._menu_literal_value(arg_expr)
+
+                    if menu_value is not None:
                         menu_id = self.make_block(
-                            opcode=arg.opcode, 
-                            parent=block_id, # FIXME: this might be wrong (used to be id=block_id)
+                            opcode=arg.opcode,
+                            parent=block_id,
                             fields={
                                 (arg.field_name or arg.name): (
-                                    arg_expr.value,
+                                    menu_value,
                                     None
                                 )
-                            })
+                            },
+                            shadow=True
+                        )
 
-                        inputs[arg.name] = (InputType.SHADOW_ONLY, menu_id)
+                        inputs[arg.name] = (
+                            InputType.SHADOW_ONLY,
+                            menu_id
+                        )
                     else:
-                        if not self.type_check(DATA_TO_VARIABLE_TYPE[arg.return_type], {VariableTypes.STRING,}):
-                            error = type_error_factory(stmt.callee, index, DATA_TO_VARIABLE_TYPE[arg.return_type], {VariableTypes.STRING,}, stmt)
-                            if not self.compile_with_warnings:
-                                return self.raise_or_return(error)
-                            self.errors.append(error)
-
-                        inputs[arg.name] = (InputType.SHADOW_ONLY, 
-                            (arg.return_type, arg_expr.value))
-                else:
-                    expected_type = None
-                    if isinstance(arg, Menu):
                         expected_type = VariableTypes.STRING
-                    else:
-                        expected_type = DATA_TO_VARIABLE_TYPE[arg.return_type]
+
+                        if not self.type_check(expected_type, expr.return_type):
+                            return self.raise_or_return(
+                                type_error_factory(
+                                    stmt.callee,
+                                    index,
+                                    expected_type,
+                                    expr.return_type,
+                                    arg_expr
+                                )
+                            )
+
+                        inputs[arg.name] = expr.value
+
+                elif isinstance(arg_expr, StringExpr):
+                    if not self.type_check(DATA_TO_VARIABLE_TYPE[arg.return_type], {VariableTypes.STRING,}):
+                        error = type_error_factory(
+                            stmt.callee,
+                            index,
+                            DATA_TO_VARIABLE_TYPE[arg.return_type],
+                            {VariableTypes.STRING,},
+                            stmt
+                        )
+                        if not self.compile_with_warnings:
+                            return self.raise_or_return(error)
+                        self.errors.append(error)
+
+                    inputs[arg.name] = (
+                        InputType.SHADOW_ONLY,
+                        (arg.return_type, arg_expr.value)
+                    )
+
+                else:
+                    expected_type = DATA_TO_VARIABLE_TYPE[arg.return_type]
 
                     if not self.type_check(expected_type, expr.return_type):
-                        return self.raise_or_return(type_error_factory(stmt.callee, index, expected_type, expr.return_type, arg_expr))
+                        return self.raise_or_return(
+                            type_error_factory(
+                                stmt.callee,
+                                index,
+                                expected_type,
+                                expr.return_type,
+                                arg_expr
+                            )
+                        )
+
                     inputs[arg.name] = expr.value
 
             index += 1
@@ -1093,7 +1189,7 @@ class Assembler:
 
         context = Context(
             function_context=None,
-            layer=0,
+            layer=DEFAULT_LAYER,
             thread_id=context.thread_id
         )
 
@@ -1111,32 +1207,76 @@ class Assembler:
                     inputs[arg.name] = (InputType.SHADOW_ONLY,
                                         (DataType.BROADCAST, arg_expr.value, broadcast_id))
             else:
-                if isinstance(arg_expr, StringExpr):
-                    if isinstance(arg, Menu):
+                if isinstance(arg, Menu):
+                    menu_value = self._menu_literal_value(arg_expr)
+
+                    if menu_value is not None:
                         menu_id = self.make_block(
                             opcode=arg.opcode,
                             parent=event_id,
-                            fields={(arg.field_name or arg.name): (arg_expr.value, None)})
-                        inputs[arg.name] = (InputType.SHADOW_ONLY, menu_id)
+                            fields={
+                                (arg.field_name or arg.name): (
+                                    menu_value,
+                                    None
+                                )
+                            },
+                            shadow=True
+                        )
+
+                        inputs[arg.name] = (
+                            InputType.SHADOW_ONLY,
+                            menu_id
+                        )
                     else:
-                        if not self.type_check(DATA_TO_VARIABLE_TYPE[arg.return_type], {VariableTypes.STRING,}):
-                            error = type_error_factory(stmt.name, index, DATA_TO_VARIABLE_TYPE[arg.return_type], {VariableTypes.STRING,}, stmt)
+                        expected_type = VariableTypes.STRING
+
+                        if not self.type_check(expected_type, expr.return_type):
+                            error = type_error_factory(
+                                stmt.name,
+                                index,
+                                expected_type,
+                                expr.return_type,
+                                stmt
+                            )
                             if not self.compile_with_warnings:
                                 return self.raise_or_return(error)
                             self.errors.append(error)
-                        inputs[arg.name] = (InputType.SHADOW_ONLY, (arg.return_type, arg_expr.value))
-                else:
-                    expected_type = None
-                    if isinstance(arg, Menu):
-                        expected_type = VariableTypes.STRING
-                    else:
-                        expected_type = DATA_TO_VARIABLE_TYPE[arg.return_type]
 
-                    if not self.type_check(expected_type, expr.return_type):
-                        error = type_error_factory(stmt.name, index, expected_type, expr.return_type, stmt)
+                        inputs[arg.name] = expr.value
+
+                elif isinstance(arg_expr, StringExpr):
+                    if not self.type_check(DATA_TO_VARIABLE_TYPE[arg.return_type], {VariableTypes.STRING,}):
+                        error = type_error_factory(
+                            stmt.name,
+                            index,
+                            DATA_TO_VARIABLE_TYPE[arg.return_type],
+                            {VariableTypes.STRING,},
+                            stmt
+                        )
                         if not self.compile_with_warnings:
                             return self.raise_or_return(error)
                         self.errors.append(error)
+
+                    inputs[arg.name] = (
+                        InputType.SHADOW_ONLY,
+                        (arg.return_type, arg_expr.value)
+                    )
+
+                else:
+                    expected_type = DATA_TO_VARIABLE_TYPE[arg.return_type]
+
+                    if not self.type_check(expected_type, expr.return_type):
+                        error = type_error_factory(
+                            stmt.name,
+                            index,
+                            expected_type,
+                            expr.return_type,
+                            stmt
+                        )
+                        if not self.compile_with_warnings:
+                            return self.raise_or_return(error)
+                        self.errors.append(error)
+
                     inputs[arg.name] = expr.value
             index += 1
 
@@ -1179,8 +1319,8 @@ class Assembler:
 
         context = Context(
             function_context=stmt.name, 
-            thread_id=1, 
-            layer=0)
+            thread_id=DEFAULT_THREAD, 
+            layer=DEFAULT_LAYER)
 
         self.register_symbol(
             SymbolOccurence(
@@ -1191,7 +1331,7 @@ class Assembler:
                 name=stmt.name
             ), stmt
         )
-        self.define_variable(False, "var", stmt.name + ":return", Context(function_context=None, thread_id=1, layer=0), None)
+        self.define_variable(False, "var", stmt.name + ":return", Context(function_context=None, thread_id=DEFAULT_THREAD, layer=DEFAULT_LAYER), None)
 
         definition_id = self.make_block(
             opcode="procedures_definition",
@@ -1857,7 +1997,7 @@ class Assembler:
                 error = ReturnNothingError(f"{expr.callee}: not all codepaths have a return statement", expr, data={"name": expr.callee})
                 return self.raise_or_return(error, PLACE_HOLDER_0)
 
-            self.emit_return_helpers()
+            self._emit_return_helpers()
 
             if context.function_context in self.procedures:
                 thread_id = VarExpr(VarRef(THREAD_ARG))
@@ -1999,25 +2139,57 @@ class Assembler:
                         inputs[arg.name] = (InputType.SHADOW_ONLY,
                                             (DataType.VARIABLE, arg_expr.ref.root, var_id))
                 else:
-                    if isinstance(arg_expr, StringExpr):
-                        if isinstance(arg, Menu):
-                            # create the menu
+                    if isinstance(arg, Menu):
+                        menu_value = self._menu_literal_value(arg_expr)
+
+                        if menu_value is not None:
+                            # StringExpr has no side effects, but AssetExpr
+                            # registers an asset symbol during emit_expr().
+                            if not isinstance(arg_expr, StringExpr):
+                                self.emit_expr(
+                                    arg_expr,
+                                    context,
+                                    block_parent,
+                                    block_id
+                                )
+
                             menu_id = self.make_block(
-                                opcode=arg.opcode, 
+                                opcode=arg.opcode,
                                 parent=block_id,
                                 fields={
-                                    arg.name: (
-                                        arg_expr.value,
+                                    (arg.field_name or arg.name): (
+                                        menu_value,
                                         None
                                     )
-                                }, 
-                                shadow=True)
+                                },
+                                shadow=True
+                            )
 
-                            inputs[(arg.field_name or arg.name)] = (InputType.SHADOW_ONLY, menu_id)
+                            inputs[arg.name] = (
+                                InputType.SHADOW_ONLY,
+                                menu_id
+                            )
                         else:
-                            inputs[arg.name] = (InputType.SHADOW_ONLY, (arg.return_type, arg_expr.value))
+                            inputs[arg.name] = self.emit_expr(
+                                arg_expr,
+                                context,
+                                block_parent,
+                                block_id
+                            ).value
+
+                    elif isinstance(arg_expr, StringExpr):
+                        inputs[arg.name] = (
+                            InputType.SHADOW_ONLY,
+                            (arg.return_type, arg_expr.value)
+                        )
+
                     else:
-                        inputs[arg.name] = self.emit_expr(arg_expr, context, block_parent, block_id).value
+                        inputs[arg.name] = self.emit_expr(
+                            arg_expr,
+                            context,
+                            block_parent,
+                            block_id
+                        ).value
                 index += 1
 
             for field, arg_expr in zip(block_data.fields, expr.args[len(block_data.inputs):]):
@@ -2057,7 +2229,7 @@ class Assembler:
             self.blocks[block_id]["inputs"] = inputs
 
             return ScratchInput(
-                (InputType.BLOCK_ONLY if VariableTypes.BOOL in block_data.return_type else InputType.BLOCK_AND_SHADOW, block_id), block_data.return_type
+                (InputType.BLOCK_ONLY, block_id), block_data.return_type
             )
 
     def emit_unary_expr(self, op: str, value: Expr, context: Context, block_parent: BlockRange, parent: StrOptional) -> ScratchInput:
@@ -2093,6 +2265,10 @@ class Assembler:
         raise NotImplementedError(f"Unsupported unary operator: {op}")
     
     def emit_binary_expr(self, left: Expr, op: str, right: Expr, context: Context, block_parent: BlockRange, parent: StrOptional) -> ScratchInput:
+        pprint.pprint(left)
+        print(op)
+        pprint.pprint(right)
+
         block_id = self.new_id()
 
         left_expr = self.emit_expr(left, context, block_parent, block_id)
@@ -2125,7 +2301,7 @@ class Assembler:
                 )
 
                 return ScratchInput(
-                    (InputType.BLOCK_AND_SHADOW, block_id), {VariableTypes.BOOL}
+                    (InputType.BLOCK_ONLY, block_id), {VariableTypes.BOOL}
                 )
                 
         
@@ -2160,7 +2336,7 @@ class Assembler:
         )
 
         return ScratchInput(
-            (InputType.BLOCK_ONLY if VariableTypes.BOOL in return_type else InputType.BLOCK_AND_SHADOW, block_id),
+            (InputType.BLOCK_ONLY, block_id),
             {return_type},
         )
 
@@ -2351,7 +2527,8 @@ class Assembler:
                 return candidate
         raise CompilerError(f"No stage target in project file.", None)
 
-    def prepare(self, target: str | None=None, global_messages: dict[str, MessageData]={}, global_variables: dict[str, VariableData]={}) -> None:
+    def prepare(self, target: str | None=None, global_messages: dict[str, MessageData]={}, global_variables: dict[str, VariableData]={}, 
+                uri_override: str | None=None) -> None:
         """
         Prepares the assembler to assemble the next file. It does the following:
         1. Clears blocks, variables, lists, etc. that are local to the sprite
@@ -2376,7 +2553,7 @@ class Assembler:
                 self.variables[var_id] = VariableData(self.uri, 
                                                       var_data[0], 
                                                       var_id, 
-                                                      Context(function_context=None, layer=0, thread_id=1), 
+                                                      Context(function_context=None, layer=DEFAULT_LAYER, thread_id=DEFAULT_THREAD), 
                                                       VariableTypes.VAR, 
                                                       False, True, 
                                                       var_data[1], 
@@ -2390,11 +2567,11 @@ class Assembler:
         # we do not clear shared variables/lists, 
         for variable_id, variable_data in list(global_variables.items()):
             # do not add to existing variables if WE were the ones defining it.
-            if variable_data.uri == self.uri:
+            if variable_data.uri == (uri_override or self.uri):
                 # signal to external LSP that we might want to delete this variable
-                continue
-                # self.overridable.add(variable_data.name)
-
+                # continue
+                self.overridable.add(variable_data.name)
+            
             self.variable_map[(variable_data.name, variable_data.context.function_context)] = variable_id
             self.variables[variable_id] = VariableData(
                 variable_data.uri,
@@ -2604,6 +2781,13 @@ class Assembler:
                 key=lambda item: item[0].lower() != "stage",
             )
 
+            global_variables: dict[str, VariableData] = {}
+
+            for target, program in ordered_programs:
+                global_variables.update(self._collect_variables(program, target))
+
+            print([i for i in global_variables])
+
             for target, program in ordered_programs:
                 self.compiling = target
                 # prepare() already does exactly what we need here:
@@ -2614,9 +2798,10 @@ class Assembler:
                 #
                 # On the very first target there may not be a project yet.
                 if project_file.exists():
-                    self.prepare(str(project_file))
+                    self.prepare(str(project_file), global_variables=global_variables, uri_override=target)
                 else:
-                    self.prepare()
+                    self.prepare(global_variables=global_variables, uri_override=target)
+
                 self._assemble_target(
                     program=program,
                     project_directory=project_directory,
@@ -2847,6 +3032,35 @@ class Assembler:
         )
 
         self._ensure_costume(sprite_target, assets)
+
+        if target == "Apple":
+            print("\n=== DEBUG APPLE ===")
+
+            print("variable_map MIN_Y:",
+                self.variable_map.get(("MIN_Y", None)))
+
+            min_y_id = self.variable_map.get(("MIN_Y", None))
+
+            if min_y_id is not None:
+                print("self.variables MIN_Y:",
+                    self.variables.get(min_y_id))
+
+            print("\nStage variables:")
+            for variable_id, data in stage_target["variables"].items():
+                if data[0] == "MIN_Y":
+                    print(" ", variable_id, data)
+
+            print("\nRelevant blocks:")
+            for block_id, block in self._serialise_blocks().items():
+                if block["opcode"] in {
+                    "control_repeat_until",
+                    "operator_not",
+                    "operator_gt",
+                    "operator_add",
+                    "motion_yposition",
+                }:
+                    print(block_id)
+                    print(json.dumps(block, indent=2))
 
         dumped = json.dumps(
             project,

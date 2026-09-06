@@ -30,7 +30,7 @@ class UnboundError(CompilerWarning):
         super().__init__(message, error_node, error_code, data)
 
 
-class DuplicateDefinitionError(CompilerWarning):
+class ShadowError(CompilerWarning):
     pass
 
 
@@ -39,6 +39,10 @@ class TypeMismatchError(CompilerWarning):
 
 
 class NotReferencedError(CompilerWarning):
+    pass
+
+
+class DuplicateDefinitionError(CompilerError):
     pass
 
 

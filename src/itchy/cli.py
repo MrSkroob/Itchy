@@ -15,7 +15,7 @@ from pathlib import Path
 parser = Parser()
 
 ast_builder = ASTBuilder()
-assembler = Assembler("", compile_with_warnings=True)
+assembler = Assembler("")
 
 
 def compile_targets(

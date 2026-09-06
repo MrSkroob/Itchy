@@ -94,6 +94,7 @@ class NonTerminal(GrammarNode):
 class Terminal(GrammarNode):
     """A rule that can be fulfilled or not (no traversal)"""
     child: Definitions | GenericRules
+    literal: str | None=None  # if the rules explicitly state a string rather than something like <RuleName>, then we should fill this in. 
 
     def __repr__(self) -> str:
         return self.child.name
@@ -216,10 +217,13 @@ class BNFTreeBuilder:
                 return NonTerminal(token.literal[1:-1])
             case BNFRules.TerminalRule:
                 self.pos += 1
+                # shitty hack to test if the text is a literal string - i can't be bothered to use regex
+                text = token.literal
+                is_string = text[0] in ['"', "'"] and text[-1] in ['"', "'"]
                 try:
-                    return Terminal(self.str_to_rule_enum(token.literal[1:-1]))
+                    return Terminal(self.str_to_rule_enum(text[1:-1]), literal=text[1:-1] if is_string else None)
                 except KeyError:
-                    return Terminal(GenericRules[token.literal[1:-1]])
+                    return Terminal(GenericRules[text[1:-1]], literal=text[1:-1] if is_string else None)
             case BNFRules.OpenSquareBrace:
                 self.pos += 1
                 child = self.parse_alternative()
