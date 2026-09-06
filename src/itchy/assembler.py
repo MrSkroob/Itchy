@@ -2265,10 +2265,6 @@ class Assembler:
         raise NotImplementedError(f"Unsupported unary operator: {op}")
     
     def emit_binary_expr(self, left: Expr, op: str, right: Expr, context: Context, block_parent: BlockRange, parent: StrOptional) -> ScratchInput:
-        pprint.pprint(left)
-        print(op)
-        pprint.pprint(right)
-
         block_id = self.new_id()
 
         left_expr = self.emit_expr(left, context, block_parent, block_id)
@@ -2786,8 +2782,6 @@ class Assembler:
             for target, program in ordered_programs:
                 global_variables.update(self._collect_variables(program, target))
 
-            print([i for i in global_variables])
-
             for target, program in ordered_programs:
                 self.compiling = target
                 # prepare() already does exactly what we need here:
@@ -3032,35 +3026,6 @@ class Assembler:
         )
 
         self._ensure_costume(sprite_target, assets)
-
-        if target == "Apple":
-            print("\n=== DEBUG APPLE ===")
-
-            print("variable_map MIN_Y:",
-                self.variable_map.get(("MIN_Y", None)))
-
-            min_y_id = self.variable_map.get(("MIN_Y", None))
-
-            if min_y_id is not None:
-                print("self.variables MIN_Y:",
-                    self.variables.get(min_y_id))
-
-            print("\nStage variables:")
-            for variable_id, data in stage_target["variables"].items():
-                if data[0] == "MIN_Y":
-                    print(" ", variable_id, data)
-
-            print("\nRelevant blocks:")
-            for block_id, block in self._serialise_blocks().items():
-                if block["opcode"] in {
-                    "control_repeat_until",
-                    "operator_not",
-                    "operator_gt",
-                    "operator_add",
-                    "motion_yposition",
-                }:
-                    print(block_id)
-                    print(json.dumps(block, indent=2))
 
         dumped = json.dumps(
             project,
