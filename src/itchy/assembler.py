@@ -1000,10 +1000,11 @@ class Assembler:
                     )
 
                 else:
-                    expected_type = VARIABLE_TYPE_TO_USER_TYPES[DATA_TO_VARIABLE_TYPE[arg.return_type]]
+                    original_type = DATA_TO_VARIABLE_TYPE[arg.return_type]
+                    expected_type = VARIABLE_TYPE_TO_USER_TYPES[original_type]
 
+                    self.type_check(original_type, expr.return_type, arg_expr)
                     if not self.type_check(expected_type, expr.return_type, arg_expr):
-                        print("aww phooey")
                         return self.raise_or_return(
                             type_error_factory(
                                 stmt.callee,
@@ -2710,6 +2711,9 @@ class Assembler:
                     )
 
             else:
+                if var_type == VariableTypes.LIST:
+                    self.raise_or_return(TypeMismatch("Lists will be converted into a space separated string. Are you sure this is what you want?", ref))
+
                 return ScratchInput(
                     (
                         InputType.BLOCK_AND_SHADOW,
