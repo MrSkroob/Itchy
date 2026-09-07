@@ -683,6 +683,11 @@ class Assembler:
             if first is None:
                 first = emitted.first
                 self.blocks[first]["parent"] = parent
+
+                # if not self.can_have_next(parent):
+                #     error = NeverReached("This statement will never be called", stmt)
+                #     self.raise_or_return(error)
+                #     break
             else:
                 assert last is not None
 
@@ -799,7 +804,8 @@ class Assembler:
 
         if VariableTypes.VAR in b:
             return True
-        
+
+
     def type_check(self, a: VariableTypes, b: set[VariableTypes], node: ASTNode | None):
         return_bool = self.static_type_check(a, b)
 
@@ -1325,7 +1331,9 @@ class Assembler:
 
         return BlockRange(event_id, body.last or event_id)
 
-    def can_have_next(self, block_id: str) -> bool:
+    def can_have_next(self, block_id: StrOptional) -> bool:
+        if not block_id:
+            return True
         block = self.blocks[block_id]
         opcode = block["opcode"]
 
@@ -1336,6 +1344,15 @@ class Assembler:
             stop_option = block["fields"]["STOP_OPTION"][0]
             if stop_option in ["this script", "all"]:
                 return False
+
+        if opcode == "control_repeat_until":
+            condition = block["inputs"]["CONDITION"][1]
+            operator = self.blocks[condition]
+            if operator["opcode"] == "operator_equals":
+                operand1 = operator["inputs"]["OPERAND1"]
+                operand2 = operator["inputs"]["OPERAND2"]
+                if operand1[1][1] == "true" and operand2[1][1] == "false":
+                    return False
 
         return True
             
