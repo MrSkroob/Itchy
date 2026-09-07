@@ -67,6 +67,11 @@ class BlockStmt(Stmt):
 
 
 @dataclass(frozen=True)
+class ForeverStmt(Stmt):
+    body: tuple[Stmt, ...]
+
+
+@dataclass(frozen=True)
 class WhileStmt(Stmt):
     condition: Expr
     body: tuple[Stmt, ...]
@@ -1041,7 +1046,18 @@ class ASTBuilder:
             span=SourceSpan(if_token.span.start, end),
             dummy=node.dummy_node
         ) 
-    
+
+
+    def build_foreverstat(self, node: ParsedNode):
+        forever_token = find_first_token(node, Definitions.Forever.name)
+        body = find_first_node(node, "wrap")
+        wrap = self.build_wrap(body)
+
+        return ForeverStmt(
+            body=wrap.body,
+            span=forever_token.span
+        )
+
     
     def build_whilestat(self, node: ParsedNode):
         while_token = find_first_token(node, Definitions.While.name)
@@ -1080,10 +1096,6 @@ class ASTBuilder:
                     Definitions.CloseCurlyBracket,
                 }:
                 brackets.append(child)
-    
-        if has_node(node, "laststat"):
-            chunk = chunk + (self.build_laststat(find_first_node(node, "laststat")),)
-
         
         # chunks are allowed to be empty
         return BlockStmt(chunk, span=SourceSpan(brackets[0].span.start, brackets[-1].span.end), dummy=node.dummy_node)
@@ -1150,11 +1162,13 @@ class ASTBuilder:
             match child.name:
                 case "wrap":
                     wrap = self.build_wrap(child)
-                    
                     return wrap
+                case "laststat":
+                    return self.build_laststat(child)
                 case "whilestat":
                     return self.build_whilestat(child)
-                
+                case "foreverstat":
+                    return self.build_foreverstat(child)
                 case "ifstat":
                     return self.build_ifstat(child)
                 

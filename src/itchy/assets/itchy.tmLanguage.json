@@ -36,6 +36,10 @@
       "match": "\\b(while)\\b"
     },
     {
+      "name": "keyword.control.loop.itchy",
+      "match": "\\b(forever)\\b"
+    },
+    {
       "name": "storage.modifier.itchy",
       "match": "\\b(warp)\\b"
     },

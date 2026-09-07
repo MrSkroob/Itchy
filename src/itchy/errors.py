@@ -24,21 +24,25 @@ class CompilerWarning(CompilerError):
     pass
 
 
-class UnboundError(CompilerWarning):
+class Unbound(CompilerWarning):
     def __init__(self, message: str, error_node: ASTNode | None, *,
                   error_code: str | None = CompilerErrorCodes.UNDEFINED_VARIABLE, data: dict[str, Any]={}) -> None:
         super().__init__(message, error_node, error_code, data)
 
 
-class ShadowError(CompilerWarning):
+class NeverReached(CompilerWarning):
     pass
 
 
-class TypeMismatchError(CompilerWarning):
+class Shadow(CompilerWarning):
     pass
 
 
-class NotReferencedError(CompilerWarning):
+class TypeMismatch(CompilerWarning):
+    pass
+
+
+class NotReferenced(CompilerWarning):
     pass
 
 

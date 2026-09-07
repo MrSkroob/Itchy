@@ -12,20 +12,21 @@ from collections.abc import Mapping
 import shutil
 
 from typing import TypeVar, Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum, StrEnum
 
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
 from itchy.shared_templates import VariableTypes, DataType, SourceSpan, SPRITE_TEMPLATE, COSTUME_TEMPLATE, PROJECT_TEMPLATE, DATA_TO_VARIABLE_TYPE, ASTNode
-from itchy.errors import CompilerError, CompilerErrorCodes, UnboundError, NotReferencedError, ShadowError, DuplicateDefinitionError,\
-    ArgumentError, NotDefinedError, InvalidTypeError, SyntaxError, TypeMismatchError, ReturnNothingError
+from itchy.errors import CompilerError, CompilerWarning, CompilerErrorCodes, Unbound, NotReferenced, Shadow, DuplicateDefinitionError,\
+    NeverReached, \
+    ArgumentError, NotDefinedError, InvalidTypeError, SyntaxError, TypeMismatch, ReturnNothingError
 from itchy.scratch_blocks import SCRATCH_BLOCKS, STAGE_BLOCKS, Block, Reporter, Event, Menu
 from itchy.itch_ast import \
     Param, \
     Stmt, VarRef, BlockStmt, IfStmt, BreakStmt, ForInStmt, WhileStmt, AssignStmt, ReturnStmt, VarDefStmt, ForRangeStmt, FunctionCallStmt, FunctionDefStmt, EventHandlerStmt, \
-    IfBranch, Expr, NumberExpr, BoolExpr, StringExpr, VarExpr, UnaryOpExpr, BinaryOpExpr, TableExpr, FunctionCallExpr, AssetExpr, Program
+    ForeverStmt, IfBranch, Expr, NumberExpr, BoolExpr, StringExpr, VarExpr, UnaryOpExpr, BinaryOpExpr, TableExpr, FunctionCallExpr, AssetExpr, Program
 from itchy.mp3_parser import mp3_metadata
 
 
@@ -149,9 +150,9 @@ class ProcedureInfo:
 
 def type_error_factory(name: str, index: int, expected: VariableTypes, actual: set[VariableTypes], stmt: ASTNode):
     if len(actual) == 1:
-        return InvalidTypeError(f"{name}: expected '{expected.value}' not '{list(actual)[0].value}'", stmt)
+        return InvalidTypeError(f"'{name}': expected '{expected.value}' not '{list(actual)[0].value}'", stmt)
     else:
-        return InvalidTypeError(f"{name}: not one of ({", ".join(i.value for i in actual)}) \
+        return InvalidTypeError(f"'{name}': not one of ({", ".join(i.value for i in actual)}) \
                                                         matches argument {index} of type {expected.value}", stmt)
 
 
@@ -198,10 +199,13 @@ class Assembler:
         """
         Raises an error if strict mode is on (default) or returns a value.
         """
-        if self.is_strict:
-            raise error
         if error.error_node and not error.error_node.dummy:
             self.errors.append(error)
+            
+        if isinstance(error, CompilerWarning) and self.compile_with_warnings:
+            return return_value
+        if self.is_strict:
+            raise error
         return return_value
 
     def new_thread_id(self) -> int:
@@ -471,8 +475,16 @@ class Assembler:
                 thread_id=DEFAULT_THREAD, 
                 layer=DEFAULT_LAYER))
             if block_range.first is None:
+                if isinstance(stmt, VarDefStmt):
+                    continue
                 # e.g. a bare VarDefStmt, which doesn't emit a block
                 continue
+
+            if stmt.__class__ not in {EventHandlerStmt, FunctionDefStmt}:
+                error = NeverReached("This statement will never be called", stmt)
+                if not self.compile_with_warnings:
+                    return self.raise_or_return(error, None)
+                self.errors.append(error) 
 
             first_block = self.blocks[block_range.first]
             first_block["topLevel"] = True
@@ -627,7 +639,7 @@ class Assembler:
         for variables in self.non_referenced_variables.values():
             for variable in variables:
                 self.errors.append(
-                    NotReferencedError(
+                    NotReferenced(
                         f"'{variable.name}' is not referenced",
                         error_node=variable
                     )
@@ -635,7 +647,7 @@ class Assembler:
 
         for function in self.non_referenced_functions.values():
             self.errors.append(
-                NotReferencedError(
+                NotReferenced(
                     f"'{function.name}' is not referenced",
                     error_node=function
                 )
@@ -663,7 +675,6 @@ class Assembler:
         if context.function_context in self.procedures:
             proc_info = self.procedures[context.function_context]
             
-
         for index, stmt in enumerate(statements):
             emitted = self.emit_stmt(stmt, parent, context)
 
@@ -675,6 +686,11 @@ class Assembler:
                 self.blocks[first]["parent"] = parent
             else:
                 assert last is not None
+
+                if not self.can_have_next(last):
+                    error = NeverReached("This statement will never be called", stmt)
+                    return self.raise_or_return(error)
+
                 self.blocks[last]["next"] = emitted.first
                 self.blocks[emitted.first]["parent"] = last
 
@@ -707,7 +723,7 @@ class Assembler:
 
 
                 if name not in self.overridable and (name, None) in self.variable_map:
-                    error = ShadowError(f"Variable '{stmt.name}' is shadowed by variable of same name", stmt)
+                    error = Shadow(f"Variable '{stmt.name}' is shadowed by variable of same name", stmt)
                     # if not self.compile_with_warnings:
                     if not self.compile_with_warnings:
                         return self.raise_or_return(error)
@@ -736,6 +752,8 @@ class Assembler:
                 return BlockRange(None, None)
             case AssignStmt(target=target, value=value):
                 return self.emit_assignment(target, value, parent, context)
+            case ForeverStmt():
+                return self.emit_forever(stmt, parent, context)
             case IfStmt():
                 return self.emit_if(stmt, parent, context)
             case WhileStmt():
@@ -805,9 +823,10 @@ class Assembler:
         if self.count_args(stmt.values) > 1:
             return self.raise_or_return(SyntaxError("Can only return one value at a time", stmt))
 
-        self._emit_return_helpers()
+        returns_things = self.count_args(stmt.values) > 0
 
-        if self.count_args(stmt.values) > 0:
+        if returns_things:
+            self._emit_return_helpers()
             # technically it's always 1 or 0, but this was left over for future where we might support more than one
             # return expressions (tuples)
             return_type = self.emit_expr(stmt.values[0], context, BlockRange(None, None, True), None).return_type
@@ -821,8 +840,8 @@ class Assembler:
                 body.append(
                     FunctionCallStmt(SET_RETURN_VALUE, (value, VarExpr(VarRef(FRAME_INDEX))))
                 )
-        else:
-            proc_data.return_types.add(VariableTypes.STRING)
+        # else:
+            # proc_data.return_types.add(VariableTypes.STRING)
 
         control_stop = FunctionCallStmt(
             "control_stop", (StringExpr("this script"),)
@@ -830,25 +849,28 @@ class Assembler:
 
         body.append(control_stop)
 
-        return self.emit_sequence(
-            parent=parent,
-            context=context,
-            new_layer=False,
-            statements=(
-                FunctionCallStmt(FIND_STACK_FRAME, (VarExpr(VarRef(THREAD_ARG)),)),
-                IfStmt(
-                    branches=(IfBranch(
-                        condition=BinaryOpExpr(
-                            FunctionCallExpr("data_itemoflist", 
-                                                (BinaryOpExpr(VarExpr(VarRef(FRAME_INDEX)), "+", NumberExpr(2)), 
-                                                VarExpr(VarRef(RETURN_STACK)))), 
-                                                "==", 
-                                                StringExpr("false")),
-                        body=tuple(body),
-                    ),),
-                    else_body=())
+        if not returns_things:
+            return self.emit_sequence(tuple(body), parent=parent, context=context, new_layer=False)
+        else:
+            return self.emit_sequence(
+                parent=parent,
+                context=context,
+                new_layer=False,
+                statements=(
+                    FunctionCallStmt(FIND_STACK_FRAME, (VarExpr(VarRef(THREAD_ARG)),)),
+                    IfStmt(
+                        branches=(IfBranch(
+                            condition=BinaryOpExpr(
+                                FunctionCallExpr("data_itemoflist", 
+                                                    (BinaryOpExpr(VarExpr(VarRef(FRAME_INDEX)), "+", NumberExpr(2)), 
+                                                    VarExpr(VarRef(RETURN_STACK)))), 
+                                                    "==", 
+                                                    StringExpr("false")),
+                            body=tuple(body),
+                        ),),
+                        else_body=())
+                    )
                 )
-            )
         
 
     def emit_scratch_block(self, stmt: FunctionCallStmt, parent: StrOptional, context: Context) -> BlockRange | None:
@@ -908,7 +930,7 @@ class Assembler:
                     try:
                         var_id = self.get_variable(arg_expr.ref, context)
                     except NameError:
-                        error = UnboundError(f"'{arg_expr.ref.root}' is not defined.", arg_expr, data={"name": arg_expr.ref.root})
+                        error = Unbound(f"'{arg_expr.ref.root}' is not defined.", arg_expr, data={"name": arg_expr.ref.root})
                         if not self.compile_with_warnings:
                             return self.raise_or_return(error)
                         self.errors.append(error)
@@ -999,7 +1021,7 @@ class Assembler:
                 try:
                     fields[field.name] = (arg_expr.ref.root, self.get_variable(arg_expr.ref, context))
                 except NameError:
-                    error = UnboundError(f"{arg_expr.ref.root} is not defined.", arg_expr, data={"name": arg_expr.ref.root})
+                    error = Unbound(f"{arg_expr.ref.root} is not defined.", arg_expr, data={"name": arg_expr.ref.root})
                     if not self.compile_with_warnings:
                         return self.raise_or_return(error)
                     self.errors.append(error)
@@ -1308,6 +1330,20 @@ class Assembler:
             self.blocks[event_id]["next"] = body.first
 
         return BlockRange(event_id, body.last or event_id)
+
+    def can_have_next(self, block_id: str) -> bool:
+        block = self.blocks[block_id]
+        opcode = block["opcode"]
+
+        if opcode == "control_forever":
+            return False
+
+        if opcode == "control_stop":
+            stop_option = block["fields"]["STOP_OPTION"][0]
+            if stop_option in ["this script", "all"]:
+                return False
+
+        return True
             
     def emit_function_def(self, stmt: FunctionDefStmt, parent: StrOptional) -> BlockRange:
         if parent is not None:
@@ -1525,7 +1561,7 @@ class Assembler:
         try:
             iterable_id = self.get_variable(stmt.iterable, context)
         except NameError:
-            error = UnboundError(f"'{stmt.iterable.root}' is not defined.", stmt.iterable, data={"name": stmt.iterable.root})
+            error = Unbound(f"'{stmt.iterable.root}' is not defined.", stmt.iterable, data={"name": stmt.iterable.root})
             if not self.compile_with_warnings:
                 return self.raise_or_return(error)
             self.errors.append(error)
@@ -1647,6 +1683,24 @@ class Assembler:
         self.blocks[repeat_id]["inputs"]["SUBSTACK"] = (InputType.BLOCK_ONLY, list_set_id)
 
         return BlockRange(set_id, repeat_id)
+
+    def emit_forever(self, stmt: ForeverStmt, parent: StrOptional, context: Context):        
+        block_id = self.new_id()
+        inputs: dict[str, ScratchInputRaw] = {}
+        self.make_block(
+            opcode="control_forever",
+            id=block_id,
+            parent=parent,
+            inputs=inputs
+        )
+        block_range = BlockRange(block_id, block_id)
+
+        body = self.emit_sequence(stmt.body, block_id, context)
+
+        if body.first is not None:
+            self.blocks[block_id]["inputs"]["SUBSTACK"] = (InputType.BLOCK_ONLY, body.first)
+        
+        return block_range
     
     def emit_while(self, stmt: WhileStmt, parent: StrOptional, context: Context):
         """
@@ -1753,7 +1807,7 @@ class Assembler:
                 name=target.root
             ), target)
         except NameError:
-            error = UnboundError(f"'{target.root}' is not defined.", target, data={"name": target.root})
+            error = Unbound(f"'{target.root}' is not defined.", target, data={"name": target.root})
             if not self.compile_with_warnings:
                 return self.raise_or_return(error)
             self.errors.append(error)
@@ -1804,7 +1858,7 @@ class Assembler:
             )
 
             if not self.type_check(self.variables[var_id].var_type, expr.return_type):
-                error = TypeMismatchError(
+                error = TypeMismatch(
                     f"{target.root}: not one of ({", ".join(i.value for i in expr.return_type)}) matches {self.variables[var_id].var_type}", 
                     value)
                 if not self.compile_with_warnings:
@@ -1814,6 +1868,122 @@ class Assembler:
             inputs["VALUE"] = expr.value
 
             return block_range
+
+
+    @staticmethod
+    def _is_primitive(expr: Expr) -> bool:
+        return expr.__class__ in {NumberExpr | StringExpr | AssetExpr | BoolExpr | VarExpr}
+
+
+    def fold_expr(self, expr: Expr) -> Expr:
+        if self._is_primitive(expr):
+            return expr
+
+        match expr:
+            case UnaryOpExpr(value=value, op=op):
+                value = self.fold_expr(value)
+
+                if op == "-" and isinstance(value, NumberExpr):
+                    return NumberExpr(
+                        -value.value,
+                        span=expr.span,
+                    )
+
+                if op == "not" and isinstance(value, BoolExpr):
+                    return BoolExpr(
+                        not value.value,
+                        span=expr.span,
+                    )
+
+                return replace(expr, value=value)
+
+            case BinaryOpExpr(left=left, right=right, op=op):
+                left = self.fold_expr(left)
+                right = self.fold_expr(right)
+
+                # Numeric constant folding
+                if isinstance(left, NumberExpr) and isinstance(right, NumberExpr):
+                    match op:
+                        case "+":
+                            return NumberExpr(
+                                left.value + right.value,
+                                span=expr.span,
+                            )
+
+                        case "-":
+                            return NumberExpr(
+                                left.value - right.value,
+                                span=expr.span,
+                            )
+
+                        case "*":
+                            return NumberExpr(
+                                left.value * right.value,
+                                span=expr.span,
+                            )
+
+                        case "/":
+                            # Let Scratch handle division by zero.
+                            if right.value != 0:
+                                return NumberExpr(
+                                    left.value / right.value,
+                                    span=expr.span,
+                                )
+
+                        case "==":
+                            return BoolExpr(
+                                left.value == right.value,
+                                span=expr.span,
+                            )
+
+                        case ">":
+                            return BoolExpr(
+                                left.value > right.value,
+                                span=expr.span,
+                            )
+
+                        case "<":
+                            return BoolExpr(
+                                left.value < right.value,
+                                span=expr.span,
+                            )
+
+                        case _:
+                            pass
+
+                # Boolean constant folding
+                if isinstance(left, BoolExpr) and isinstance(right, BoolExpr):
+                    match op:
+                        case "and":
+                            return BoolExpr(
+                                left.value and right.value,
+                                span=expr.span,
+                            )
+
+                        case "or":
+                            return BoolExpr(
+                                left.value or right.value,
+                                span=expr.span,
+                            )
+
+                        case "==":
+                            return BoolExpr(
+                                left.value == right.value,
+                                span=expr.span,
+                            )
+
+                        case _:
+                            pass
+
+                # Children may have folded even if this expression didn't.
+                return replace(
+                    expr,
+                    left=left,
+                    right=right,
+                )
+            case _:
+                return expr
+
     
     def emit_expr(self, expr: Expr, context: Context, block_parent: BlockRange, parent: StrOptional) -> ScratchInput:
         # block_id = self.new_id()
@@ -2130,7 +2300,7 @@ class Assembler:
                             var_id = self.get_variable(arg_expr.ref, context)
 
                         except NameError:
-                            error = UnboundError(f"{arg_expr.ref.root} is not defined.", arg_expr, data={"name": arg_expr.ref.root})
+                            error = Unbound(f"{arg_expr.ref.root} is not defined.", arg_expr, data={"name": arg_expr.ref.root})
                             if not self.compile_with_warnings:
                                 return self.raise_or_return(error, PLACE_HOLDER_0)
                             self.errors.append(error)
@@ -2201,7 +2371,7 @@ class Assembler:
                     try:
                         fields[field.name] = (arg_expr.ref.root, self.get_variable(arg_expr.ref, context))
                     except NameError:
-                        error = UnboundError(f"'{arg_expr.ref.root}' is not defined.", arg_expr, data={"name": arg_expr.ref.root})
+                        error = Unbound(f"'{arg_expr.ref.root}' is not defined.", arg_expr, data={"name": arg_expr.ref.root})
                         if not self.compile_with_warnings:
                             return self.raise_or_return(
                                 error,
@@ -2228,38 +2398,47 @@ class Assembler:
             self.blocks[block_id]["inputs"] = inputs
 
             return ScratchInput(
-                (InputType.BLOCK_ONLY, block_id), block_data.return_type
+                (InputType.BLOCK_ONLY if VariableTypes.BOOL in block_data.return_type else InputType.BLOCK_AND_SHADOW, 
+                 block_id), block_data.return_type
             )
 
     def emit_unary_expr(self, op: str, value: Expr, context: Context, block_parent: BlockRange, parent: StrOptional) -> ScratchInput:
         block_id = self.new_id()
-        if op in {"not", "!"}:
+        if op == "not":
+            emitted_return = self.emit_expr(value, context, block_parent, block_id)
+            if not self.type_check(VariableTypes.BOOL, emitted_return.return_type):
+                return self.raise_or_return(
+                    type_error_factory("not", 0, VariableTypes.BOOL, emitted_return.return_type, value),
+                    PLACE_HOLDER_0,
+                )
+            
             self.make_block(
                 opcode="operator_not",
                 id=block_id,
                 parent=parent,
                 inputs={
-                    "OPERAND": self.emit_expr(value, context, block_parent, block_id).value,
+                    "OPERAND": emitted_return.value,
                 },
             )
             return ScratchInput((InputType.BLOCK_ONLY, block_id), {VariableTypes.BOOL})
 
         if op == "-":
-            if isinstance(value, NumberExpr):
-                return self.emit_expr(
-                    NumberExpr(-1 * value.value, span=value.span), context, block_parent, parent
+            emitted_return = self.emit_expr(value, context, block_parent, block_id)
+            if not self.type_check(VariableTypes.NUMBER, emitted_return.return_type):
+                self.raise_or_return(
+                    type_error_factory("-", 0, VariableTypes.NUMBER, emitted_return.return_type, value)
                 )
-            else:
-                self.make_block(
-                    opcode="operator_multiply",
-                    id=block_id,
-                    parent=parent,
-                    inputs={
-                        "NUM1": (InputType.SHADOW_ONLY, (DataType.NUMBER, "-1")),
-                        "NUM2": self.emit_expr(value, context, block_parent, block_id).value,
-                    },
-                )
-                return ScratchInput((InputType.BLOCK_ONLY, block_id), {VariableTypes.NUMBER})
+
+            self.make_block(
+                opcode="operator_multiply",
+                id=block_id,
+                parent=parent,
+                inputs={
+                    "NUM1": (InputType.SHADOW_ONLY, (DataType.NUMBER, "-1")),
+                    "NUM2": emitted_return.value,
+                },
+            )
+            return ScratchInput((InputType.BLOCK_AND_SHADOW, block_id), {VariableTypes.NUMBER})
 
         raise NotImplementedError(f"Unsupported unary operator: {op}")
     
@@ -2272,12 +2451,11 @@ class Assembler:
         if op == "in":
             if VariableTypes.LIST in right_expr.return_type:
                 if not isinstance(right, VarExpr):
-                    return self.raise_or_return(InvalidTypeError(f"Right expression must be a list", right), PLACE_HOLDER_0)
-
+                    return self.raise_or_return(type_error_factory("in", 1, VariableTypes.LIST, right_expr.return_type, right), PLACE_HOLDER_0)
                 try:
                     list_id = self.get_variable(right.ref, context)
                 except NameError:
-                    error = UnboundError(f"'{right.ref.root}' is not defined", right, data={"name": right})
+                    error = Unbound(f"'{right.ref.root}' is not defined", right, data={"name": right})
                     if not self.compile_with_warnings:
                         return self.raise_or_return(error, PLACE_HOLDER_0)
                     list_id = self.define_variable(False, "list", right.ref.root, context, None)
@@ -2317,6 +2495,28 @@ class Assembler:
         else:
             return_type = VariableTypes.VAR
 
+        left_type_check: VariableTypes = VariableTypes.VAR
+        right_type_check: VariableTypes = VariableTypes.VAR
+
+        if op == "in":
+            right_type_check = VariableTypes.STRING
+        elif op in {"==", "and", "or"}:
+            left_type_check = VariableTypes.BOOL
+            right_type_check = VariableTypes.BOOL
+        else:
+            left_type_check = VariableTypes.NUMBER
+            right_type_check = VariableTypes.NUMBER
+
+        if not self.type_check(left_type_check, left_expr.return_type):
+            self.raise_or_return(
+                type_error_factory(opcode, 0, left_type_check, left_expr.return_type, left),
+            )
+
+        if not self.type_check(right_type_check, right_expr.return_type):
+            self.raise_or_return(
+                type_error_factory(opcode, 1, right_type_check, right_expr.return_type, right),
+            )
+
         left_input = left_expr.value
         right_input = right_expr.value
 
@@ -2331,7 +2531,7 @@ class Assembler:
         )
 
         return ScratchInput(
-            (InputType.BLOCK_ONLY, block_id),
+            (InputType.BLOCK_ONLY if VariableTypes.BOOL == return_type else InputType.BLOCK_AND_SHADOW, block_id),
             {return_type},
         )
 
@@ -2381,7 +2581,7 @@ class Assembler:
 
             return ScratchInput(
                 (
-                    InputType.BLOCK_ONLY,
+                    InputType.BLOCK_AND_SHADOW,
                     reporter_id
                 ),
                 return_type={arg_type}
@@ -2390,7 +2590,7 @@ class Assembler:
             try:
                 var_id = self.get_variable(ref, context)
             except NameError:
-                error = UnboundError(f"'{ref.root}' is not defined.", ref, data={"name": ref.root})
+                error = Unbound(f"'{ref.root}' is not defined.", ref, data={"name": ref.root})
                 if not self.compile_with_warnings:
                     return self.raise_or_return(error, PLACE_HOLDER_0)
                 self.errors.append(error)
@@ -2414,7 +2614,7 @@ class Assembler:
                         }
                     )
                     return ScratchInput(
-                        (InputType.BLOCK_ONLY,
+                        (InputType.BLOCK_AND_SHADOW,
                         operator_id)
                     )
                 else:
@@ -2424,7 +2624,7 @@ class Assembler:
                         inputs={
                             "LETTER": self.emit_expr(ref.slice_expr, context, block_parent, parent).value,
                             "STRING": (
-                                InputType.BLOCK_ONLY,  (
+                                InputType.BLOCK_AND_SHADOW,  (
                                     DataType.VARIABLE,
                                     ref.root,
                                     var_id
@@ -2435,7 +2635,7 @@ class Assembler:
 
                     return ScratchInput(
                         (
-                            InputType.BLOCK_ONLY,
+                            InputType.BLOCK_AND_SHADOW,
                             operator_id
                         ), {VariableTypes.STRING}
                     )

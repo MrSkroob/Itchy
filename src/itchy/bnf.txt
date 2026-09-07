@@ -1,7 +1,8 @@
 <program> ::= {<vardefstat>} <chunk> <EOF> 
 <chunk> ::= {<stat> {<StatementSeperator>}}
-<stat> ::= <whilestat> | <ifstat> | <forstat> | <functionstat> | <eventstat> | <varassignstat> | <functioncall>
+<stat> ::= <whilestat> | <ifstat> | <forstat> | <functionstat> | <eventstat> | <varassignstat> | <functioncall> | <foreverstat> | <laststat>
 
+<foreverstat> ::= <Forever> <wrap>
 <whilestat> ::= <While> <equation> <wrap>
 <ifstat> ::= <If> <equation> <wrap> {<ElseIf> <equation> <wrap>} [<Else> <wrap>]
 <forstat> ::= <For> <Symbol> <forbody> <wrap>
@@ -15,7 +16,7 @@
 
 <forbody> ::= "=" <equation> <FieldSeperator> <equation> <FieldSeperator> <equation> | <In> <var>
 <tableconstructor> ::= "[" [<varlist1>] "]"
-<wrap> ::= "{" [<chunk>] [<laststat>] "}"
+<wrap> ::= "{" [<chunk>] "}"
 <function> ::= <Symbol> <funcbody>
 // <event> ::= <Symbol> <eventbody>
 // <eventbody> ::= <args> <wrap>
