@@ -201,7 +201,7 @@ class Assembler:
         """
         if error.error_node and not error.error_node.dummy:
             self.errors.append(error)
-            
+
         if isinstance(error, CompilerWarning) and self.compile_with_warnings:
             return return_value
         if self.is_strict:
@@ -482,9 +482,8 @@ class Assembler:
 
             if stmt.__class__ not in {EventHandlerStmt, FunctionDefStmt}:
                 error = NeverReached("This statement will never be called", stmt)
-                if not self.compile_with_warnings:
-                    return self.raise_or_return(error, None)
-                self.errors.append(error) 
+                self.raise_or_return(error, None)
+                break
 
             first_block = self.blocks[block_range.first]
             first_block["topLevel"] = True
@@ -689,7 +688,8 @@ class Assembler:
 
                 if not self.can_have_next(last):
                     error = NeverReached("This statement will never be called", stmt)
-                    return self.raise_or_return(error)
+                    self.raise_or_return(error)
+                    break
 
                 self.blocks[last]["next"] = emitted.first
                 self.blocks[emitted.first]["parent"] = last
@@ -725,9 +725,7 @@ class Assembler:
                 if name not in self.overridable and (name, None) in self.variable_map:
                     error = Shadow(f"Variable '{stmt.name}' is shadowed by variable of same name", stmt)
                     # if not self.compile_with_warnings:
-                    if not self.compile_with_warnings:
-                        return self.raise_or_return(error)
-                    self.errors.append(error)
+                    self.raise_or_return(error)
                     return BlockRange(None, None)
 
                 # allow variable to override existing one in project at least once. 
@@ -931,9 +929,7 @@ class Assembler:
                         var_id = self.get_variable(arg_expr.ref, context)
                     except NameError:
                         error = Unbound(f"'{arg_expr.ref.root}' is not defined.", arg_expr, data={"name": arg_expr.ref.root})
-                        if not self.compile_with_warnings:
-                            return self.raise_or_return(error)
-                        self.errors.append(error)
+                        self.raise_or_return(error)
                         var_id = self.define_variable(False, "var", arg_expr.ref.root, context, None)
 
                     inputs[arg.name] = (InputType.SHADOW_ONLY,
@@ -984,9 +980,7 @@ class Assembler:
                             {VariableTypes.STRING,},
                             stmt
                         )
-                        if not self.compile_with_warnings:
-                            return self.raise_or_return(error)
-                        self.errors.append(error)
+                        self.raise_or_return(error)
 
                     inputs[arg.name] = (
                         InputType.SHADOW_ONLY,
@@ -1022,9 +1016,7 @@ class Assembler:
                     fields[field.name] = (arg_expr.ref.root, self.get_variable(arg_expr.ref, context))
                 except NameError:
                     error = Unbound(f"{arg_expr.ref.root} is not defined.", arg_expr, data={"name": arg_expr.ref.root})
-                    if not self.compile_with_warnings:
-                        return self.raise_or_return(error)
-                    self.errors.append(error)
+                    self.raise_or_return(error)
                     fields[field.name] = (arg_expr.ref.root, self.define_variable(False, "var", arg_expr.ref.root, context, None))
                     
             elif field.name in block_data.broadcasts:
@@ -1259,9 +1251,7 @@ class Assembler:
                                 expr.return_type,
                                 stmt
                             )
-                            if not self.compile_with_warnings:
-                                return self.raise_or_return(error)
-                            self.errors.append(error)
+                            self.raise_or_return(error)
 
                         inputs[arg.name] = expr.value
 
@@ -1274,9 +1264,7 @@ class Assembler:
                             {VariableTypes.STRING,},
                             stmt
                         )
-                        if not self.compile_with_warnings:
-                            return self.raise_or_return(error)
-                        self.errors.append(error)
+                        self.raise_or_return(error)
 
                     inputs[arg.name] = (
                         InputType.SHADOW_ONLY,
@@ -1294,9 +1282,7 @@ class Assembler:
                             expr.return_type,
                             stmt
                         )
-                        if not self.compile_with_warnings:
-                            return self.raise_or_return(error)
-                        self.errors.append(error)
+                        self.raise_or_return(error)
 
                     inputs[arg.name] = expr.value
             index += 1
@@ -1562,9 +1548,7 @@ class Assembler:
             iterable_id = self.get_variable(stmt.iterable, context)
         except NameError:
             error = Unbound(f"'{stmt.iterable.root}' is not defined.", stmt.iterable, data={"name": stmt.iterable.root})
-            if not self.compile_with_warnings:
-                return self.raise_or_return(error)
-            self.errors.append(error)
+            self.raise_or_return(error)
             iterable_id = self.define_variable(False, "var", stmt.iterable.root, context, None)
 
         self.assert_writable_name(stmt.variable, context)
@@ -2591,9 +2575,7 @@ class Assembler:
                 var_id = self.get_variable(ref, context)
             except NameError:
                 error = Unbound(f"'{ref.root}' is not defined.", ref, data={"name": ref.root})
-                if not self.compile_with_warnings:
-                    return self.raise_or_return(error, PLACE_HOLDER_0)
-                self.errors.append(error)
+                self.raise_or_return(error, PLACE_HOLDER_0)
                 var_id = self.define_variable(False, "var" if ref.slice_expr is None else "list", ref.root, context, None)
             
             var_type = self.variables[var_id].var_type
