@@ -773,8 +773,8 @@ class Assembler:
             case _:
                 raise TypeError("Bad statement type")
 
-
-    def type_check(self, a: VariableTypes, b: set[VariableTypes], node: ASTNode | None):
+    @staticmethod
+    def static_type_check(a: VariableTypes, b: set[VariableTypes]):
         if a in b:
             return True
 
@@ -787,8 +787,6 @@ class Assembler:
         if VariableTypes.LIST in b:
             b.add(VariableTypes.STRING)
             b.remove(VariableTypes.LIST)
-            if node:
-                self.raise_or_return(TypeMismatch("Lists will be converted into a space separated string. Are you sure this is what you want?", node))
 
         if a == VariableTypes.NOTHING:
             return False
@@ -801,8 +799,14 @@ class Assembler:
 
         if VariableTypes.VAR in b:
             return True
+        
+    def type_check(self, a: VariableTypes, b: set[VariableTypes], node: ASTNode | None):
+        return_bool = self.static_type_check(a, b)
 
-        return False
+        if VariableTypes.LIST in b:
+            if node:
+                self.raise_or_return(TypeMismatch("Lists will be converted into a space separated string. Are you sure this is what you want?", node))
+        return return_bool
 
 
     def emit_return(self, stmt: ReturnStmt, parent: StrOptional, context: Context) -> BlockRange:
