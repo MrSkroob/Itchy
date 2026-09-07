@@ -18,7 +18,7 @@ from enum import Enum, StrEnum
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
-from itchy.shared_templates import VariableTypes, DataType, SourceSpan, SPRITE_TEMPLATE, COSTUME_TEMPLATE, PROJECT_TEMPLATE, DATA_TO_VARIABLE_TYPE, ASTNode
+from itchy.shared_templates import VARIABLE_TYPE_TO_USER_TYPES, VariableTypes, DataType, SourceSpan, SPRITE_TEMPLATE, COSTUME_TEMPLATE, PROJECT_TEMPLATE, DATA_TO_VARIABLE_TYPE, ASTNode
 from itchy.errors import CompilerError, CompilerWarning, CompilerErrorCodes, Unbound, NotReferenced, Shadow, DuplicateDefinitionError,\
     NeverReached, \
     ArgumentError, NotDefinedError, InvalidTypeError, SyntaxError, TypeMismatch, ReturnNothingError
@@ -75,7 +75,7 @@ class InputType(Enum):
     BLOCK_AND_SHADOW = 3 # do not use - because compiler does not have default values.
 
 
-PLACE_HOLDER_0 = ScratchInput((InputType.SHADOW_ONLY, (DataType.NUMBER, "0")), {VariableTypes.VAR}, True)
+PLACE_HOLDER_0 = ScratchInput((InputType.BLOCK_AND_SHADOW, (DataType.NUMBER, "0")), {VariableTypes.VAR}, True)
 
 
 class SymbolType(StrEnum):
@@ -774,8 +774,7 @@ class Assembler:
                 raise TypeError("Bad statement type")
 
 
-    @staticmethod
-    def type_check(a: VariableTypes, b: set[VariableTypes]):
+    def type_check(self, a: VariableTypes, b: set[VariableTypes], node: ASTNode | None):
         if a in b:
             return True
 
@@ -788,6 +787,8 @@ class Assembler:
         if VariableTypes.LIST in b:
             b.add(VariableTypes.STRING)
             b.remove(VariableTypes.LIST)
+            if node:
+                self.raise_or_return(TypeMismatch("Lists will be converted into a space separated string. Are you sure this is what you want?", node))
 
         if a == VariableTypes.NOTHING:
             return False
@@ -952,13 +953,13 @@ class Assembler:
                         )
 
                         inputs[arg.name] = (
-                            InputType.SHADOW_ONLY,
+                            InputType.BLOCK_AND_SHADOW,
                             menu_id
                         )
                     else:
                         expected_type = VariableTypes.STRING
 
-                        if not self.type_check(expected_type, expr.return_type):
+                        if not self.type_check(expected_type, expr.return_type, arg_expr):
                             return self.raise_or_return(
                                 type_error_factory(
                                     stmt.callee,
@@ -972,11 +973,12 @@ class Assembler:
                         inputs[arg.name] = expr.value
 
                 elif isinstance(arg_expr, StringExpr):
-                    if not self.type_check(DATA_TO_VARIABLE_TYPE[arg.return_type], {VariableTypes.STRING,}):
+                    expected_type = VARIABLE_TYPE_TO_USER_TYPES[DATA_TO_VARIABLE_TYPE[arg.return_type]]
+                    if not self.type_check(expected_type, {VariableTypes.STRING,}, arg_expr):
                         error = type_error_factory(
                             stmt.callee,
                             index,
-                            DATA_TO_VARIABLE_TYPE[arg.return_type],
+                            expected_type,
                             {VariableTypes.STRING,},
                             stmt
                         )
@@ -988,9 +990,10 @@ class Assembler:
                     )
 
                 else:
-                    expected_type = DATA_TO_VARIABLE_TYPE[arg.return_type]
+                    expected_type = VARIABLE_TYPE_TO_USER_TYPES[DATA_TO_VARIABLE_TYPE[arg.return_type]]
 
-                    if not self.type_check(expected_type, expr.return_type):
+                    if not self.type_check(expected_type, expr.return_type, arg_expr):
+                        print("aww phooey")
                         return self.raise_or_return(
                             type_error_factory(
                                 stmt.callee,
@@ -1119,7 +1122,7 @@ class Assembler:
             if isinstance(arg_expr, VarRef) and not arg_expr.dummy:
                 self.get_variable(arg_expr, context)
 
-            if not self.type_check(arg_type, user_arg_type):
+            if not self.type_check(arg_type, user_arg_type, arg_expr):
                 failure = type_error_factory(stmt.callee, index, arg_type, user_arg_type, arg_expr)
                 self.errors.append(failure)
             
@@ -1237,13 +1240,13 @@ class Assembler:
                         )
 
                         inputs[arg.name] = (
-                            InputType.SHADOW_ONLY,
+                            InputType.BLOCK_AND_SHADOW,
                             menu_id
                         )
                     else:
                         expected_type = VariableTypes.STRING
 
-                        if not self.type_check(expected_type, expr.return_type):
+                        if not self.type_check(expected_type, expr.return_type, arg_expr):
                             error = type_error_factory(
                                 stmt.name,
                                 index,
@@ -1256,11 +1259,12 @@ class Assembler:
                         inputs[arg.name] = expr.value
 
                 elif isinstance(arg_expr, StringExpr):
-                    if not self.type_check(DATA_TO_VARIABLE_TYPE[arg.return_type], {VariableTypes.STRING,}):
+                    expected_type = VARIABLE_TYPE_TO_USER_TYPES[DATA_TO_VARIABLE_TYPE[arg.return_type]]
+                    if not self.type_check(expected_type, {VariableTypes.STRING,}, arg_expr):
                         error = type_error_factory(
                             stmt.name,
                             index,
-                            DATA_TO_VARIABLE_TYPE[arg.return_type],
+                            expected_type,
                             {VariableTypes.STRING,},
                             stmt
                         )
@@ -1272,9 +1276,9 @@ class Assembler:
                     )
 
                 else:
-                    expected_type = DATA_TO_VARIABLE_TYPE[arg.return_type]
+                    expected_type = VARIABLE_TYPE_TO_USER_TYPES[DATA_TO_VARIABLE_TYPE[arg.return_type]]
 
-                    if not self.type_check(expected_type, expr.return_type):
+                    if not self.type_check(expected_type, expr.return_type, arg_expr):
                         error = type_error_factory(
                             stmt.name,
                             index,
@@ -1381,9 +1385,13 @@ class Assembler:
         for param in params:
             arg_id = self.new_id()
 
+            var_type = VariableTypes(param.type_name)
+            if var_type == VariableTypes.LIST:
+                self.raise_or_return(TypeMismatch("Lists will be converted into a space separated string. Are you sure this is what you want?", param))
+
             argument_ids.append(arg_id)
             argument_names.append(param.name)
-            argument_types.append(VariableTypes(param.type_name))
+            argument_types.append(var_type)
 
             if param.type_name == "bool":
                 proccode_parts.append("%b")
@@ -1771,6 +1779,14 @@ class Assembler:
                     self.blocks[block_id]["inputs"]["SUBSTACK2"] = (InputType.BLOCK_ONLY, else_blocks.first)
         
         return block_range
+
+
+    def _assign_list(self):
+        pass
+
+
+    def _assign_variable(self):
+        pass
     
     
     def emit_assignment(self, target: VarRef, value: Expr, parent: StrOptional, context: Context) -> BlockRange:
@@ -1796,9 +1812,29 @@ class Assembler:
                 return self.raise_or_return(error)
             self.errors.append(error)
             var_id = self.define_variable(False, "list" if target.slice_expr is not None else "var", target.root, context, None)
-        
+
+        variable = self.variables[var_id]
+
+        if isinstance(value, TableExpr):
+            if not variable.is_list:
+                error = TypeMismatch(
+                    "Assigning a list to a variable will convert it into a space separated string.", target
+                )
+                self.raise_or_return(error)
+                
+                var_id = self._make_table_expr(value, context)
+                list_variable_name = self.variables[var_id].name
+
+                value = VarExpr(VarRef(list_variable_name))
+            else:
+                statements: list[Stmt] = []
+                statements.append(FunctionCallStmt("data_deletealloflist", (VarExpr(VarRef(variable.name)),)))
+                for expr in value.values:
+                    statements.append(FunctionCallStmt("data_addtolist", (expr, VarExpr(VarRef(variable.name)))))
+
+                return self.emit_sequence(tuple(statements), parent, context, False)
+
         if target.slice_expr is not None:
-            variable = self.variables[var_id]
 
             if variable.is_list:
                 # is a list!
@@ -1841,13 +1877,11 @@ class Assembler:
                 value, context, block_range, block_id
             )
 
-            if not self.type_check(self.variables[var_id].var_type, expr.return_type):
+            if not self.type_check(self.variables[var_id].var_type, expr.return_type, value):
                 error = TypeMismatch(
                     f"{target.root}: not one of ({", ".join(i.value for i in expr.return_type)}) matches {self.variables[var_id].var_type}", 
                     value)
-                if not self.compile_with_warnings:
-                    return self.raise_or_return(error)
-                self.errors.append(error)
+                self.raise_or_return(error)
 
             inputs["VALUE"] = expr.value
 
@@ -1972,6 +2006,7 @@ class Assembler:
     def emit_expr(self, expr: Expr, context: Context, block_parent: BlockRange, parent: StrOptional) -> ScratchInput:
         # block_id = self.new_id()
         # expression: ScratchInput = [InputType.REPORTER, block_id]
+        expr = self.fold_expr(expr)
         
         match expr:
             case NumberExpr(value=value):
@@ -2034,9 +2069,40 @@ class Assembler:
             case FunctionCallExpr():
                 return self.emit_function_expr(expr, context, block_parent, parent)
             case TableExpr():
-                raise NotImplementedError("out of scope for now :v")
+                return self.emit_table_expr(expr, context, block_parent, parent)
             case _:
                 raise TypeError("Bare expression (coder sucks :/)")
+
+    def _make_table_expr(self, expr: TableExpr, context: Context):
+        list_variable_name = ":compiler_list" + self.new_id()
+        var_id = self.define_variable(False, "list", list_variable_name, context, None)
+
+        flag_contents: list[Stmt] = [FunctionCallStmt("data_deletealloflist", (VarExpr(VarRef(list_variable_name)),))]
+        flag_contents.extend(FunctionCallStmt("data_addtolist", (item, VarExpr(VarRef(list_variable_name))))  
+                            for item in expr.values)
+
+        body: tuple[Stmt] = (
+            EventHandlerStmt("event_whenflagclicked", (), body=tuple(flag_contents)),
+        )
+
+        self.emit_statements(body)
+        return var_id
+
+    def emit_table_expr(self, expr: TableExpr, context: Context, block_parent: BlockRange, parent: StrOptional) -> ScratchInput:
+        var_id = self._make_table_expr(expr, context)
+        list_variable_name = self.variables[var_id].name
+
+        return ScratchInput(
+                            (
+                                InputType.BLOCK_AND_SHADOW,
+                                (
+                                    DataType.LIST,
+                                    list_variable_name,
+                                    var_id
+                                )
+                            ),
+                            {VariableTypes.LIST}
+                        )
 
 
     def insert_setup_before_consumer(
@@ -2289,7 +2355,7 @@ class Assembler:
                                 return self.raise_or_return(error, PLACE_HOLDER_0)
                             self.errors.append(error)
                             var_id = self.define_variable(False, "var", arg_expr.ref.root, context, None)
-                        inputs[arg.name] = (InputType.SHADOW_ONLY,
+                        inputs[arg.name] = (InputType.BLOCK_AND_SHADOW,
                                             (DataType.VARIABLE, arg_expr.ref.root, var_id))
                 else:
                     if isinstance(arg, Menu):
@@ -2319,7 +2385,7 @@ class Assembler:
                             )
 
                             inputs[arg.name] = (
-                                InputType.SHADOW_ONLY,
+                                InputType.BLOCK_AND_SHADOW,
                                 menu_id
                             )
                         else:
@@ -2332,7 +2398,7 @@ class Assembler:
 
                     elif isinstance(arg_expr, StringExpr):
                         inputs[arg.name] = (
-                            InputType.SHADOW_ONLY,
+                            InputType.BLOCK_AND_SHADOW,
                             (arg.return_type, arg_expr.value)
                         )
 
@@ -2390,7 +2456,7 @@ class Assembler:
         block_id = self.new_id()
         if op == "not":
             emitted_return = self.emit_expr(value, context, block_parent, block_id)
-            if not self.type_check(VariableTypes.BOOL, emitted_return.return_type):
+            if not self.type_check(VariableTypes.BOOL, emitted_return.return_type, value):
                 return self.raise_or_return(
                     type_error_factory("not", 0, VariableTypes.BOOL, emitted_return.return_type, value),
                     PLACE_HOLDER_0,
@@ -2408,7 +2474,7 @@ class Assembler:
 
         if op == "-":
             emitted_return = self.emit_expr(value, context, block_parent, block_id)
-            if not self.type_check(VariableTypes.NUMBER, emitted_return.return_type):
+            if not self.type_check(VariableTypes.NUMBER, emitted_return.return_type, value):
                 self.raise_or_return(
                     type_error_factory("-", 0, VariableTypes.NUMBER, emitted_return.return_type, value)
                 )
@@ -2418,7 +2484,7 @@ class Assembler:
                 id=block_id,
                 parent=parent,
                 inputs={
-                    "NUM1": (InputType.SHADOW_ONLY, (DataType.NUMBER, "-1")),
+                    "NUM1": (InputType.BLOCK_AND_SHADOW, (DataType.NUMBER, "-1")),
                     "NUM2": emitted_return.value,
                 },
             )
@@ -2491,12 +2557,12 @@ class Assembler:
             left_type_check = VariableTypes.NUMBER
             right_type_check = VariableTypes.NUMBER
 
-        if not self.type_check(left_type_check, left_expr.return_type):
+        if not self.type_check(left_type_check, left_expr.return_type, left):
             self.raise_or_return(
                 type_error_factory(opcode, 0, left_type_check, left_expr.return_type, left),
             )
 
-        if not self.type_check(right_type_check, right_expr.return_type):
+        if not self.type_check(right_type_check, right_expr.return_type, right):
             self.raise_or_return(
                 type_error_factory(opcode, 1, right_type_check, right_expr.return_type, right),
             )
@@ -2625,7 +2691,7 @@ class Assembler:
             else:
                 return ScratchInput(
                     (
-                        InputType.SHADOW_ONLY,
+                        InputType.BLOCK_AND_SHADOW,
                         (
                             DataType.LIST if VariableTypes.LIST == var_type else DataType.VARIABLE,
                             ref.root,
