@@ -807,11 +807,10 @@ class Assembler:
 
 
     def type_check(self, a: VariableTypes, b: set[VariableTypes], node: ASTNode | None):
-        return_bool = self.static_type_check(a, b)
-
         if VariableTypes.LIST in b:
             if node:
                 self.raise_or_return(TypeMismatch("Lists will be converted into a space separated string. Are you sure this is what you want?", node))
+        return_bool = self.static_type_check(a, b)
         return return_bool
 
 
@@ -981,7 +980,6 @@ class Assembler:
                             )
 
                         inputs[arg.name] = expr.value
-
                 elif isinstance(arg_expr, StringExpr):
                     expected_type = VARIABLE_TYPE_TO_USER_TYPES[DATA_TO_VARIABLE_TYPE[arg.return_type]]
                     if not self.type_check(expected_type, {VariableTypes.STRING,}, arg_expr):
@@ -1000,10 +998,7 @@ class Assembler:
                     )
 
                 else:
-                    original_type = DATA_TO_VARIABLE_TYPE[arg.return_type]
-                    expected_type = VARIABLE_TYPE_TO_USER_TYPES[original_type]
-
-                    self.type_check(original_type, expr.return_type, arg_expr)
+                    expected_type = VARIABLE_TYPE_TO_USER_TYPES[DATA_TO_VARIABLE_TYPE[arg.return_type]]
                     if not self.type_check(expected_type, expr.return_type, arg_expr):
                         return self.raise_or_return(
                             type_error_factory(
@@ -2685,7 +2680,8 @@ class Assembler:
                     )
                     return ScratchInput(
                         (InputType.BLOCK_AND_SHADOW,
-                        operator_id)
+                        operator_id), 
+                        {VariableTypes.VAR}
                     )
                 else:
                     operator_id = self.make_block(
@@ -2711,9 +2707,6 @@ class Assembler:
                     )
 
             else:
-                if var_type == VariableTypes.LIST:
-                    self.raise_or_return(TypeMismatch("Lists will be converted into a space separated string. Are you sure this is what you want?", ref))
-
                 return ScratchInput(
                     (
                         InputType.BLOCK_AND_SHADOW,
