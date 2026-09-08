@@ -881,7 +881,340 @@ class Assembler:
                 )
         
 
-    def emit_scratch_block(self, stmt: FunctionCallStmt, parent: StrOptional, context: Context) -> BlockRange | None:
+    def _scratch_expected_args(self, block_data: Block | Reporter | Event) -> int:
+        return len(block_data.inputs) + len(block_data.fields)
+
+    def _resolve_scratch_variable(
+        self,
+        *,
+        callee: str,
+        index: int,
+        arg_expr: Expr,
+        context: Context,
+        require_list: bool,
+    ) -> tuple[str, VarExpr] | None:
+        if not isinstance(arg_expr, VarExpr):
+            self.raise_or_return(
+                InvalidTypeError(
+                    f"{callee}: argument {index} must be a variable",
+                    arg_expr,
+                ),
+                None,
+            )
+            return None
+
+        try:
+            var_id = self.get_variable(arg_expr.ref, context)
+        except NameError:
+            error = Unbound(
+                f"'{arg_expr.ref.root}' is not defined.",
+                arg_expr,
+                data={"name": arg_expr.ref.root},
+            )
+            self.raise_or_return(error, None)
+
+            var_id = self.define_variable(
+                False,
+                "list" if require_list else "var",
+                arg_expr.ref.root,
+                context,
+                None,
+            )
+
+        if require_list and not self.variables[var_id].is_list:
+            self.raise_or_return(
+                type_error_factory(
+                    callee,
+                    index,
+                    VariableTypes.LIST,
+                    {VariableTypes.VAR},
+                    arg_expr,
+                ),
+                None,
+            )
+            return None
+
+        return var_id, arg_expr
+
+    def _emit_scratch_input_slot(
+        self,
+        *,
+        callee: str,
+        index: int,
+        arg: Any,
+        arg_expr: Expr,
+        block_data: Block | Reporter | Event,
+        context: Context,
+        block_parent: BlockRange,
+        block_id: str,
+        literal_input_type: InputType,
+    ) -> ScratchInputRaw:
+        broadcasts = getattr(block_data, "broadcasts", ())
+        variables = getattr(block_data, "variables", ())
+
+        if arg.name in broadcasts:
+            if isinstance(arg_expr, StringExpr):
+                broadcast_id = self.define_broadcast(arg_expr.value)
+                return (
+                    InputType.SHADOW_ONLY,
+                    (DataType.BROADCAST, arg_expr.value, broadcast_id),
+                )
+
+            return self.emit_expr(
+                arg_expr,
+                context,
+                block_parent,
+                block_id,
+            ).value
+
+        if arg.name in variables and isinstance(arg_expr, VarExpr):
+            resolved = self._resolve_scratch_variable(
+                callee=callee,
+                index=index,
+                arg_expr=arg_expr,
+                context=context,
+                require_list=arg.name == "LIST",
+            )
+            if resolved is None:
+                return PLACE_HOLDER_0.value
+
+            var_id, var_expr = resolved
+            data_type = (
+                DataType.LIST
+                if arg.name == "LIST"
+                else DataType.VARIABLE
+            )
+            return (
+                literal_input_type,
+                (data_type, var_expr.ref.root, var_id),
+            )
+
+        if arg.name in variables:
+            return self.emit_expr(
+                arg_expr,
+                context,
+                block_parent,
+                block_id,
+            ).value
+
+        if isinstance(arg, Menu):
+            menu_value = self._menu_literal_value(arg_expr)
+
+            if menu_value is not None:
+                # AssetExpr needs emit_expr() for symbol registration.
+                if not isinstance(arg_expr, StringExpr):
+                    self.emit_expr(
+                        arg_expr,
+                        context,
+                        block_parent,
+                        block_id,
+                    )
+
+                menu_id = self.make_block(
+                    opcode=arg.opcode,
+                    parent=block_id,
+                    fields={
+                        arg.field_name or arg.name: (
+                            menu_value,
+                            None,
+                        )
+                    },
+                    shadow=True,
+                )
+                return (
+                    InputType.BLOCK_AND_SHADOW,
+                    menu_id,
+                )
+
+            emitted = self.emit_expr(
+                arg_expr,
+                context,
+                block_parent,
+                block_id,
+            )
+
+            if not self.type_check(
+                VariableTypes.STRING,
+                emitted.return_type,
+                arg_expr,
+            ):
+                return self.raise_or_return(
+                    type_error_factory(
+                        callee,
+                        index,
+                        VariableTypes.STRING,
+                        emitted.return_type,
+                        arg_expr,
+                    ),
+                    PLACE_HOLDER_0.value,
+                )
+
+            return emitted.value
+
+        expected_type = VARIABLE_TYPE_TO_USER_TYPES[
+            DATA_TO_VARIABLE_TYPE[arg.return_type]
+        ]
+
+        if isinstance(arg_expr, StringExpr):
+            actual_type = {VariableTypes.STRING}
+
+            if not self.type_check(
+                expected_type,
+                actual_type,
+                arg_expr,
+            ):
+                return self.raise_or_return(
+                    type_error_factory(
+                        callee,
+                        index,
+                        expected_type,
+                        actual_type,
+                        arg_expr,
+                    ),
+                    PLACE_HOLDER_0.value,
+                )
+
+            return (
+                literal_input_type,
+                (arg.return_type, arg_expr.value),
+            )
+
+        emitted = self.emit_expr(
+            arg_expr,
+            context,
+            block_parent,
+            block_id,
+        )
+
+        if not self.type_check(
+            expected_type,
+            emitted.return_type,
+            arg_expr,
+        ):
+            return self.raise_or_return(
+                type_error_factory(
+                    callee,
+                    index,
+                    expected_type,
+                    emitted.return_type,
+                    arg_expr,
+                ),
+                PLACE_HOLDER_0.value,
+            )
+
+        return emitted.value
+
+    def _emit_scratch_field_slot(
+        self,
+        *,
+        callee: str,
+        index: int,
+        field: Any,
+        arg_expr: Expr,
+        block_data: Block | Reporter | Event,
+        context: Context,
+    ) -> ScratchFieldRaw:
+        broadcasts = getattr(block_data, "broadcasts", ())
+        variables = getattr(block_data, "variables", ())
+
+        if field.name in variables:
+            resolved = self._resolve_scratch_variable(
+                callee=callee,
+                index=index,
+                arg_expr=arg_expr,
+                context=context,
+                require_list=field.name == "LIST",
+            )
+            if resolved is None:
+                return ("", None)
+
+            var_id, var_expr = resolved
+            return (var_expr.ref.root, var_id)
+
+        if not isinstance(arg_expr, StringExpr):
+            return self.raise_or_return(
+                InvalidTypeError(
+                    f"{callee}: argument {index} must be a string literal",
+                    arg_expr,
+                ),
+                ("", None),
+            )
+
+        if field.name in broadcasts:
+            return (
+                arg_expr.value,
+                self.define_broadcast(arg_expr.value),
+            )
+
+        if (
+            arg_expr.value not in field.expected
+            and not getattr(field, "is_variable", False)
+        ):
+            return self.raise_or_return(
+                ArgumentError(
+                    f"'{arg_expr.value}' is not one of {field.expected}",
+                    arg_expr,
+                ),
+                ("", None),
+            )
+
+        return (arg_expr.value, None)
+
+    def _emit_scratch_slots(
+        self,
+        *,
+        callee: str,
+        args: tuple[Expr, ...],
+        block_data: Block | Reporter | Event,
+        context: Context,
+        block_parent: BlockRange,
+        block_id: str,
+        literal_input_type: InputType,
+    ) -> tuple[
+        dict[str, ScratchInputRaw],
+        dict[str, ScratchFieldRaw],
+    ]:
+        inputs: dict[str, ScratchInputRaw] = {}
+        fields: dict[str, ScratchFieldRaw] = {}
+
+        for index, (arg, arg_expr) in enumerate(
+            zip(block_data.inputs, args)
+        ):
+            inputs[arg.name] = self._emit_scratch_input_slot(
+                callee=callee,
+                index=index,
+                arg=arg,
+                arg_expr=arg_expr,
+                block_data=block_data,
+                context=context,
+                block_parent=block_parent,
+                block_id=block_id,
+                literal_input_type=literal_input_type,
+            )
+
+        field_offset = len(block_data.inputs)
+        field_args = args[field_offset:]
+
+        for offset, (field, arg_expr) in enumerate(
+            zip(block_data.fields, field_args)
+        ):
+            fields[field.name] = self._emit_scratch_field_slot(
+                callee=callee,
+                index=field_offset + offset,
+                field=field,
+                arg_expr=arg_expr,
+                block_data=block_data,
+                context=context,
+            )
+
+        return inputs, fields
+
+    def emit_scratch_block(
+        self,
+        stmt: FunctionCallStmt,
+        parent: StrOptional,
+        context: Context,
+    ) -> BlockRange | None:
         if stmt.callee not in self.block_pool:
             return None
 
@@ -891,21 +1224,21 @@ class Assembler:
             return self.raise_or_return(
                 InvalidTypeError(
                     f"'{stmt.callee}' should be a stack block",
-                    stmt
+                    stmt,
                 )
             )
 
-        expected_args = len(block_data.inputs) + len(block_data.fields)
+        expected_args = self._scratch_expected_args(block_data)
+        actual_args = self.count_args(stmt.args)
 
-        if self.count_args(stmt.args) != expected_args:
-            return self.raise_or_return(ArgumentError(
-                    f"Block '{stmt.callee}' expects {expected_args} argument(s), got {self.count_args(stmt.args)}",
-                    stmt
-                ))
-
-        inputs: dict[str, ScratchInputRaw] = {}
-        fields: dict[str, ScratchFieldRaw] = {}
-
+        if actual_args != expected_args:
+            return self.raise_or_return(
+                ArgumentError(
+                    f"Block '{stmt.callee}' expects {expected_args} "
+                    f"argument(s), got {actual_args}",
+                    stmt,
+                )
+            )
 
         block_id = self.make_block(
             opcode=stmt.callee,
@@ -913,147 +1246,21 @@ class Assembler:
         )
         block_range = BlockRange(block_id, block_id)
 
-        # inputs come first, positionally, then fields -- matches how the
-        # expected_args check above adds them together.
-        index = 0
+        inputs, fields = self._emit_scratch_slots(
+            callee=stmt.callee,
+            args=stmt.args,
+            block_data=block_data,
+            context=context,
+            block_parent=block_range,
+            block_id=block_id,
+            literal_input_type=InputType.SHADOW_ONLY,
+        )
 
-        for arg, arg_expr in zip(block_data.inputs, stmt.args):
-            # arg.return_type
-            expr = self.emit_expr(arg_expr, context, block_range, block_id)
-            if arg.name in block_data.broadcasts:
-                if not isinstance(arg_expr, StringExpr):
-                    inputs[arg.name] = (
-                        expr.value
-                    )
-                else:
-                    broadcast_id = self.define_broadcast(arg_expr.value)
-                    inputs[arg.name] = (InputType.SHADOW_ONLY,
-                                        (DataType.BROADCAST, arg_expr.value, broadcast_id))
-            elif arg.name in block_data.variables:
-                if not isinstance(arg_expr, VarExpr):
-                    inputs[arg.name] = (
-                        expr.value
-                    )
-                else:
-                    try:
-                        var_id = self.get_variable(arg_expr.ref, context)
-                    except NameError:
-                        error = Unbound(f"'{arg_expr.ref.root}' is not defined.", arg_expr, data={"name": arg_expr.ref.root})
-                        self.raise_or_return(error)
-                        var_id = self.define_variable(False, "var", arg_expr.ref.root, context, None)
-
-                    inputs[arg.name] = (InputType.SHADOW_ONLY,
-                                        (DataType.VARIABLE, arg_expr.ref.root, var_id))
-            else:
-                if isinstance(arg, Menu):
-                    menu_value = self._menu_literal_value(arg_expr)
-
-                    if menu_value is not None:
-                        menu_id = self.make_block(
-                            opcode=arg.opcode,
-                            parent=block_id,
-                            fields={
-                                (arg.field_name or arg.name): (
-                                    menu_value,
-                                    None
-                                )
-                            },
-                            shadow=True
-                        )
-
-                        inputs[arg.name] = (
-                            InputType.BLOCK_AND_SHADOW,
-                            menu_id
-                        )
-                    else:
-                        expected_type = VariableTypes.STRING
-
-                        if not self.type_check(expected_type, expr.return_type, arg_expr):
-                            return self.raise_or_return(
-                                type_error_factory(
-                                    stmt.callee,
-                                    index,
-                                    expected_type,
-                                    expr.return_type,
-                                    arg_expr
-                                )
-                            )
-
-                        inputs[arg.name] = expr.value
-                elif isinstance(arg_expr, StringExpr):
-                    expected_type = VARIABLE_TYPE_TO_USER_TYPES[DATA_TO_VARIABLE_TYPE[arg.return_type]]
-                    if not self.type_check(expected_type, {VariableTypes.STRING,}, arg_expr):
-                        error = type_error_factory(
-                            stmt.callee,
-                            index,
-                            expected_type,
-                            {VariableTypes.STRING,},
-                            stmt
-                        )
-                        self.raise_or_return(error)
-
-                    inputs[arg.name] = (
-                        InputType.SHADOW_ONLY,
-                        (arg.return_type, arg_expr.value)
-                    )
-
-                else:
-                    expected_type = VARIABLE_TYPE_TO_USER_TYPES[DATA_TO_VARIABLE_TYPE[arg.return_type]]
-                    if not self.type_check(expected_type, expr.return_type, arg_expr):
-                        return self.raise_or_return(
-                            type_error_factory(
-                                stmt.callee,
-                                index,
-                                expected_type,
-                                expr.return_type,
-                                arg_expr
-                            )
-                        )
-
-                    inputs[arg.name] = expr.value
-
-            index += 1
-
-        for field, arg_expr in zip(block_data.fields, stmt.args[len(block_data.inputs):]):
-            expr = self.emit_expr(arg_expr, context, block_range, parent)
-            if field.name in block_data.variables:
-                if not isinstance(arg_expr, VarExpr):
-                    return self.raise_or_return(InvalidTypeError(
-                        f"{stmt.callee}: argument for {index} must be a variable", arg_expr
-                    ))
-                try:
-                    fields[field.name] = (arg_expr.ref.root, self.get_variable(arg_expr.ref, context))
-                except NameError:
-                    error = Unbound(f"{arg_expr.ref.root} is not defined.", arg_expr, data={"name": arg_expr.ref.root})
-                    self.raise_or_return(error)
-                    fields[field.name] = (arg_expr.ref.root, self.define_variable(False, "var", arg_expr.ref.root, context, None))
-                    
-            elif field.name in block_data.broadcasts:
-                if not isinstance(arg_expr, StringExpr):
-                    return self.raise_or_return(InvalidTypeError(
-                        f"{stmt.callee}: argument {index} must be a string literal", arg_expr
-                    ))
-                fields[field.name] = (arg_expr.value, self.define_broadcast(arg_expr.value))
-            else:
-                if not isinstance(arg_expr, StringExpr):
-                    return self.raise_or_return(InvalidTypeError(
-                        f"{stmt.callee}: argument {index} must be a string literal", arg_expr
-                    ))
-                
-                if arg_expr.value not in field.expected and not field.is_variable:
-                    return self.raise_or_return(
-                        ArgumentError(f"'{arg_expr.value}' is not one of {field.expected}", arg_expr)
-                    )
-
-                fields[field.name] = (arg_expr.value, None)
-
-            index += 1
-
-        self.blocks[block_id]["fields"] = fields
         self.blocks[block_id]["inputs"] = inputs
+        self.blocks[block_id]["fields"] = fields
 
         return block_range
-            
+
     def emit_function_call(self, stmt: FunctionCallStmt, parent: StrOptional, context: Context) -> BlockRange:
         if stmt.callee not in self.procedures:
             # is either a custom scratch block or a hallucination :v
@@ -1148,24 +1355,36 @@ class Assembler:
 
         return block_range
     
-    def emit_event_handler(self, stmt: EventHandlerStmt, context: Context) -> BlockRange:
+    def emit_event_handler(
+        self,
+        stmt: EventHandlerStmt,
+        context: Context,
+    ) -> BlockRange:
         if context.function_context is not None:
-            return self.raise_or_return(CompilerError(f"Cannot start a new thread while inside a function/event", stmt))
+            return self.raise_or_return(
+                CompilerError(
+                    "Cannot start a new thread while inside a function/event",
+                    stmt,
+                )
+            )
 
         if stmt.name not in self.block_pool:
-            return self.raise_or_return(NotDefinedError(f"'{stmt.name}' is not a known event", stmt))
+            return self.raise_or_return(
+                NotDefinedError(
+                    f"'{stmt.name}' is not a known event",
+                    stmt,
+                )
+            )
 
         block_data = self.block_pool[stmt.name]
 
         if not isinstance(block_data, Event):
-            return self.raise_or_return(CompilerError(
-                f"'{stmt.name}' should be a hat/event block", stmt
-            ))
-
-        # unlike Block/Reporter, an Event's `broadcasts` entries are not a
-        # subset of `inputs` -- they're their own trailing group of
-        # field-shaped arguments (see event_whenbroadcastreceived), so they
-        # get counted on top of inputs and fields rather than overlapping.
+            return self.raise_or_return(
+                CompilerError(
+                    f"'{stmt.name}' should be a hat/event block",
+                    stmt,
+                )
+            )
 
         self.register_symbol(
             SymbolOccurence(
@@ -1173,159 +1392,61 @@ class Assembler:
                 definition_location=None,
                 context=context.function_context,
                 symbol_type=SymbolType.EVENT,
-                name=stmt.name
-            ), stmt
+                name=stmt.name,
+            ),
+            stmt,
         )
 
-        expected_args = len(block_data.inputs) + len(block_data.fields)
+        expected_args = self._scratch_expected_args(block_data)
+        actual_args = self.count_args(stmt.params)
 
-        if self.count_args(stmt.params) != expected_args:
-            # we don't want to halt here
-            error = ArgumentError(
-                f"Event {stmt.name} expects {expected_args} argument(s), got {self.count_args(stmt.params)}",
-                stmt
+        if actual_args != expected_args:
+            return self.raise_or_return(
+                ArgumentError(
+                    f"Event '{stmt.name}' expects {expected_args} "
+                    f"argument(s), got {actual_args}",
+                    stmt,
+                )
             )
-            if self.is_strict:
-                raise error
-
-            self.errors.append(error)
-
-            if len(stmt.params) < expected_args:
-                # but continuing if this is True is going to create additional errors.
-                return self.raise_or_return(error)
-            
-
-        inputs: dict[str, ScratchInputRaw] = {}
-        fields: dict[str, ScratchFieldRaw] = {}
-
-        event_id = self.make_block(
-            opcode=stmt.name,
-            inputs=inputs,
-            fields=fields,
-            top_level=True,
-        )
-
-        # inputs come first, positionally, then fields, then broadcasts --
-        # matches how the expected_args check above adds them together.
-        index = 0
 
         context = Context(
             function_context=None,
             layer=DEFAULT_LAYER,
-            thread_id=context.thread_id
+            thread_id=context.thread_id,
         )
 
-        block_parent = BlockRange(event_id, event_id)
+        event_id = self.make_block(
+            opcode=stmt.name,
+            top_level=True,
+        )
+        event_range = BlockRange(event_id, event_id)
 
-        for arg, arg_expr in zip(block_data.inputs, stmt.params):
-            expr = self.emit_expr(arg_expr, context, block_parent, event_id)
-            if arg in block_data.broadcasts:
-                if not isinstance(arg_expr, StringExpr):
-                    inputs[arg.name] = (
-                        expr.value
-                    )
-                else:
-                    broadcast_id = self.define_broadcast(arg_expr.value)
-                    inputs[arg.name] = (InputType.SHADOW_ONLY,
-                                        (DataType.BROADCAST, arg_expr.value, broadcast_id))
-            else:
-                if isinstance(arg, Menu):
-                    menu_value = self._menu_literal_value(arg_expr)
+        inputs, fields = self._emit_scratch_slots(
+            callee=stmt.name,
+            args=stmt.params,
+            block_data=block_data,
+            context=context,
+            block_parent=event_range,
+            block_id=event_id,
+            literal_input_type=InputType.SHADOW_ONLY,
+        )
 
-                    if menu_value is not None:
-                        menu_id = self.make_block(
-                            opcode=arg.opcode,
-                            parent=event_id,
-                            fields={
-                                (arg.field_name or arg.name): (
-                                    menu_value,
-                                    None
-                                )
-                            },
-                            shadow=True
-                        )
-
-                        inputs[arg.name] = (
-                            InputType.BLOCK_AND_SHADOW,
-                            menu_id
-                        )
-                    else:
-                        expected_type = VariableTypes.STRING
-
-                        if not self.type_check(expected_type, expr.return_type, arg_expr):
-                            error = type_error_factory(
-                                stmt.name,
-                                index,
-                                expected_type,
-                                expr.return_type,
-                                stmt
-                            )
-                            self.raise_or_return(error)
-
-                        inputs[arg.name] = expr.value
-
-                elif isinstance(arg_expr, StringExpr):
-                    expected_type = VARIABLE_TYPE_TO_USER_TYPES[DATA_TO_VARIABLE_TYPE[arg.return_type]]
-                    if not self.type_check(expected_type, {VariableTypes.STRING,}, arg_expr):
-                        error = type_error_factory(
-                            stmt.name,
-                            index,
-                            expected_type,
-                            {VariableTypes.STRING,},
-                            stmt
-                        )
-                        self.raise_or_return(error)
-
-                    inputs[arg.name] = (
-                        InputType.SHADOW_ONLY,
-                        (arg.return_type, arg_expr.value)
-                    )
-
-                else:
-                    expected_type = VARIABLE_TYPE_TO_USER_TYPES[DATA_TO_VARIABLE_TYPE[arg.return_type]]
-
-                    if not self.type_check(expected_type, expr.return_type, arg_expr):
-                        error = type_error_factory(
-                            stmt.name,
-                            index,
-                            expected_type,
-                            expr.return_type,
-                            stmt
-                        )
-                        self.raise_or_return(error)
-
-                    inputs[arg.name] = expr.value
-            index += 1
-
-        field_args = stmt.params[len(block_data.inputs):]
-
-        for field, arg_expr in zip(block_data.fields, field_args):
-            self.emit_expr(arg_expr, context, block_parent, event_id)
-            if not isinstance(arg_expr, StringExpr):
-                return self.raise_or_return(InvalidTypeError(f"{stmt.name}: argument {index} must be a string literal", arg_expr))
-            
-            if field.name in block_data.broadcasts:
-                fields[field.name] = (arg_expr.value, self.define_broadcast(arg_expr.value))
-            else:
-                if arg_expr.value not in field.expected and not field.is_variable:
-                    return self.raise_or_return(ArgumentError(f"{arg_expr.value} is not one of {field.expected}", arg_expr))
-                fields[field.name] = (arg_expr.value, None)
-            index += 1
-
-
-        # make_block does `inputs or {}` / `fields or {}`, so when they start
-        # out empty it silently swaps in a fresh dict instead of keeping our
-        # reference -- write back explicitly so anything filled in above
-        # actually lands on the block.
         self.blocks[event_id]["inputs"] = inputs
         self.blocks[event_id]["fields"] = fields
 
-        body = self.emit_sequence(stmt.body, event_id, context)
+        body = self.emit_sequence(
+            stmt.body,
+            event_id,
+            context,
+        )
 
         if body.first is not None:
             self.blocks[event_id]["next"] = body.first
 
-        return BlockRange(event_id, body.last or event_id)
+        return BlockRange(
+            event_id,
+            body.last or event_id,
+        )
 
     def can_have_next(self, block_id: StrOptional) -> bool:
         if not block_id:
@@ -2225,249 +2346,213 @@ class Assembler:
         )
 
         # return expression
-    def emit_function_expr(self, expr: FunctionCallExpr, context: Context, block_parent: BlockRange, parent: StrOptional) -> ScratchInput:
-        if expr.callee not in self.block_pool and expr.callee in self.procedures:
-            proc_info = self.procedures[expr.callee]
-
-            if VariableTypes.NOTHING in proc_info.return_types:
-                error = ReturnNothingError(f"{expr.callee}: not all codepaths have a return statement", expr, data={"name": expr.callee})
-                return self.raise_or_return(error, PLACE_HOLDER_0)
-
-            self._emit_return_helpers()
-
-            if context.function_context in self.procedures:
-                thread_id = VarExpr(VarRef(THREAD_ARG))
-            else:
-                thread_id = NumberExpr(context.thread_id)
-
-            self.register_symbol(
-                SymbolOccurence(
-                    span=expr.span,
-                    definition_location=proc_info.definition_location,
-                    context=context.function_context,
-                    symbol_type=SymbolType.FUNCTION,
-                    name=expr.callee
-                ), expr
-            )
-
-            setup = BlockRange(None, None)
-
-            push_return_frame = self.emit_function_call(FunctionCallStmt(
-                PUSH_RETURN_FRAME,
-                (thread_id,)
-            ), None, context)
-
-            setup = self.append_range(
-                setup,
-                push_return_frame,
-            )
-
-            function_call = self.emit_function_call(FunctionCallStmt(
-                expr.callee,
-                expr.args
-            ), None, context)
-
-            setup = self.append_range(
-                setup,
-                function_call,
-            )
-
-            set_variable = self.emit_assignment(
-                VarRef(expr.callee + ":return"),
-                FunctionCallExpr(
-                    "data_itemoflist",
-                    (
-                        BinaryOpExpr(VarExpr(VarRef(FRAME_INDEX)), "+", NumberExpr(1)),
-                        VarExpr(
-                            VarRef(RETURN_STACK),
-                        ),
-                    ),
-                ),
-                None,
-                context,
-            )
-
-            setup = self.append_range(
-                setup,
-                set_variable,
-            )
-
-            pop_return_frame = self.emit_function_call(FunctionCallStmt(
-                POP_RETURN_FRAME,
-                (thread_id,)
-            ), None, context)
-
-            setup = self.append_range(
-                setup,
-                pop_return_frame,
-            )
-
-            self.insert_setup_before_consumer(
-                block_parent,
-                setup,
-            )
-
-            return_input = self.emit_var_ref(
-                VarRef(expr.callee + ":return"),
+    def emit_function_expr(
+        self,
+        expr: FunctionCallExpr,
+        context: Context,
+        block_parent: BlockRange,
+        parent: StrOptional,
+    ) -> ScratchInput:
+        if (
+            expr.callee not in self.block_pool
+            and expr.callee in self.procedures
+        ):
+            return self._emit_procedure_expr(
+                expr,
                 context,
                 block_parent,
                 parent,
             )
 
-            return_input.return_type = self.procedures[expr.callee].return_types
+        return self._emit_scratch_reporter_expr(
+            expr,
+            context,
+            block_parent,
+            parent,
+        )
 
-            return return_input
-        else:
-            if expr.callee not in self.block_pool:
-                return self.raise_or_return(NotDefinedError(f"Procedure '{expr.callee}' is not defined and is not a valid scratch block", expr), PLACE_HOLDER_0)
-
-            block_data = self.block_pool[expr.callee]
-
-            self.register_symbol(
-                SymbolOccurence(
-                    span=expr.span,
-                    definition_location=None,
-                    context=context.function_context,
-                    symbol_type=SymbolType.FUNCTION,
-                    name=expr.callee
-                ), expr
+    def _emit_scratch_reporter_expr(
+        self,
+        expr: FunctionCallExpr,
+        context: Context,
+        block_parent: BlockRange,
+        parent: StrOptional,
+    ) -> ScratchInput:
+        if expr.callee not in self.block_pool:
+            return self.raise_or_return(
+                NotDefinedError(
+                    f"Procedure '{expr.callee}' is not defined "
+                    "and is not a valid scratch block",
+                    expr,
+                ),
+                PLACE_HOLDER_0,
             )
 
-            if not isinstance(block_data, Reporter):
-                return self.raise_or_return(CompilerError(
+        block_data = self.block_pool[expr.callee]
+
+        self.register_symbol(
+            SymbolOccurence(
+                span=expr.span,
+                definition_location=None,
+                context=context.function_context,
+                symbol_type=SymbolType.FUNCTION,
+                name=expr.callee,
+            ),
+            expr,
+        )
+
+        if not isinstance(block_data, Reporter):
+            return self.raise_or_return(
+                CompilerError(
                     f"'{expr.callee}' does not return anything.",
-                    expr
-                ), PLACE_HOLDER_0)
-        
-            expected_args = len(block_data.inputs) + len(block_data.fields)
-
-            if self.count_args(expr.args) != expected_args:
-                return self.raise_or_return(ArgumentError(
-                    f"Block '{expr.callee}' expects {expected_args} argument(s), got {self.count_args(expr.args)}",
-                    expr
-                ), PLACE_HOLDER_0)
-            
-            block_id = self.make_block(
-                opcode=expr.callee,
-                parent=parent
+                    expr,
+                ),
+                PLACE_HOLDER_0,
             )
 
-            inputs: dict[str, ScratchInputRaw] = {}
-            fields: dict[str, ScratchFieldRaw] = {}
+        expected_args = self._scratch_expected_args(block_data)
+        actual_args = self.count_args(expr.args)
 
-            index = 0
-            for arg, arg_expr in zip(block_data.inputs, expr.args):
-                if arg.name in block_data.variables:
-                    if not isinstance(arg_expr, VarExpr):
-                        inputs[arg.name] = (
-                            self.emit_expr(arg_expr, context, block_parent, block_id).value
-                        )
-                    else:
-                        try:
-                            var_id = self.get_variable(arg_expr.ref, context)
-
-                        except NameError:
-                            error = Unbound(f"{arg_expr.ref.root} is not defined.", arg_expr, data={"name": arg_expr.ref.root})
-                            if not self.compile_with_warnings:
-                                return self.raise_or_return(error, PLACE_HOLDER_0)
-                            self.errors.append(error)
-                            var_id = self.define_variable(False, "var", arg_expr.ref.root, context, None)
-                        inputs[arg.name] = (InputType.BLOCK_AND_SHADOW,
-                                            (DataType.VARIABLE, arg_expr.ref.root, var_id))
-                else:
-                    if isinstance(arg, Menu):
-                        menu_value = self._menu_literal_value(arg_expr)
-
-                        if menu_value is not None:
-                            # StringExpr has no side effects, but AssetExpr
-                            # registers an asset symbol during emit_expr().
-                            if not isinstance(arg_expr, StringExpr):
-                                self.emit_expr(
-                                    arg_expr,
-                                    context,
-                                    block_parent,
-                                    block_id
-                                )
-
-                            menu_id = self.make_block(
-                                opcode=arg.opcode,
-                                parent=block_id,
-                                fields={
-                                    (arg.field_name or arg.name): (
-                                        menu_value,
-                                        None
-                                    )
-                                },
-                                shadow=True
-                            )
-
-                            inputs[arg.name] = (
-                                InputType.BLOCK_AND_SHADOW,
-                                menu_id
-                            )
-                        else:
-                            inputs[arg.name] = self.emit_expr(
-                                arg_expr,
-                                context,
-                                block_parent,
-                                block_id
-                            ).value
-
-                    elif isinstance(arg_expr, StringExpr):
-                        inputs[arg.name] = (
-                            InputType.BLOCK_AND_SHADOW,
-                            (arg.return_type, arg_expr.value)
-                        )
-
-                    else:
-                        inputs[arg.name] = self.emit_expr(
-                            arg_expr,
-                            context,
-                            block_parent,
-                            block_id
-                        ).value
-                index += 1
-
-            for field, arg_expr in zip(block_data.fields, expr.args[len(block_data.inputs):]):
-                if field.name in block_data.variables:
-                    if not isinstance(arg_expr, VarExpr):
-                        return self.raise_or_return(InvalidTypeError(
-                            f"{expr.callee}: argument {index} must be a variable",
-                            arg_expr
-                        ), PLACE_HOLDER_0)
-                    try:
-                        fields[field.name] = (arg_expr.ref.root, self.get_variable(arg_expr.ref, context))
-                    except NameError:
-                        error = Unbound(f"'{arg_expr.ref.root}' is not defined.", arg_expr, data={"name": arg_expr.ref.root})
-                        if not self.compile_with_warnings:
-                            return self.raise_or_return(
-                                error,
-                                PLACE_HOLDER_0
-                            )
-                        self.errors.append(error)
-                        fields[field.name] = (arg_expr.ref.root, self.define_variable(False, "var", arg_expr.ref.root, context, None))
-                else:
-                    if not isinstance(arg_expr, StringExpr):
-                        return self.raise_or_return(InvalidTypeError(
-                            f"{expr.callee}: argument {index} must be a string literal",
-                            arg_expr
-                        ), PLACE_HOLDER_0)
-
-                    if arg_expr.value not in field.expected and not field.is_variable:
-                        return self.raise_or_return(ArgumentError(f"'{arg_expr.value}' is not one of {field.expected}", arg_expr),
-                                                    PLACE_HOLDER_0)
-
-                    fields[field.name] = (arg_expr.value, None)
-                index += 1
-
-                
-            self.blocks[block_id]["fields"] = fields
-            self.blocks[block_id]["inputs"] = inputs
-
-            return ScratchInput(
-                (InputType.BLOCK_ONLY if VariableTypes.BOOL in block_data.return_type else InputType.BLOCK_AND_SHADOW, 
-                 block_id), block_data.return_type
+        if actual_args != expected_args:
+            return self.raise_or_return(
+                ArgumentError(
+                    f"Block '{expr.callee}' expects {expected_args} "
+                    f"argument(s), got {actual_args}",
+                    expr,
+                ),
+                PLACE_HOLDER_0,
             )
+
+        block_id = self.make_block(
+            opcode=expr.callee,
+            parent=parent,
+        )
+
+        inputs, fields = self._emit_scratch_slots(
+            callee=expr.callee,
+            args=expr.args,
+            block_data=block_data,
+            context=context,
+            block_parent=block_parent,
+            block_id=block_id,
+            literal_input_type=InputType.BLOCK_AND_SHADOW,
+        )
+
+        self.blocks[block_id]["inputs"] = inputs
+        self.blocks[block_id]["fields"] = fields
+
+        input_type = (
+            InputType.BLOCK_ONLY
+            if VariableTypes.BOOL in block_data.return_type
+            else InputType.BLOCK_AND_SHADOW
+        )
+
+        return ScratchInput(
+            (input_type, block_id),
+            block_data.return_type,
+        )
+
+    def _emit_procedure_expr(
+        self,
+        expr: FunctionCallExpr,
+        context: Context,
+        block_parent: BlockRange,
+        parent: StrOptional,
+    ) -> ScratchInput:
+        proc_info = self.procedures[expr.callee]
+
+        if VariableTypes.NOTHING in proc_info.return_types:
+            return self.raise_or_return(
+                ReturnNothingError(
+                    f"{expr.callee}: not all codepaths have a return statement",
+                    expr,
+                    data={"name": expr.callee},
+                ),
+                PLACE_HOLDER_0,
+            )
+
+        self._emit_return_helpers()
+
+        thread_id: Expr
+        if context.function_context in self.procedures:
+            thread_id = VarExpr(VarRef(THREAD_ARG))
+        else:
+            thread_id = NumberExpr(context.thread_id)
+
+        self.register_symbol(
+            SymbolOccurence(
+                span=expr.span,
+                definition_location=proc_info.definition_location,
+                context=context.function_context,
+                symbol_type=SymbolType.FUNCTION,
+                name=expr.callee,
+            ),
+            expr,
+        )
+
+        setup = BlockRange(None, None)
+
+        setup = self.append_range(
+            setup,
+            self.emit_function_call(
+                FunctionCallStmt(PUSH_RETURN_FRAME, (thread_id,)),
+                None,
+                context,
+            ),
+        )
+
+        setup = self.append_range(
+            setup,
+            self.emit_function_call(
+                FunctionCallStmt(expr.callee, expr.args),
+                None,
+                context,
+            ),
+        )
+
+        setup = self.append_range(
+            setup,
+            self.emit_assignment(
+                VarRef(expr.callee + ":return"),
+                FunctionCallExpr(
+                    "data_itemoflist",
+                    (
+                        BinaryOpExpr(
+                            VarExpr(VarRef(FRAME_INDEX)),
+                            "+",
+                            NumberExpr(1),
+                        ),
+                        VarExpr(VarRef(RETURN_STACK)),
+                    ),
+                ),
+                None,
+                context,
+            ),
+        )
+
+        setup = self.append_range(
+            setup,
+            self.emit_function_call(
+                FunctionCallStmt(POP_RETURN_FRAME, (thread_id,)),
+                None,
+                context,
+            ),
+        )
+
+        self.insert_setup_before_consumer(
+            block_parent,
+            setup,
+        )
+
+        return_input = self.emit_var_ref(
+            VarRef(expr.callee + ":return"),
+            context,
+            block_parent,
+            parent,
+        )
+        return_input.return_type = set(proc_info.return_types)
+
+        return return_input
 
     def emit_unary_expr(self, op: str, value: Expr, context: Context, block_parent: BlockRange, parent: StrOptional) -> ScratchInput:
         block_id = self.new_id()
