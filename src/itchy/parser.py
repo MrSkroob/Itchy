@@ -71,7 +71,8 @@ def print_token_safe(tokens: list[Token[Definitions]], pos: int):
 
 
 class Parser:
-    def __init__(self, *, skip_bad_tokens: bool=False, skip_rules_on_fail: Strategy=dict()) -> None:
+    def __init__(self, *, skip_bad_tokens: bool=False, skip_rules_on_fail: Strategy=dict(), 
+                 recoverable_rules: set[str] | None=None, terminators: set[str] | None=None) -> None:
         """
         skip_rules_on_fail makes the parser skip the rule entirely if that rule fails.
         rule_blacklist makes the parser not evaluate the rule at all.\n
@@ -84,8 +85,11 @@ class Parser:
 
         self.expected = ExpectedState()
         self.rule_stack: list[str] = []
+        self.alt_memo: dict[tuple[str, int], ParseResult] = {} # alternative might back track multiple times.
         self.skip_bad_tokens: bool = skip_bad_tokens
         self.skip_rules_on_fail = skip_rules_on_fail
+        self.recoverable_rules = recoverable_rules or set()
+        self.terminators = terminators or {"}", ";"}
         self.halt: bool = False
         # furthest place we got before failing
 
@@ -115,6 +119,30 @@ class Parser:
 
     def cancel(self):
         self.halt = True
+
+    def can_recover_repeat(self, current_rule: Rule) -> bool:
+        return current_rule.name in self.recoverable_rules
+
+    def _recover_to_next_line(self, tokens: list[Token[Definitions]], pos: int):
+        if pos >= len(tokens):
+            return pos
+
+        line = tokens[pos].line
+        i = pos
+
+        while i < len(tokens):
+            token = tokens[i]
+
+            # Don't consume a block closer. Let the parent grammar parse it.
+            if token.literal == "}":
+                return i
+
+            if token.line > line:
+                return i
+
+            i += 1
+
+        return i
 
     @property
     def expected_items(self):
@@ -286,8 +314,18 @@ class Parser:
 
                 for option in options:
                     try:
+                        key = (current_rule.name, pos)
+                        if not self.skip_bad_tokens:
+                            cached = self.alt_memo.get(key)
+                            if cached is not None:
+                                return cached
+                            
                         result = self.parse_node(current_rule, start_pos, option, tokens, pos, allow_recovery=allow_recovery)
                         debug_print(f"{print_token_safe(tokens, pos)}. Matched {node}")
+
+                        if not self.skip_bad_tokens:
+                            self.alt_memo[key] = result
+                            
                         return ParseResult(
                             ParsedNode(Alternative.__name__, (result.tree,)),
                             result.pos
@@ -404,7 +442,41 @@ class Parser:
                             self._consider_partial(recovered_repeat)
 
                         debug_print(f"{print_token_safe(tokens, pos)}. Skipping {node}")
-                        break
+
+                        if not self.skip_bad_tokens:
+                            break
+
+                        # chunks, statements, etc. do not try to recover from rules that
+                        # would cause the parser to get stuck in a forever loop.
+                        if not self.can_recover_repeat(current_rule):
+                            break
+
+                        if attempt_pos < len(tokens)\
+                            and tokens[attempt_pos].literal in ["}", ")", "]"]:
+                            break
+
+                        self.accumulated_errors.append(error)
+
+                        recovery_start = max(
+                            attempt_pos,
+                            min(error.pos, len(tokens)),
+                        )
+
+                        new_pos = self._recover_to_next_line(
+                            tokens,
+                            recovery_start,
+                        )
+
+                        # Guarantee forward progress for an otherwise unrecoverable
+                        # garbage token.
+                        if new_pos <= attempt_pos:
+                            if new_pos < len(tokens) and tokens[new_pos].literal == "}":
+                                break
+
+                            new_pos = min(attempt_pos + 1, len(tokens))
+
+                        pos = new_pos
+                        continue
                             
 
                     if result.pos == pos:
@@ -444,84 +516,85 @@ class Parser:
         self.deepest_partial = None
         self.accumulated_errors = []
         self.speculative_errors = {}
+        self.alt_memo = {}
 
         self.halt = False
         self.recovered_from_error = False
         root = get_root_node(self.rules)
         tokens = list(self.tokenizer.read(text))
 
-        if not self.skip_bad_tokens:
-            return self.parse(root, tokens)
-        else:
-            """
-            We slowly remove characters starting from the error location to the start of the rule until things work.
-            """
-            progress = -1
-            offset_tries = 8
-            direction_tries = offset_tries * 2
-            direction = 1
-            max_tries = direction_tries * 4
-            tries = 0
-            shift = 0
-            offset = 0
-            working_tokens = tokens.copy()
+        # if not self.skip_bad_tokens:
+        return self.parse(root, tokens)
+        # else:
+        #     """
+        #     We slowly remove characters starting from the error location to the start of the rule until things work.
+        #     """
+        #     progress = -1
+        #     offset_tries = 8
+        #     direction_tries = offset_tries * 2
+        #     direction = 1
+        #     max_tries = direction_tries * 4
+        #     tries = 0
+        #     shift = 0
+        #     offset = 0
+        #     working_tokens = tokens.copy()
 
-            while True:
-                try:
-                    result = self.parse(root, working_tokens)
-                    return result
-                except ParseError as e:
-                    if self.halt:
-                        raise InterruptedError()
-                    if len(tokens) == 0:
-                        raise
+        #     while True:
+        #         try:
+        #             result = self.parse(root, working_tokens)
+        #             return result
+        #         except ParseError as e:
+        #             if self.halt:
+        #                 raise InterruptedError()
+        #             if len(tokens) == 0:
+        #                 raise
 
-                    error = self.furthest_error or e
+        #             error = self.furthest_error or e
 
-                    error_pos = min(len(error.tokens) - 1, error.pos)
+        #             error_pos = min(len(error.tokens) - 1, error.pos)
 
-                    if len(error.tokens) == 0:
-                        raise
+        #             if len(error.tokens) == 0:
+        #                 raise
 
-                    line = 0
-                    # we made more progress, try to delete current line.
+        #             line = 0
+        #             # we made more progress, try to delete current line.
 
-                    if error_pos > progress:
-                        progress = error_pos
-                        tokens = working_tokens.copy()
-                        # don't record error if it's a dummy token
+        #             if error_pos > progress:
+        #                 progress = error_pos
+        #                 tokens = working_tokens.copy()
+        #                 # don't record error if it's a dummy token
 
-                        line = error.tokens[error_pos].line - offset
-                        shift = 0
-                        tries = 0
+        #                 line = error.tokens[error_pos].line - offset
+        #                 shift = 0
+        #                 tries = 0
 
-                        if not e.tokens[error_pos].dummy_token:
-                            # self.accumulated_errors = list(self.speculative_errors.values()) + \
-                                # [i for i in self.accumulated_errors if i.pos not in self.speculative_errors]
-                            # self.speculative_errors = {}
-                            self.accumulated_errors.append(error)
-                    else:
-                        # delete the line above until something works.
-                        line = (error.tokens[error_pos].line - offset) + shift
-                        shift -= direction
+        #                 if not e.tokens[error_pos].dummy_token:
+        #                     # self.accumulated_errors = list(self.speculative_errors.values()) + \
+        #                         # [i for i in self.accumulated_errors if i.pos not in self.speculative_errors]
+        #                     # self.speculative_errors = {}
+        #                     self.accumulated_errors.append(error)
+        #             else:
+        #                 # delete the line above until something works.
+        #                 line = (error.tokens[error_pos].line - offset) + shift
+        #                 shift -= direction
 
-                    working_tokens = [i for i in working_tokens if i.line != line]
+        #             working_tokens = [i for i in working_tokens if i.line != line]
 
-                    # bad hack :(
-                    # the error reporter sometimes reports the incorrect line by 1, so we need to test
-                    # offsets both 1 and 0.
-                    if tries % offset_tries == 0:
-                        shift = 0
-                        offset = 1
-                        working_tokens = tokens.copy()
+        #             # bad hack :(
+        #             # the error reporter sometimes reports the incorrect line by 1, so we need to test
+        #             # offsets both 1 and 0.
+        #             if tries % offset_tries == 0:
+        #                 shift = 0
+        #                 offset = 1
+        #                 working_tokens = tokens.copy()
 
-                    if tries % direction_tries == 0:
-                        shift = 0
-                        offset = 0
-                        working_tokens = tokens.copy()
-                        direction *= -1
+        #             if tries % direction_tries == 0:
+        #                 shift = 0
+        #                 offset = 0
+        #                 working_tokens = tokens.copy()
+        #                 direction *= -1
 
-                    if tries > max_tries:
-                        raise
-                tries += 1
+        #             if tries > max_tries:
+        #                 raise
+        #         tries += 1
             

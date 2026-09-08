@@ -195,7 +195,7 @@ class BNFTreeBuilder:
             if tok is None:
                 break
 
-            if tok.kind in {BNFRules.Pipe, BNFRules.CloseSquareBrace, BNFRules.CloseCurlyBrace, BNFRules.CloseBrace, GenericRules.StatementSeperator, GenericRules.Newline}:
+            if tok.kind in {BNFRules.Pipe, BNFRules.CloseSquareBrace, BNFRules.CloseCurlyBrace, BNFRules.CloseBrace, GenericRules.StatementSeparator, GenericRules.Newline}:
                 break
 
             children.append(self.parse_item())

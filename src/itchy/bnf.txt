@@ -1,16 +1,18 @@
 <program> ::= {<vardefstat>} <chunk> <EOF> 
-<chunk> ::= {<stat> {<StatementSeperator>}}
+<chunk> ::= {<stat> {<StatementSeparator>}}
 <stat> ::= <whilestat> | <ifstat> | <forstat> | <functionstat> | <eventstat> | <varassignstat> | <functioncall> | <foreverstat> | <laststat>
 
 <foreverstat> ::= <Forever> <wrap>
 <whilestat> ::= <While> <equation> <wrap>
 <ifstat> ::= <If> <equation> <wrap> {<ElseIf> <equation> <wrap>} [<Else> <wrap>]
 <forstat> ::= <For> <Symbol> <forbody> <wrap>
-<functionstat> ::= <Define> [<Warp>] <function>
+// some rules can have {} which are good enough to determine if a statement has ended.
+// others like 1 += 1 should have seperators t
+<functionstat> ::= <Define> [<Warp>] <function> <StatementSeparator>
 <eventstat> ::= <Event> <Symbol> <args> <wrap>
-<vardefstat> ::= [<Shared>] <Type> <Symbol>
-<varassignstat> ::= <var> <Assign> <equation>
-<functioncall> ::= <Symbol> <args>
+<vardefstat> ::= [<Shared>] <Type> <Symbol> <StatementSeparator>
+<varassignstat> ::= <var> <Assign> <equation> <StatementSeparator>
+<functioncall> ::= <Symbol> <args> <StatementSeparator>
 
 <asset> ::= <AssetType> <args>
 
