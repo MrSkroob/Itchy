@@ -75,8 +75,11 @@ class Parser:
                  recoverable_rules: set[str] | None=None, terminators: set[str] | None=None) -> None:
         """
         skip_rules_on_fail makes the parser skip the rule entirely if that rule fails.
-        rule_blacklist makes the parser not evaluate the rule at all.\n
-        Warning: if you do exact matches, then the parser will always assume there's a syntax error there (but will still continue)
+        
+        Please do not set rules that appear as mandatory in `recoverable_rules`. For example,
+        <chunk> might seem okay, but in <program> it is not wrapped with `[]` or `{}`, so it's considered mandatory.
+
+        Modify `terminators` to whatever your language requires. In Itchy's case, `}`, `]`, `;`, `)` are considered decent terminators. 
         """
 
         self.rules = build_parse_tree()
@@ -89,7 +92,7 @@ class Parser:
         self.skip_bad_tokens: bool = skip_bad_tokens
         self.skip_rules_on_fail = skip_rules_on_fail
         self.recoverable_rules = recoverable_rules or set()
-        self.terminators = terminators or {"}", ";"}
+        self.terminators = terminators or {"}", ";", ")", "]"}
         self.halt: bool = False
         # furthest place we got before failing
 
@@ -452,7 +455,7 @@ class Parser:
                             break
 
                         if attempt_pos < len(tokens)\
-                            and tokens[attempt_pos].literal in ["}", ")", "]"]:
+                            and tokens[attempt_pos].literal in self.terminators:
                             break
 
                         self.accumulated_errors.append(error)
