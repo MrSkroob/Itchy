@@ -7,15 +7,12 @@ from itchy.itch_ast import ASTBuilder, Program
 from itchy.errors import format_syntax_error, format_compiler_error
 from itchy.assembler import Assembler, CompilerError
 
-from itchy.dummy_nodes import ANALYSIS_STRATEGIES
-
 import argparse
 
 from pathlib import Path
 
 
-parser = Parser(skip_bad_tokens=True, skip_rules_on_fail=ANALYSIS_STRATEGIES, 
-                recoverable_rules={"stat", "wrap"})
+parser = Parser()
 
 ast_builder = ASTBuilder()
 assembler = Assembler("")
