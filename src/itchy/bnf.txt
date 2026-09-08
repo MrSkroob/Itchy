@@ -1,16 +1,19 @@
 <program> ::= {<vardefstat>} <chunk> <EOF> 
-<chunk> ::= {<stat> {<StatementSeperator>}}
+<chunk> ::= {<stat> {<StatementSeparator>}}
 <stat> ::= <whilestat> | <ifstat> | <forstat> | <functionstat> | <eventstat> | <varassignstat> | <functioncall> | <foreverstat> | <laststat>
 
+<vardefstat> ::= [<Shared>] <Type> <Symbol> <StatementSeparator>
 <foreverstat> ::= <Forever> <wrap>
 <whilestat> ::= <While> <equation> <wrap>
 <ifstat> ::= <If> <equation> <wrap> {<ElseIf> <equation> <wrap>} [<Else> <wrap>]
 <forstat> ::= <For> <Symbol> <forbody> <wrap>
+// some rules can have {} and () which are good enough to determine if a statement has ended.
+// others like 1 += 1 should have seperators
 <functionstat> ::= <Define> [<Warp>] <function>
 <eventstat> ::= <Event> <Symbol> <args> <wrap>
-<vardefstat> ::= [<Shared>] <Type> <Symbol>
-<varassignstat> ::= <var> <Assign> <equation>
+<varassignstat> ::= <var> <Assign> <equation> <StatementSeparator>
 <functioncall> ::= <Symbol> <args>
+<laststat> ::= <Return> [<varlist1>] <StatementSeparator>
 
 <asset> ::= <AssetType> <args>
 
@@ -18,8 +21,6 @@
 <tableconstructor> ::= "[" [<varlist1>] "]"
 <wrap> ::= "{" [<chunk>] "}"
 <function> ::= <Symbol> <funcbody>
-// <event> ::= <Symbol> <eventbody>
-// <eventbody> ::= <args> <wrap>
 <funcbody> ::= "(" [<paramlist>] ")" <wrap>
 <slice> ::= "[" <equation> "]"
 <equation> ::= <comparison>
@@ -31,7 +32,6 @@
 <var> ::= <Symbol> [<slice>]
 <literals> ::= <functioncall> | <tableconstructor> | <var> | <Bool> | <Number> | <String> | <asset>
 // <explist1> ::= <equation> {<FieldSeperator> <explist1>}
-<laststat> ::= <Return> [<varlist1>]
 <varlist1> ::= <equation> {<FieldSeperator> <equation>} [<FieldSeperator>]
 <args> ::= "(" [<varlist1>] ")"
 <argtype> ::= <Symbol> <Colon> <Type>

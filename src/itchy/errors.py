@@ -81,7 +81,7 @@ EXPECTED_PRIORITY: dict[Definitions, int] = {
     # Structural punctuation
     Definitions.FieldSeperator: 1,
     Definitions.Colon: 1,
-    Definitions.StatementSeperator: 1,
+    Definitions.StatementSeparator: 1,
 
     # Keywords
     Definitions.Else: 2,
@@ -137,7 +137,7 @@ TOKEN_NAMES: dict[str, str] = {
     Definitions.CloseSquareBracket.name: "']'",
     Definitions.OpenCurlyBracket.name: "'{'",
     Definitions.CloseCurlyBracket.name: "'}'",
-    Definitions.StatementSeperator.name: "';'",
+    Definitions.StatementSeparator.name: "';'",
 }
 
 

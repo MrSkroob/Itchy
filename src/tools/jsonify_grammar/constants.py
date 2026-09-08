@@ -39,7 +39,7 @@ class Definitions(StrEnum):
     CloseSquareBracket = r"\]"
     CloseCurlyBracket = r"\}"
     Whitespace = r"[ \t]+"
-    StatementSeperator = r";"
+    StatementSeparator = r";"
 
 
 SCOPE_GROUPS: dict[str, tuple[Definitions, ...]] = {

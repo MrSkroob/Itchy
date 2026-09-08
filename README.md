@@ -113,7 +113,7 @@ The file's name (e.g. `Sprite1.itch`) will replace the contents of `Sprite1` in 
 # Grammar:
 ```
 <program> ::= {<vardefstat>} <chunk> <EOF> 
-<chunk> ::= {<stat> {<StatementSeperator>}} [<laststat> {<StatementSeperator>}]
+<chunk> ::= {<stat> {<StatementSeparator>}} [<laststat> {<StatementSeparator>}]
 <stat> ::= <wrap> | <whilestat> | <ifstat> | <forstat> | <functionstat> | <eventstat> | <varassignstat> | <functioncall>
 
 <whilestat> ::= <While> <equation> <wrap>

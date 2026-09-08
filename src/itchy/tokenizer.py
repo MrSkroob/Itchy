@@ -7,7 +7,7 @@ import re
 # these tend to be treated specially other than the other rules below:
 class GenericRules(StrEnum):
     Whitespace = "WHITESPACE"
-    StatementSeperator = "STATEMENT_SEPERATOR"
+    StatementSeparator = "STATEMENT_SEPERATOR"
     Newline = "NEWLINE"
     EOF = "EOF"
 
@@ -113,7 +113,7 @@ class Definitions(StrEnum):
     CloseSquareBracket = r"\]"
     CloseCurlyBracket = r"\}"
     Whitespace = r"[ \t]+"
-    StatementSeperator = r";"
+    StatementSeparator = r";"
 
 # regex that is vital in interpreting bnf. 
 class BNFRules(StrEnum):

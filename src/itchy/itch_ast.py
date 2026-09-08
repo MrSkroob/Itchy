@@ -1200,7 +1200,7 @@ class ASTBuilder:
         statements: list[Stmt] = []
     
         for child in flat_children(node):
-            if is_token(child, name=GenericRules.StatementSeperator.name):
+            if is_token(child, name=GenericRules.StatementSeparator.name):
                 continue
             if is_token(child, name=GenericRules.EOF.name):
                 continue
