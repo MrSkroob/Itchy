@@ -3,20 +3,34 @@ from itchy.tokenizer import Definitions, Token
 from itchy.tree import ParsedNode, Alternative, Sequence, OptionalNode
 
 
-def find_token(node: ParsedNode, kind: Definitions) -> tuple[Token[Definitions], bool] | None:
-    for index, token in enumerate(node.children):
+def extract_tokens(node: ParsedNode) -> list[Token[Definitions]]:
+    tokens: list[Token[Definitions]] = []
+
+    for token in node.children:
+        if not isinstance(token, Token):
+            tokens.extend(extract_tokens(token))
+            continue
+        tokens.append(token)
+
+    return tokens
+
+
+def find_tokens(node: ParsedNode, kind: Definitions) -> list[Token[Definitions]]:
+    tokens: list[Token[Definitions]] = []
+
+    for token in node.children:
         if not isinstance(token, Token):
             continue
         if token.kind == kind:
-            return token, index == len(node.children) - 1
+            tokens.append(token)
+            # return token, index == len(node.children) - 1
 
     for child in node.children:
         if isinstance(child, ParsedNode):
-            result = find_token(child, kind)
-            if result is not None:
-                return result
+            result = find_tokens(child, kind)
+            tokens.extend(result)
 
-    return None
+    return tokens
 
 
 def find_nodes(node: ParsedNode, name: str) -> list[ParsedNode]:
@@ -35,6 +49,11 @@ def find_nodes(node: ParsedNode, name: str) -> list[ParsedNode]:
 def find_last_node(node: ParsedNode, name: str) -> ParsedNode | None:
     nodes = find_nodes(node, name)
     return nodes[-1] if nodes else None
+
+
+def make_equation(line: int=1, char: int=1):
+    number = Token(Definitions.Number, "0", line, char, dummy_token=True)
+    return (number,)
 
 
 def make_dummy_primary(line: int = 1, char: int = 1) -> tuple[ParsedNode]:

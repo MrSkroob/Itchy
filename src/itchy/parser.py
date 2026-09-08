@@ -126,22 +126,48 @@ class Parser:
     def can_recover_repeat(self, current_rule: Rule) -> bool:
         return current_rule.name in self.recoverable_rules
 
+    def advance(self, initial_pos: int, error: ParseError, tokens: list[Token[Definitions]]):
+        recovery_start = max(
+            initial_pos,
+            min(error.pos, len(tokens)),
+        )
+
+        new_pos = self._recover_to_next_line(
+            tokens,
+            recovery_start,
+        )
+
+        # Guarantee forward progress for an otherwise unrecoverable
+        # garbage token.
+        if new_pos <= initial_pos:
+            if new_pos < len(tokens) and tokens[new_pos].literal == "}":
+                return
+
+            new_pos = min(new_pos + 1, len(tokens))
+
+        # okay, if we're still not advancing we're probably at EOF.
+        if new_pos == initial_pos:
+            return
+
+        return new_pos
+
     def _recover_to_next_line(self, tokens: list[Token[Definitions]], pos: int):
         if pos >= len(tokens):
             return pos
 
-        line = tokens[pos].line
+        # line = tokens[pos].line
         i = pos
 
         while i < len(tokens):
             token = tokens[i]
 
             # Don't consume a block closer. Let the parent grammar parse it.
-            if token.literal == "}":
+            if token.literal in self.terminators:
+                i += 1
                 return i
 
-            if token.line > line:
-                return i
+            # if token.line > line:
+            #     return i
 
             i += 1
 
@@ -359,6 +385,7 @@ class Parser:
                             best_error = error
                             # best_progress = progress
                         self.make_error(tokens, start_pos, pos, current_rule, node)
+
                 debug_print(f"Nothing matched {node}. {print_token_safe(tokens, pos)}")
                 assert best_error is not None
 
@@ -375,6 +402,10 @@ class Parser:
 
                     best_error.previous_valid_tree = partial_result
                     self._consider_partial(partial_result)
+                if self.skip_bad_tokens:
+                    if new_pos := self.advance(pos, best_error, tokens):
+                        self.accumulated_errors.append(best_error)
+                        return self.parse_node(current_rule, pos, node, tokens, new_pos, allow_recovery=allow_recovery)
 
                 raise best_error
         
@@ -463,7 +494,7 @@ class Parser:
 
                         debug_print(f"{print_token_safe(tokens, pos)}. Skipping {node}")
 
-                        if not self.skip_bad_tokens:
+                        if not allow_recovery:
                             break
 
                         # chunks, statements, etc. do not try to recover from rules that
@@ -477,26 +508,30 @@ class Parser:
 
                         self.accumulated_errors.append(error)
 
-                        recovery_start = max(
-                            attempt_pos,
-                            min(error.pos, len(tokens)),
-                        )
+                        if new_pos := self.advance(attempt_pos, error, tokens):
+                            pos = new_pos
+                            continue
 
-                        new_pos = self._recover_to_next_line(
-                            tokens,
-                            recovery_start,
-                        )
+                        break
+                        # recovery_start = max(
+                        #     attempt_pos,
+                        #     min(error.pos, len(tokens)),
+                        # )
 
-                        # Guarantee forward progress for an otherwise unrecoverable
-                        # garbage token.
-                        if new_pos <= attempt_pos:
-                            if new_pos < len(tokens) and tokens[new_pos].literal == "}":
-                                break
+                        # new_pos = self._recover_to_next_line(
+                        #     tokens,
+                        #     recovery_start,
+                        # )
 
-                            new_pos = min(attempt_pos + 1, len(tokens))
+                        # # Guarantee forward progress for an otherwise unrecoverable
+                        # # garbage token.
+                        # if new_pos <= attempt_pos:
+                        #     if new_pos < len(tokens) and tokens[new_pos].literal == "}":
+                        #         break
 
-                        pos = new_pos
-                        continue
+                        #     new_pos = min(attempt_pos + 1, len(tokens))
+
+                        # pos = new_pos
                             
 
                     if result.pos == pos:

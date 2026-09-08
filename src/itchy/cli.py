@@ -2,9 +2,10 @@
 # This code was developed with assistance from OpenAI's ChatGPT.
 # AI-generated suggestions were reviewed, modified, and integrated by the author.
 
+from itchy.dummy_nodes import ANALYSIS_STRATEGIES
 from itchy.parser import Parser, ParseError
 from itchy.itch_ast import ASTBuilder, Program
-from itchy.errors import format_syntax_error, format_compiler_error
+from itchy.errors import format_compiler_error, format_syntax_error
 from itchy.assembler import Assembler, CompilerError
 
 import argparse
@@ -35,13 +36,6 @@ def compile_targets(
             output = output / "Scratch Project.sb3"
     
         try:
-            # Once the output exists, prepare() can load project-wide
-            # variables/broadcasts from the already-compiled Stage.
-            # if output.exists():
-            #     assembler.prepare(str(output))
-            # else:
-            #     assembler.prepare()
-    
             parsed = parser.read(source)
             tree = ast_builder.build(parsed.tree)
             programs[file.stem] = tree
