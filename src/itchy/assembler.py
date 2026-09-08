@@ -1412,7 +1412,7 @@ class Assembler:
         context = Context(
             function_context=None,
             layer=DEFAULT_LAYER,
-            thread_id=context.thread_id,
+            thread_id=self.new_thread_id(),
         )
 
         event_id = self.make_block(
