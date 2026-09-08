@@ -2,6 +2,7 @@
 <chunk> ::= {<stat> {<StatementSeparator>}}
 <stat> ::= <whilestat> | <ifstat> | <forstat> | <functionstat> | <eventstat> | <varassignstat> | <functioncall> | <foreverstat> | <laststat>
 
+<vardefstat> ::= [<Shared>] <Type> <Symbol> <StatementSeparator>
 <foreverstat> ::= <Forever> <wrap>
 <whilestat> ::= <While> <equation> <wrap>
 <ifstat> ::= <If> <equation> <wrap> {<ElseIf> <equation> <wrap>} [<Else> <wrap>]
@@ -10,7 +11,6 @@
 // others like 1 += 1 should have seperators
 <functionstat> ::= <Define> [<Warp>] <function>
 <eventstat> ::= <Event> <Symbol> <args> <wrap>
-<vardefstat> ::= [<Shared>] <Type> <Symbol> <StatementSeparator>
 <varassignstat> ::= <var> <Assign> <equation> <StatementSeparator>
 <functioncall> ::= <Symbol> <args>
 <laststat> ::= <Return> [<varlist1>] <StatementSeparator>

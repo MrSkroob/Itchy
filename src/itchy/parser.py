@@ -242,6 +242,7 @@ class Parser:
                         del self.speculative_errors[pos]
 
                     return ParseResult(tokens[pos], pos + 1)
+
                 self.record_expected(node.child, pos)
                 debug_print(f"{print_token_safe(tokens, pos)}. Terminal rule not matched {value.name}")
 
@@ -298,10 +299,26 @@ class Parser:
                             )
                             self._consider_partial(partial_result)
 
-                        debug_print(f"{print_token_safe(tokens, pos)}. Sequence broken {node}.")
-                        # propagate the error upwards
-                        raise self.make_error(tokens, pos, start_pos, current_rule, node, partial_result)
-                    
+                        error = self.make_error(tokens, pos, start_pos, current_rule, node, partial_result)
+                        if not self.skip_bad_tokens:
+                            debug_print(f"{print_token_safe(tokens, pos)}. Sequence broken {node}.")
+                            # propagate the error upwards
+                            raise error
+
+                        # if self.can_recover_repeat(current_rule):
+                        #     if isinstance()
+                        if not self.can_recover_repeat(current_rule):
+                            raise error
+
+                        if not isinstance(child, Terminal):
+                            raise error
+
+                        recovery_token = self.skip_rules_on_fail.get(child.child)
+                        if not recovery_token:
+                            raise error
+                        
+                        self.accumulated_errors.append(error)
+                        parsed_children.append(recovery_token()[0])
                 
                 if result is None:
                     raise AssertionError("Invalid tree - empty sequence")
@@ -527,7 +544,11 @@ class Parser:
         tokens = list(self.tokenizer.read(text))
 
         # if not self.skip_bad_tokens:
-        return self.parse(root, tokens)
+        try:
+            return self.parse(root, tokens)
+        except ParseError as e:
+            self.accumulated_errors.append(self.furthest_error or e)
+            raise 
         # else:
         #     """
         #     We slowly remove characters starting from the error location to the start of the rule until things work.

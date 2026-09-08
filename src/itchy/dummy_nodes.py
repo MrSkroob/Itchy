@@ -179,6 +179,16 @@ def make_stat(line: int=1, char: int=1):
     )
 
 
+def make_bracket_factory(bracket: str, token_kind: Definitions):
+    def bracket_factory(line: int=1, char: int=1):
+        return (Token(
+            token_kind,
+            literal=bracket,
+            line=line,
+            char=char,
+            dummy_token=True
+        ),)
+    return bracket_factory
 
 class DummyFactory(Protocol):
     def __call__(self, line: int=1, char: int=1) -> tuple[ParsedNode | Token[Definitions], ...]:
@@ -190,7 +200,10 @@ Strategy = dict[str, DummyFactory]
 
 RECOVERY_STRATEGIES: Strategy = {
     "primary": make_dummy_primary,
-    "args": make_args
+    "args": make_args,
+    Definitions.OpenBracket: make_bracket_factory("(", Definitions.OpenBracket),
+    Definitions.OpenCurlyBracket: make_bracket_factory("{", Definitions.OpenCurlyBracket),
+    Definitions.OpenSquareBracket: make_bracket_factory("[", Definitions.OpenSquareBracket)
 }
 
 
@@ -205,6 +218,9 @@ ANALYSIS_STRATEGIES: Strategy = {
     "primary": make_dummy_primary,
     "stat": make_stat,
     "varlist1": make_paramlist,
+    Definitions.OpenBracket: make_bracket_factory("(", Definitions.OpenBracket),
+    Definitions.OpenCurlyBracket: make_bracket_factory("{", Definitions.OpenCurlyBracket),
+    Definitions.OpenSquareBracket: make_bracket_factory("[", Definitions.OpenSquareBracket)
     # "wrap": make_wrap,
     # "chunk": make_chunk,
     # Definitions.CloseCurlyBracket.name: dummy_token_factory(Definitions.CloseCurlyBracket, "}"),
