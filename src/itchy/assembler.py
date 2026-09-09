@@ -2712,15 +2712,16 @@ class Assembler:
             self.flag_referenced_variable(self.variable_map[(arg_name, function_context)], context)
 
             print("parameter var ref", ref.root)
-            self.register_symbol(
-                SymbolOccurence(
-                    span=ref.span,
-                    definition_location=self.variables[self.variable_map[(arg_name, function_context)]].definition_location,
-                    context=function_context,
-                    symbol_type=SymbolType.PARAMETER,
-                    name=ref.root
-                ), ref
-            )
+            if not block_parent.manufactured:
+                self.register_symbol(
+                    SymbolOccurence(
+                        span=ref.span,
+                        definition_location=self.variables[self.variable_map[(arg_name, function_context)]].definition_location,
+                        context=function_context,
+                        symbol_type=SymbolType.PARAMETER,
+                        name=ref.root
+                    ), ref
+                )
 
             reporter_id = self.make_block(
                 opcode=opcode,
