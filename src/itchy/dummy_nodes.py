@@ -237,9 +237,13 @@ ANALYSIS_STRATEGIES: Strategy = {
     "primary": make_dummy_primary,
     "stat": make_stat,
     "varlist1": make_paramlist,
-    Definitions.OpenBracket: make_bracket_factory("(", Definitions.OpenBracket),
-    Definitions.OpenCurlyBracket: make_bracket_factory("{", Definitions.OpenCurlyBracket),
-    Definitions.OpenSquareBracket: make_bracket_factory("[", Definitions.OpenSquareBracket)
+    # Definitions.OpenBracket.name: make_bracket_factory("(", Definitions.OpenBracket),
+    # Definitions.OpenCurlyBracket.name: make_bracket_factory("{", Definitions.OpenCurlyBracket),
+    # Definitions.OpenSquareBracket.name: make_bracket_factory("[", Definitions.OpenSquareBracket),
+    Definitions.CloseBracket.name: make_bracket_factory(")", Definitions.CloseBracket),
+    Definitions.CloseCurlyBracket.name: make_bracket_factory("}", Definitions.CloseCurlyBracket),
+    Definitions.CloseSquareBracket.name: make_bracket_factory("]", Definitions.CloseSquareBracket),
+    Definitions.StatementSeparator.name: make_bracket_factory(";", Definitions.StatementSeparator)
     # "wrap": make_wrap,
     # "chunk": make_chunk,
     # Definitions.CloseCurlyBracket.name: dummy_token_factory(Definitions.CloseCurlyBracket, "}"),

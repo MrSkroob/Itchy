@@ -254,8 +254,10 @@ def format_syntax_error(
     source_lines = source.splitlines()
 
     source_index = line_number
-    if not (0 <= source_index < len(source_lines)):
+    if 0 <= source_index < len(source_lines):
         source_index = line_number - 1
+
+    character -= 1
 
     line_text = (
         source_lines[source_index]
@@ -263,12 +265,11 @@ def format_syntax_error(
         else ""
     )
 
-    display_line = source_index + 1
     caret_padding = _visual_padding(line_text[:character])
     caret = " " * caret_padding + "^" * underline_length
 
     return (
-        f'  File "{filename}", line {display_line}, column {character}\n'
+        f'  File "{filename}", line {source_index}, column {character}\n'
         f"    {line_text}\n"
         f"    {caret}\n"
         f"SyntaxError: {message}"

@@ -70,9 +70,16 @@ def print_token_safe(tokens: list[Token[Definitions]], pos: int):
     return tokens[min(pos, len(tokens) - 1)].literal
 
 
+BRACKET_PAIRS: dict[str, str] = {
+    "{": "}",
+    "(": ")",
+    "[": "]"
+}
+
+
 class Parser:
     def __init__(self, *, skip_bad_tokens: bool=False, skip_rules_on_fail: Strategy=dict(), 
-                 recoverable_rules: set[str] | None=None, terminators: set[str] | None=None) -> None:
+                 recoverable_rules: set[str] | None=None) -> None:
         """
         skip_rules_on_fail makes the parser skip the rule entirely if that rule fails.
         
@@ -92,7 +99,9 @@ class Parser:
         self.skip_bad_tokens: bool = skip_bad_tokens
         self.skip_rules_on_fail = skip_rules_on_fail
         self.recoverable_rules = recoverable_rules or set()
-        self.terminators = terminators or {"}", ";", ")", "]"}
+        # self.terminators = {"}", ";", ")", "]"}
+        # self.opening_terminators = {"{", "(", "["}
+        self.unclosed_terminators: list[str] = []
         self.halt: bool = False
         # furthest place we got before failing
 
@@ -132,7 +141,7 @@ class Parser:
             min(error.pos, len(tokens)),
         )
 
-        new_pos = self._recover_to_next_line(
+        new_pos = self._skip_block(
             tokens,
             recovery_start,
         )
@@ -140,7 +149,7 @@ class Parser:
         # Guarantee forward progress for an otherwise unrecoverable
         # garbage token.
         if new_pos <= initial_pos:
-            if new_pos < len(tokens) and tokens[new_pos].literal == "}":
+            if new_pos < len(tokens) and tokens[new_pos].literal in BRACKET_PAIRS.values():
                 return
 
             new_pos = min(new_pos + 1, len(tokens))
@@ -151,7 +160,7 @@ class Parser:
 
         return new_pos
 
-    def _recover_to_next_line(self, tokens: list[Token[Definitions]], pos: int):
+    def _skip_block(self, tokens: list[Token[Definitions]], pos: int):
         if pos >= len(tokens):
             return pos
 
@@ -161,10 +170,9 @@ class Parser:
         while i < len(tokens):
             token = tokens[i]
 
-            # Don't consume a block closer. Let the parent grammar parse it.
-            if token.literal in self.terminators:
-                i += 1
-                return i
+            # skip the entire hecking block!
+            if token.literal in BRACKET_PAIRS.values():
+                return min(i + 1, len(tokens) - 1)
 
             # if token.line > line:
             #     return i
@@ -296,8 +304,8 @@ class Parser:
                             
                         parsed_children.append(result.tree)
                         pos = result.pos
-                    except ParseError as error:      
-                        partial = error.previous_valid_tree
+                    except ParseError as e:      
+                        partial = e.previous_valid_tree
 
                         if partial is not None:
                             partial_result = ParseResult(
@@ -312,7 +320,7 @@ class Parser:
                             )
 
                             self._consider_partial(partial_result)
-                            error.previous_valid_tree = partial_result
+                            e.previous_valid_tree = partial_result
                         else:
                             partial_result = ParseResult(
                                 ParsedNode(
@@ -328,18 +336,16 @@ class Parser:
                         error = self.make_error(tokens, pos, start_pos, current_rule, node, partial_result)
                         if not self.skip_bad_tokens:
                             debug_print(f"{print_token_safe(tokens, pos)}. Sequence broken {node}.")
-                            # propagate the error upwards
+                            raise error
+                        # if not allow_recovery:
+                        #     debug_print(f"{print_token_safe(tokens, pos)}. Sequence broken {node}.")
+                        #     # propagate the error upwards
+                        #     raise error
+                        if not isinstance(e.node, Terminal):
+                            debug_print(f"{print_token_safe(tokens, pos)}. Sequence broken {node}.")
                             raise error
 
-                        # if self.can_recover_repeat(current_rule):
-                        #     if isinstance()
-                        if not self.can_recover_repeat(current_rule):
-                            raise error
-
-                        if not isinstance(child, Terminal):
-                            raise error
-
-                        recovery_token = self.skip_rules_on_fail.get(child.child)
+                        recovery_token = self.skip_rules_on_fail.get(e.node.child.name)
                         if not recovery_token:
                             raise error
                         
@@ -356,12 +362,11 @@ class Parser:
 
             case Alternative(options):
                 best_error: ParseError | None = None
-                # best_progress = -1
 
                 for option in options:
                     try:
                         key = (current_rule.name, pos)
-                        if not self.skip_bad_tokens:
+                        if not allow_recovery:
                             cached = self.alt_memo.get(key)
                             if cached is not None:
                                 return cached
@@ -369,7 +374,7 @@ class Parser:
                         result = self.parse_node(current_rule, start_pos, option, tokens, pos, allow_recovery=allow_recovery)
                         debug_print(f"{print_token_safe(tokens, pos)}. Matched {node}")
 
-                        if not self.skip_bad_tokens:
+                        if not allow_recovery:
                             self.alt_memo[key] = result
                             
                         return ParseResult(
@@ -389,6 +394,9 @@ class Parser:
                 debug_print(f"Nothing matched {node}. {print_token_safe(tokens, pos)}")
                 assert best_error is not None
 
+                # we want to first check if any of these 'alternative rules' actually advanced. 
+                # if they did, then they are likely something that we can recover
+
                 partial = best_error.previous_valid_tree
 
                 if partial is not None:
@@ -402,7 +410,8 @@ class Parser:
 
                     best_error.previous_valid_tree = partial_result
                     self._consider_partial(partial_result)
-                if self.skip_bad_tokens:
+
+                if self.skip_bad_tokens and self.can_recover_repeat(current_rule):
                     if new_pos := self.advance(pos, best_error, tokens):
                         self.accumulated_errors.append(best_error)
                         return self.parse_node(current_rule, pos, node, tokens, new_pos, allow_recovery=allow_recovery)
@@ -503,7 +512,7 @@ class Parser:
                             break
 
                         if attempt_pos < len(tokens)\
-                            and tokens[attempt_pos].literal in self.terminators:
+                            and tokens[attempt_pos].literal in BRACKET_PAIRS.values():
                             break
 
                         self.accumulated_errors.append(error)

@@ -13,7 +13,9 @@ import argparse
 from pathlib import Path
 
 
-parser = Parser()
+parser = Parser(skip_bad_tokens=True, skip_rules_on_fail=ANALYSIS_STRATEGIES, recoverable_rules={"stat", 
+                                                                                                 "wrap",
+                                                                                                 })
 
 ast_builder = ASTBuilder()
 assembler = Assembler("")

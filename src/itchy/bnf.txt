@@ -1,6 +1,6 @@
 <program> ::= {<vardefstat>} <chunk> <EOF> 
 <chunk> ::= {<stat> {<StatementSeparator>}}
-<stat> ::= <whilestat> | <ifstat> | <forstat> | <functionstat> | <eventstat> | <varassignstat> | <functioncall> | <foreverstat> | <laststat>
+<stat> ::= <whilestat> | <ifstat> | <forstat> | <functionstat> | <eventstat> | <varassignstat> <StatementSeparator> | <functioncall> <StatementSeparator> | <foreverstat> | <laststat> <StatementSeparator>
 
 <vardefstat> ::= [<Shared>] <Type> <Symbol> <StatementSeparator>
 <foreverstat> ::= <Forever> <wrap>
@@ -11,9 +11,9 @@
 // others like 1 += 1 should have seperators
 <functionstat> ::= <Define> [<Warp>] <function>
 <eventstat> ::= <Event> <Symbol> <args> <wrap>
-<varassignstat> ::= <var> <Assign> <equation> <StatementSeparator>
+<varassignstat> ::= <var> <Assign> <equation>
 <functioncall> ::= <Symbol> <args>
-<laststat> ::= <Return> [<varlist1>] <StatementSeparator>
+<laststat> ::= <Return> [<varlist1>]
 
 <asset> ::= <AssetType> <args>
 
