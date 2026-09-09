@@ -1937,13 +1937,13 @@ class Assembler:
         try:
             var_id = self.get_variable(target, context)
             variable = self.variables[var_id]
-            self.register_symbol(SymbolOccurence(
-                span=target.span,
-                definition_location=variable.definition_location,
-                context=context.function_context,
-                symbol_type=SymbolType.VARIABLE,
-                name=target.root
-            ), target)
+            # self.register_symbol(SymbolOccurence(
+            #     span=target.span,
+            #     definition_location=variable.definition_location,
+            #     context=context.function_context,
+            #     symbol_type=SymbolType.VARIABLE,
+            #     name=target.root
+            # ), target)
         except NameError:
             error = Unbound(f"'{target.root}' is not defined.", target, data={"name": target.root})
             if not self.compile_with_warnings:
