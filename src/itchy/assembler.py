@@ -2165,13 +2165,14 @@ class Assembler:
                     return self.raise_or_return(InvalidTypeError(
                         f"{expr.asset_type.value}: argument 0 must be a string literal", expr.args[0]
                     ), PLACE_HOLDER_0)
-                self.register_symbol(SymbolOccurence(
-                    span=expr.span,
-                    definition_location=expr.args[0].span,
-                    context=context.function_context,
-                    symbol_type=SymbolType.ASSET,
-                    name=expr.args[0].value
-                ), expr)
+                if not block_parent.manufactured:
+                    self.register_symbol(SymbolOccurence(
+                        span=expr.span,
+                        definition_location=expr.args[0].span,
+                        context=context.function_context,
+                        symbol_type=SymbolType.ASSET,
+                        name=expr.args[0].value
+                    ), expr)
 
                 return ScratchInput((InputType.SHADOW_ONLY, (DataType.STRING, expr.args[0].value)), {VariableTypes.STRING})
             case BoolExpr(value=value):
@@ -2652,12 +2653,12 @@ class Assembler:
 
         if op == "in":
             right_type_check = VariableTypes.STRING
-        elif op in {"==", "and", "or"}:
+        elif op in {"and", "or"}:
             left_type_check = VariableTypes.BOOL
             right_type_check = VariableTypes.BOOL
         else:
-            left_type_check = VariableTypes.NUMBER
-            right_type_check = VariableTypes.NUMBER
+            left_type_check = VariableTypes.VAR
+            right_type_check = VariableTypes.VAR
 
         if not self.type_check(left_type_check, left_expr.return_type, left):
             self.raise_or_return(
@@ -2710,6 +2711,7 @@ class Assembler:
 
             self.flag_referenced_variable(self.variable_map[(arg_name, function_context)], context)
 
+            print("parameter var ref", ref.root)
             self.register_symbol(
                 SymbolOccurence(
                     span=ref.span,
