@@ -835,7 +835,7 @@ class ASTBuilder:
         type_name = expect_token(children[2], name="Type")
         self.emit_token(type_name, "type")
     
-        return Param(name.literal, type_name.literal, span=SourceSpan(name.span.start, type_name.span.end), dummy=node.dummy_node)
+        return Param(name.literal, type_name.literal, span=name.span, dummy=node.dummy_node)
     
     
     def build_funcbody(self, node: ParsedNode) -> tuple[tuple[Param, ...], BlockStmt | None]:
