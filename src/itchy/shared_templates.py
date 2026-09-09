@@ -126,6 +126,7 @@ class AssetTypes(StrEnum):
     SPRITE = "sprite"
     COSTUME = "costume"
     SOUND = "sound"
+    MESSAGE = "message"
 
 # 
 VARIABLE_TYPE_TO_USER_TYPES: dict[VariableTypes, VariableTypes] = {

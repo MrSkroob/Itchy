@@ -955,13 +955,6 @@ class Assembler:
 
         if arg.name in broadcasts:
             if isinstance(arg_expr, StringExpr):
-                self.register_symbol(SymbolOccurence(
-                    span=arg_expr.span,
-                    definition_location=None,
-                    context=None,
-                    symbol_type=SymbolType.MESSAGE,
-                    name=arg_expr.value
-                ), arg_expr)
                 broadcast_id = self.define_broadcast(arg_expr.value)
                 return (
                     InputType.SHADOW_ONLY,
@@ -1149,13 +1142,6 @@ class Assembler:
             )
 
         if field.name in broadcasts:
-            self.register_symbol(SymbolOccurence(
-                span=arg_expr.span,
-                definition_location=None,
-                context=None,
-                symbol_type=SymbolType.MESSAGE,
-                name=arg_expr.value
-            ), arg_expr)
             return (
                 arg_expr.value,
                 self.define_broadcast(arg_expr.value),
