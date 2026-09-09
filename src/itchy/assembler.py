@@ -723,9 +723,9 @@ class Assembler:
                 # all 'wrap' things are consumed. there aren't really any individual {} statements.
                 return self.emit_sequence(body, parent, context)
             case VarDefStmt(shared=shared, type_name=type_name, name=name):
-                if type_name not in {VariableTypes.VAR.value, VariableTypes.LIST.value, VariableTypes.BOOL.value}:
-                    return self.raise_or_return(InvalidTypeError(f"Invalid variable type: '{type_name}'.\
-                                                                 Scratch only permits var, list and bool.", stmt))
+                # if type_name not in {VariableTypes.VAR.value, VariableTypes.LIST.value, VariableTypes.BOOL.value}:
+                #     return self.raise_or_return(InvalidTypeError(f"Invalid variable type: '{type_name}'.\
+                #                                                  Scratch only permits var, list and bool.", stmt))
 
 
                 if name not in self.overridable and (name, None) in self.variable_map:
