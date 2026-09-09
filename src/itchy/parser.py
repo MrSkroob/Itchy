@@ -286,8 +286,8 @@ class Parser:
                 error = self.make_error(tokens, pos, start_pos, current_rule, node)
 
                 # if value.name in self.skip_rules_on_fail and tokens[pos].kind != GenericRules.EOF:
-                    # self.accumulated_errors.append(error)
-                    # return ParseResult(self.skip_rules_on_fail[value.name]()[0], pos + 1)
+                #     self.accumulated_errors.append(error)
+                #     return ParseResult(self.skip_rules_on_fail[value.name]()[0], pos + 1)
 
                 raise error
             
@@ -337,24 +337,24 @@ class Parser:
                             self._consider_partial(partial_result)
 
                         error = self.make_error(tokens, pos, start_pos, current_rule, node, partial_result)
-                        # if not self.skip_bad_tokens:
-                        #     # debug_print(f"{print_token_safe(tokens, pos)}. Sequence broken {node}.")
-                        #     raise error
-                        # # if not allow_recovery:
-                        # #     # debug_print(f"{print_token_safe(tokens, pos)}. Sequence broken {node}.")
-                        # #     # propagate the error upwards
-                        # #     raise error
-                        # if not isinstance(e.node, Terminal):
-                        #     # debug_print(f"{print_token_safe(tokens, pos)}. Sequence broken {node}.")
-                        #     raise error
+                        if not self.skip_bad_tokens:
+                            # debug_print(f"{print_token_safe(tokens, pos)}. Sequence broken {node}.")
+                            raise error
+                        if not isinstance(e.node, Terminal):
+                            # debug_print(f"{print_token_safe(tokens, pos)}. Sequence broken {node}.")
+                            raise error
 
-                        # recovery_token = self.skip_rules_on_fail.get(e.node.child.name)
-                        # if not recovery_token:
-                        #     raise error
+                        # print("DAG NABBIT", e.node.child.name)
+
+                        recovery_token = self.skip_rules_on_fail.get(e.node.child.name)
+                        if not recovery_token:
+                            raise error
+
+                        print("recovered")
                         
-                        # self.accumulated_errors.append(error)
-                        # parsed_children.append(recovery_token()[0])
-                        raise error
+                        self.accumulated_errors.append(error)
+                        parsed_children.append(recovery_token()[0])
+                        # raise error
                 
                 if result is None:
                     raise AssertionError("Invalid tree - empty sequence")

@@ -74,6 +74,7 @@ class SyntaxError(CompilerError):
 
 EXPECTED_PRIORITY: dict[Definitions, int] = {
     # Closing delimiters
+    Definitions.StatementSeparator: 0,
     Definitions.CloseBracket: 0,
     Definitions.CloseSquareBracket: 0,
     Definitions.CloseCurlyBracket: 0,

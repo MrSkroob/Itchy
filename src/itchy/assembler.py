@@ -2721,7 +2721,6 @@ class Assembler:
 
             self.flag_referenced_variable(self.variable_map[(arg_name, function_context)], context)
 
-            print("parameter var ref", ref.root)
             if not block_parent.manufactured:
                 self.register_symbol(
                     SymbolOccurence(
