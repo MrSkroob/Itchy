@@ -195,7 +195,7 @@ class StringExpr(Expr):
 @dataclass(frozen=True)
 class AssetExpr(Expr):
     asset_type: AssetTypes
-    args: tuple[Expr, ...]
+    value: str
 
 @dataclass(frozen=True)
 class UnaryOpExpr(Expr):

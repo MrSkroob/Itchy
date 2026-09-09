@@ -1132,7 +1132,7 @@ class Assembler:
             var_id, var_expr = resolved
             return (var_expr.ref.root, var_id)
 
-        if not isinstance(arg_expr, StringExpr):
+        if not isinstance(arg_expr, (StringExpr, AssetExpr)):
             return self.raise_or_return(
                 InvalidTypeError(
                     f"{callee}: argument {index} must be a string literal",
@@ -1141,25 +1141,34 @@ class Assembler:
                 ("", None),
             )
 
+        if isinstance(arg_expr, StringExpr):
+            value = arg_expr.value
+        else:
+            expr = self.emit_expr(arg_expr, Context(function_context=None, 
+                                             layer=DEFAULT_LAYER, 
+                                             thread_id=DEFAULT_THREAD), 
+                                             BlockRange(None, None, True), None)
+            value = expr.value[1][1]
+
         if field.name in broadcasts:
             return (
-                arg_expr.value,
-                self.define_broadcast(arg_expr.value),
+                value,
+                self.define_broadcast(value),
             )
 
         if (
-            arg_expr.value not in field.expected
+            value not in field.expected
             and not getattr(field, "is_variable", False)
         ):
             return self.raise_or_return(
                 ArgumentError(
-                    f"'{arg_expr.value}' is not one of {field.expected}",
+                    f"'{value}' is not one of {field.expected}",
                     arg_expr,
                 ),
                 ("", None),
             )
 
-        return (arg_expr.value, None)
+        return (value, None)
 
     def _emit_scratch_slots(
         self,
