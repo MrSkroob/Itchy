@@ -1,6 +1,7 @@
 from typing import Protocol
 from itchy.tokenizer import Definitions, Token
 from itchy.tree import ParsedNode, Alternative, Sequence, OptionalNode
+from dataclasses import replace
 
 
 def extract_tokens(node: ParsedNode) -> list[Token[Definitions]]:
@@ -31,6 +32,45 @@ def find_tokens(node: ParsedNode, kind: Definitions) -> list[Token[Definitions]]
             tokens.extend(result)
 
     return tokens
+
+
+def extend_node(root_node: ParsedNode, name: str, new_children: tuple[ParsedNode | Token[Definitions], ...]) -> ParsedNode:
+    for i, current in enumerate(root_node.children):
+        if not isinstance(current, ParsedNode):
+            continue
+
+        if current.name == name:
+            updated = replace(
+                current,
+                children=current.children + new_children
+            )
+
+            children = list(root_node.children)
+            children[i] = updated
+            return replace(root_node, children=children)
+
+        updated = extend_node(current, name, new_children)
+
+        if updated is not current:
+            children = list(root_node.children)
+            children[i] = updated
+            return replace(root_node, children=children)
+
+    return root_node
+
+
+def find_first_node(node: ParsedNode, name: str) -> ParsedNode | None:
+    result = None
+
+    if node.name == name:
+        return node
+
+    for child in node.children:
+        if isinstance(child, ParsedNode):
+            if result := find_first_node(child, name):
+                return result
+
+    return result
 
 
 def find_nodes(node: ParsedNode, name: str) -> list[ParsedNode]:

@@ -2,6 +2,7 @@
 # This code was developed with assistance from OpenAI's ChatGPT.
 # AI-generated suggestions were reviewed, modified, and integrated by the author.
 
+# from itchy.dummy_nodes import ANALYSIS_STRATEGIES
 from itchy.parser import Parser, ParseError
 from itchy.itch_ast import ASTBuilder, Program
 from itchy.errors import format_compiler_error, format_syntax_error
@@ -10,6 +11,9 @@ from itchy.assembler import Assembler, CompilerError
 import argparse
 
 from pathlib import Path
+
+# from tools.ast_printer import print_ast
+import time
 
 
 parser = Parser()
@@ -25,6 +29,8 @@ def compile_targets(
 ) -> Path | None:
     programs: dict[str, Program] = {}
     metadata: dict[str, tuple[str, Path]] = {}
+
+    start = time.time()
     
     for file in files:
         source = file.read_text(encoding="utf-8")
@@ -50,7 +56,8 @@ def compile_targets(
             )
             return None
             # else:
-            
+    finish = time.time()
+    print("COMPILATION TIME: ", finish-start)
     try:
         return assembler.assemble(programs, project, output)
     except CompilerError as e:
