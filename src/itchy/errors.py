@@ -190,9 +190,9 @@ def _choose_expected(
     closers = kinds & CLOSING_DELIMITERS
 
     if closers:
-        return sorted(closers, key=_expected_sort_key)
+        return sorted(closers, key=_expected_sort_key, reverse=True)
 
-    return sorted(kinds, key=_expected_sort_key)
+    return sorted(kinds, key=_expected_sort_key, reverse=True)
 
 
 def get_message(error: ParseError, expected: ExpectedState):
