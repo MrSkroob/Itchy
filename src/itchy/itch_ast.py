@@ -369,31 +369,21 @@ def parse_string(text: str):
 class ASTBuilder:
     """
     Finally, a tangible reason for a class!
-    We're going to have multiple calls to this bad boy, and they're likely in separate threads.
-    We need different ASTBuilder objects to ensure `function_scope` and `called_function` remain separate between calls. 
-
-
-    ``function_scope`` is the enclosing function currently being built.
-    ``called_function`` is the function whose argument list is currently being
-    built. Keeping these separate prevents a call such as ``foo(...)`` from
-    making ``foo``'s parameters appear in the caller's lexical scope.
+    We're going to have multiple calls to this bad boy, and they're likely in separate threads, and we want
+    `function_scope` to be different between threads (files)
     """
 
     def __init__(self) -> None:
         self.semantic_tokens: dict[SourceSpan, SemanticToken] = {}
-        self.function_scope: str | None = None
-        self.called_function: FunctionCallStmt | FunctionCallExpr | None = None
         self.argument_index: int = 0
         self.function_definitions: dict[FunctionDefStmt, SourceSpan] = {}
         self.var_definitions: dict[VarDefStmt, SourceSpan] = {}
-
+        self.function_scope: str | None = None
         self.warnings = {}
 
     def reset(self) -> None:
         self.argument_index = 0
         self.semantic_tokens = {}
-        self.function_scope = None
-        self.called_function = None
         self.function_definitions = {}
         self.var_definitions = {}
 
@@ -655,7 +645,6 @@ class ASTBuilder:
                         arg_list[-1].span.end if len(arg_list) > 0 else func_name.span.end
                     ), dummy=node.dummy_node
                 )
-                self.called_function = stmt
                 return stmt
     
         raise ValueError(f"this ain't a literal g: {node.children}")
@@ -751,7 +740,6 @@ class ASTBuilder:
             span=function_name.span, 
             dummy=node.dummy_node
         )
-        self.called_function = stmt
         return stmt 
     
     def build_varassignstat(self, node: ParsedNode) -> AssignStmt:
@@ -855,13 +843,14 @@ class ASTBuilder:
     def build_function(self, node: ParsedNode) -> FunctionParts:
         children = flat_children(node)
         name = expect_token(children[0], Definitions.Symbol.name)
-        previous_scope = self.function_scope
-        self.function_scope = name.literal
         self.emit_token(name, "function", ("declaration",))
+        self.function_scope = name.literal
         funcbody = expect_node(children[1], "funcbody")
     
         params, body = self.build_funcbody(funcbody)
-        self.function_scope = previous_scope
+
+        if not body or not body.dummy:
+            self.function_scope = None
     
         return FunctionParts(
             name.literal,
@@ -1098,7 +1087,7 @@ class ASTBuilder:
                 brackets.append(child)
         
         # chunks are allowed to be empty
-        return BlockStmt(chunk, span=SourceSpan(brackets[0].span.start, brackets[-1].span.end), dummy=node.dummy_node)
+        return BlockStmt(chunk, span=SourceSpan(brackets[0].span.start, brackets[-1].span.end), dummy=node.dummy_node or brackets[-1].dummy_token)
     
     
     def build_laststat(self, node: ParsedNode) -> ReturnStmt:
