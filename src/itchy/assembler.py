@@ -1635,25 +1635,44 @@ class Assembler:
             BinaryOpExpr(stmt.start, "-", stmt.step), context, set_range, set_id
         ).value
 
-        stop_condition = BinaryOpExpr(
-            left=VarExpr(VarRef(stmt.variable)),
-            op=">",
-            right=BinaryOpExpr(stmt.stop, "-", stmt.step),
+        # equation: repeats = (stop - start) / step
+
+        # stop - start
+        sub_group = BinaryOpExpr(
+            left=stmt.stop,
+            op="-",
+            right=stmt.start,
             span=stmt.span,
+        )
+
+        div_group = BinaryOpExpr(
+            left=sub_group,
+            op="/",
+            right=stmt.step,
+            span=stmt.span
         )
 
         # repeat
         repeat_id = self.new_id()
         repeat_inputs: dict[str, ScratchInputRaw] = {}
+
+        # self.make_block(
+        #     "control_repeat_until",
+        #     id=repeat_id,
+        #     parent=set_id,
+        #     inputs=repeat_inputs,
+        # )
+
         self.make_block(
-            "control_repeat_until",
+            "control_repeat",
             id=repeat_id,
             parent=set_id,
-            inputs=repeat_inputs,
+            inputs=repeat_inputs
         )
+
         repeat_range = BlockRange(repeat_id, repeat_id)
-        repeat_inputs["CONDITION"] = self.emit_expr(
-            stop_condition, context, repeat_range, repeat_id
+        repeat_inputs["TIMES"] = self.emit_expr(
+            div_group, context, repeat_range, repeat_id
         ).value
 
         assert set_range.last is not None
