@@ -960,6 +960,9 @@ class Assembler:
                     InputType.SHADOW_ONLY,
                     (DataType.BROADCAST, arg_expr.value, broadcast_id),
                 )
+            elif isinstance(arg_expr, AssetExpr):
+                assert isinstance(arg_expr.args[0], StringExpr)
+                broadcast_id = self.define_broadcast(arg_expr.args[0].value)
 
             return self.emit_expr(
                 arg_expr,
@@ -1305,6 +1308,10 @@ class Assembler:
         args = stmt.args
 
         if self.count_args(args) == len(info.argument_names) - 1:
+            # all defined methods by the user has an extra argument for the thread number it was called from
+            # this is used by return statements later on
+            # we don't want this to be shown to the developer because that's kind of yucky so the
+            # assembler adds them on here. 
             if context.function_context in self.procedures:
                 args += (VarExpr(VarRef(THREAD_ARG)),)
             else:
@@ -3046,7 +3053,6 @@ class Assembler:
 
 
     def _load_sounds(self, dir: Path, assets: list[tuple[Path, str]]) -> list[dict[str, Any]]:
-        # TODO: WAV/MP3 metadata extraction
         sounds: list[dict[str, Any]] = []
         
         if not dir.exists():

@@ -573,7 +573,6 @@ class Parser:
         extra_children: list[ParsedNode | Token[Definitions]] = []
         while result is None:
             try:
-                self.reset_expected()
                 self.rule_stack.clear()
                 self.furthest_error = None
                 self.deepest_partial = None
@@ -616,6 +615,7 @@ class Parser:
 
         self.accumulated_errors = []
         self.alt_memo = {}
+        self.reset_expected()
 
         self.halt = False
         self.recovered_from_error = False

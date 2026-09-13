@@ -276,7 +276,7 @@ AGGRESSIVE_STRATEGIES: Strategy = {
 ANALYSIS_STRATEGIES: Strategy = {
     "primary": make_dummy_primary,
     "stat": make_stat,
-    "varlist1": make_paramlist,
+    # "varlist1": make_paramlist,
     # Definitions.OpenBracket.name: make_bracket_factory("(", Definitions.OpenBracket),
     # Definitions.OpenCurlyBracket.name: make_bracket_factory("{", Definitions.OpenCurlyBracket),
     # Definitions.OpenSquareBracket.name: make_bracket_factory("[", Definitions.OpenSquareBracket),
