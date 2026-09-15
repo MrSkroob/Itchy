@@ -2,7 +2,6 @@
 # This code was developed with assistance from OpenAI's ChatGPT.
 # AI-generated suggestions were reviewed, modified, and integrated by the author.
 
-from itchy.dummy_nodes import ANALYSIS_STRATEGIES
 from itchy.parser import Parser, ParseError
 from itchy.itch_ast import ASTBuilder, Program
 from itchy.errors import format_compiler_error, format_syntax_error
@@ -18,13 +17,15 @@ import time
 
 parser = Parser()
 ast_builder = ASTBuilder()
-assembler = Assembler("")
+strict_assembler = Assembler("")
+non_strict_assembler = Assembler("", compile_with_warnings=True)
 
 
 def compile_targets(
     files: list[Path],
     project: Path,
-    output: Path | None
+    output: Path | None,
+    allow_warnings: bool=False
 ) -> Path | None:
     programs: dict[str, Program] = {}
     metadata: dict[str, tuple[str, Path]] = {}
@@ -57,6 +58,11 @@ def compile_targets(
             # else:
     finish = time.time()
     print("COMPILATION TIME: ", finish-start)
+    if allow_warnings:
+        assembler = non_strict_assembler
+    else:
+        assembler = strict_assembler
+
     try:
         return assembler.assemble(programs, project, output)
     except CompilerError as e:
@@ -78,7 +84,8 @@ def compile_targets(
 def compile_project(
     project: Path,
     output: Path | None,
-    exact_target: str | None=None
+    exact_target: str | None=None,
+    allow_warnings: bool=False
 ) -> bool:
     """
     Compiles an Itchy project directory into an .sb3.
@@ -140,7 +147,7 @@ def compile_project(
             source_file
         )
 
-    output_path = compile_targets(sprites, project, output)
+    output_path = compile_targets(sprites, project, output, allow_warnings)
 
     if output_path is None:
         return False
@@ -187,6 +194,11 @@ def main() -> int:
     )
 
     cli_parser.add_argument(
+        "--allow-warnings",
+        action="store_true",
+    )
+
+    cli_parser.add_argument(
         "source",
         help="Path to the Itchy project directory or script",
         type=str,
@@ -224,12 +236,14 @@ def main() -> int:
             project_path.parent.parent,
             output_path,
             project_path.stem,
+            args.allow_warnings
         ):
             return 1
     else:
         if not compile_project(
             project_path,
             output_path,
+            allow_warnings=args.allow_warnings
         ):
             return 1
 

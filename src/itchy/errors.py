@@ -46,14 +46,14 @@ class NotReferenced(CompilerWarning):
     pass
 
 
-class DuplicateDefinitionError(CompilerError):
-    pass
-
-
-class ReturnNothingError(CompilerError):
+class ReturnNothing(CompilerWarning):
     def __init__(self, message: str, error_node: ASTNode | None, *,
                     error_code: str | None = CompilerErrorCodes.NOTHING_RETURN, data: dict[str, Any]={}) -> None:
         super().__init__(message, error_node, error_code, data)
+
+
+class DuplicateDefinitionError(CompilerError):
+    pass
 
 
 class ArgumentError(CompilerError):

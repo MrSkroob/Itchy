@@ -21,7 +21,7 @@ from typing import Any
 from itchy.shared_templates import VARIABLE_TYPE_TO_USER_TYPES, VariableTypes, DataType, SourceSpan, SPRITE_TEMPLATE, COSTUME_TEMPLATE, PROJECT_TEMPLATE, DATA_TO_VARIABLE_TYPE, ASTNode
 from itchy.errors import CompilerError, CompilerWarning, CompilerErrorCodes, Unbound, NotReferenced, Shadow, DuplicateDefinitionError,\
     NeverReached, \
-    ArgumentError, NotDefinedError, InvalidTypeError, SyntaxError, TypeMismatch, ReturnNothingError
+    ArgumentError, NotDefinedError, InvalidTypeError, SyntaxError, TypeMismatch, ReturnNothing
 from itchy.scratch_blocks import SCRATCH_BLOCKS, STAGE_BLOCKS, Block, Reporter, Event, Menu
 from itchy.itch_ast import \
     Param, \
@@ -2525,8 +2525,8 @@ class Assembler:
 
         if VariableTypes.NOTHING in proc_info.return_types:
             return self.raise_or_return(
-                ReturnNothingError(
-                    f"{expr.callee}: some codepaths might return nothing",
+                ReturnNothing(
+                    f"{expr.callee}: some codepaths might return nothing. If they do, your code will not work.",
                     expr,
                     data={"name": expr.callee},
                 ),
