@@ -1101,6 +1101,10 @@ class ASTBuilder:
         #     return BreakStmt(span=break_token.span)
     
         if has_token(node, Definitions.Return.name, children):
+            end = None
+            if has_token(node, Definitions.StatementSeparator.name):
+                end = find_first_token(node, Definitions.StatementSeparator.name)
+
             return_token = find_first_token(
                 node,
                 Definitions.Return.name,
@@ -1116,26 +1120,27 @@ class ASTBuilder:
                 ),
                 None,
             )
+
+            span = return_token.span
+
+            if end:
+                span = SourceSpan(
+                    return_token.span.start,
+                    end.span.end
+                )
     
             if varlist_node is None:
                 return ReturnStmt(
                     (),
-                    span=return_token.span,
+                    span=span,
                     dummy=node.dummy_node
                 )
     
             value = self.build_varlist1(varlist_node)
-            end = return_token.span.end
-
-            if len(value) > 0:
-                end = value[-1].span.end
     
             return ReturnStmt(
                 value,
-                span=SourceSpan(
-                    start=return_token.span.start,
-                    end=end,
-                ),
+                span=span,
                 dummy=node.dummy_node
             )
     
