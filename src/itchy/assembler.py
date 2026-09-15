@@ -108,6 +108,7 @@ class BlockRange:
     first: StrOptional
     last: StrOptional
     manufactured: bool=False
+    terminates: bool=False # if the next blockrange tries to parent to this, they will never run.
 
 
 @dataclass(frozen=True)
@@ -145,7 +146,8 @@ class ProcedureInfo:
     # occurence of the last bit of code in the function (so you can append to it)
     last_location: SourceSpan | None=None
 
-    # if applicable
+    # if applicable. counts the number of return statements that return nothing.
+    return_nothings: int = 0
     return_types: set[VariableTypes]=field(default_factory=lambda: {VariableTypes.NOTHING})
 
 
@@ -664,7 +666,6 @@ class Assembler:
         first: StrOptional = None
         last: StrOptional = None
 
-        final_return_statement: ReturnStmt | None = None
         proc_info: ProcedureInfo | None = None
 
         if new_layer:
@@ -674,6 +675,8 @@ class Assembler:
 
         if context.function_context in self.procedures:
             proc_info = self.procedures[context.function_context]
+
+        terminates = False
             
         for index, stmt in enumerate(statements):
             emitted = self.emit_stmt(stmt, parent, context)
@@ -692,29 +695,27 @@ class Assembler:
             else:
                 assert last is not None
 
-                if not self.can_have_next(last):
+                if not self.can_have_next(last) or terminates:
                     error = NeverReached("This statement will never be called", stmt)
                     self.raise_or_return(error)
-                    break
+                    # break
 
                 self.blocks[last]["next"] = emitted.first
                 self.blocks[emitted.first]["parent"] = last
 
             if index == len(statements) - 1 and context.layer == 1:
-                if isinstance(stmt, ReturnStmt):
-                    final_return_statement = stmt
                 if not stmt.dummy and proc_info:
                     proc_info.last_location = stmt.span
             
             last = emitted.last
 
-        if context.function_context in self.procedures:
-            proc_info = self.procedures[context.function_context]
-            if final_return_statement is not None \
-            and VariableTypes.NOTHING in proc_info.return_types:
-                proc_info.return_types.remove(VariableTypes.NOTHING)
+            if emitted.terminates:
+                terminates = True
+
         
-        return BlockRange(first, last)
+        return BlockRange(first, 
+                          last, 
+                          terminates=terminates)
     
     def emit_stmt(self, stmt: Stmt, parent: StrOptional, context: Context) -> BlockRange:
         match stmt:
@@ -726,7 +727,13 @@ class Assembler:
                 # if type_name not in {VariableTypes.VAR.value, VariableTypes.LIST.value, VariableTypes.BOOL.value}:
                 #     return self.raise_or_return(InvalidTypeError(f"Invalid variable type: '{type_name}'.\
                 #                                                  Scratch only permits var, list and bool.", stmt))
-
+                self.register_symbol(SymbolOccurence(
+                    span=stmt.span,
+                    definition_location=stmt.span,
+                    context=None,
+                    symbol_type=SymbolType.VARIABLE,
+                    name=name
+                ), stmt)
 
                 if name not in self.overridable and (name, None) in self.variable_map:
                     error = Shadow(f"Variable '{stmt.name}' is shadowed by variable of same name", stmt)
@@ -743,14 +750,6 @@ class Assembler:
                     function_context=None, 
                     thread_id=context.thread_id, 
                     layer=context.layer), stmt.span)
-
-                self.register_symbol(SymbolOccurence(
-                    span=stmt.span,
-                    definition_location=stmt.span,
-                    context=None,
-                    symbol_type=SymbolType.VARIABLE,
-                    name=name
-                ), stmt)
 
                 self.flag_non_referenced_variable(var_id, stmt, context)
                 return BlockRange(None, None)
@@ -840,17 +839,14 @@ class Assembler:
             # return expressions (tuples)
             return_type = self.emit_expr(stmt.values[0], context, BlockRange(None, None, True), None).return_type
 
-            if VariableTypes.NOTHING in return_type:
-                proc_data.return_types.add(VariableTypes.STRING)
-
             proc_data.return_types = \
                 proc_data.return_types.union(return_type)
             for value in stmt.values:
                 body.append(
                     FunctionCallStmt(SET_RETURN_VALUE, (value, VarExpr(VarRef(FRAME_INDEX))))
                 )
-        # else:
-            # proc_data.return_types.add(VariableTypes.STRING)
+        else:
+            proc_data.return_nothings += 1
 
         control_stop = FunctionCallStmt(
             "control_stop", (StringExpr("this script"),)
@@ -859,9 +855,9 @@ class Assembler:
         body.append(control_stop)
 
         if not returns_things:
-            return self.emit_sequence(tuple(body), parent=parent, context=context, new_layer=False)
+            block_range = self.emit_sequence(tuple(body), parent=parent, context=context, new_layer=False)
         else:
-            return self.emit_sequence(
+            block_range = self.emit_sequence(
                 parent=parent,
                 context=context,
                 new_layer=False,
@@ -880,6 +876,9 @@ class Assembler:
                         else_body=())
                     )
                 )
+
+        block_range.terminates = True
+        return block_range
         
 
     def _scratch_expected_args(self, block_data: Block | Reporter | Event) -> int:
@@ -1278,8 +1277,6 @@ class Assembler:
         if stmt.callee not in self.procedures:
             # is either a custom scratch block or a hallucination :v
             block_range = self.emit_scratch_block(stmt, parent, context)
-            if block_range is None:
-                return self.raise_or_return(NotDefinedError(f"Procedure '{stmt.callee}' is not defined and is not a valid scratch block", stmt))
             self.register_symbol(
                 SymbolOccurence(
                     span=stmt.span,
@@ -1289,6 +1286,8 @@ class Assembler:
                     name=stmt.callee
                 ), stmt
             )
+            if block_range is None:
+                return self.raise_or_return(NotDefinedError(f"Procedure '{stmt.callee}' is not defined and is not a valid scratch block", stmt))
             return block_range
 
         self.flag_referenced_function(stmt.callee)
@@ -1491,6 +1490,16 @@ class Assembler:
         return True
             
     def emit_function_def(self, stmt: FunctionDefStmt, parent: StrOptional) -> BlockRange:
+        self.register_symbol(
+            SymbolOccurence(
+                span=stmt.span,
+                definition_location=stmt.span,
+                context=None,
+                symbol_type=SymbolType.FUNCTION,
+                name=stmt.name
+            ), stmt
+        )
+        
         if parent is not None:
             return self.raise_or_return(SyntaxError("Cannot define function inside of another", stmt, CompilerErrorCodes.REMOVE_RETURN))
 
@@ -1502,15 +1511,6 @@ class Assembler:
             thread_id=DEFAULT_THREAD, 
             layer=DEFAULT_LAYER)
 
-        self.register_symbol(
-            SymbolOccurence(
-                span=stmt.span,
-                definition_location=stmt.span,
-                context=None,
-                symbol_type=SymbolType.FUNCTION,
-                name=stmt.name
-            ), stmt
-        )
         self.define_variable(False, "var", stmt.name + ":return", Context(function_context=None, thread_id=DEFAULT_THREAD, layer=DEFAULT_LAYER), None)
 
         definition_id = self.make_block(
@@ -1609,6 +1609,9 @@ class Assembler:
         if body_range.first is not None:
             self.blocks[definition_id]["next"] = body_range.first
             self.blocks[body_range.first]["parent"] = definition_id
+
+        if body_range.terminates and proc_info.return_nothings == 0: 
+            proc_info.return_types.remove(VariableTypes.NOTHING)
 
         return BlockRange(
             first=definition_id,
@@ -1865,6 +1868,8 @@ class Assembler:
 
         if body.first is not None:
             self.blocks[block_id]["inputs"]["SUBSTACK"] = (InputType.BLOCK_ONLY, body.first)
+
+        block_range.terminates = True
         
         return block_range
     
@@ -1896,6 +1901,8 @@ class Assembler:
 
         if body.first is not None:
             self.blocks[block_id]["inputs"]["SUBSTACK"] = (InputType.BLOCK_ONLY, body.first)
+
+        block_range.terminates = body.terminates or (isinstance(stmt.condition, BoolExpr) and stmt.condition.value == True)
         
         return block_range
             
@@ -1928,6 +1935,7 @@ class Assembler:
         ).value
 
         then_body = self.emit_sequence(branch.body, block_id, context)
+        terminates = then_body.terminates
 
         if then_body.first is not None:
             self.blocks[block_id]["inputs"]["SUBSTACK"] = (InputType.BLOCK_ONLY, then_body.first)
@@ -1946,11 +1954,17 @@ class Assembler:
                     InputType.BLOCK_ONLY,
                     nested_if.first,
                 )
+
+                terminates = terminates and nested_if.terminates
             else:
                 # no more if statements. rest of the code is not part of this if branch
                 else_blocks = self.emit_sequence(else_body, block_id, context)
                 if else_blocks.first is not None:
                     self.blocks[block_id]["inputs"]["SUBSTACK2"] = (InputType.BLOCK_ONLY, else_blocks.first)
+
+                terminates = terminates and else_blocks.terminates
+
+        block_range.terminates = terminates and has_else
         
         return block_range
 
@@ -2498,10 +2512,21 @@ class Assembler:
     ) -> ScratchInput:
         proc_info = self.procedures[expr.callee]
 
+        self.register_symbol(
+            SymbolOccurence(
+                span=expr.span,
+                definition_location=proc_info.definition_location,
+                context=context.function_context,
+                symbol_type=SymbolType.FUNCTION,
+                name=expr.callee,
+            ),
+            expr,
+        )
+
         if VariableTypes.NOTHING in proc_info.return_types:
             return self.raise_or_return(
                 ReturnNothingError(
-                    f"{expr.callee}: not all codepaths have a return statement",
+                    f"{expr.callee}: some codepaths might return nothing",
                     expr,
                     data={"name": expr.callee},
                 ),
@@ -2522,17 +2547,6 @@ class Assembler:
                 f"got {self.count_args(expr.args)}",
                 expr
             ), PLACE_HOLDER_0)
-
-        self.register_symbol(
-            SymbolOccurence(
-                span=expr.span,
-                definition_location=proc_info.definition_location,
-                context=context.function_context,
-                symbol_type=SymbolType.FUNCTION,
-                name=expr.callee,
-            ),
-            expr,
-        )
 
         setup = BlockRange(None, None)
 
@@ -2747,13 +2761,6 @@ class Assembler:
             arg_type = arg_types[arg_index]
             arg_name = procedure_info.argument_names[arg_index]
 
-            if arg_type is VariableTypes.BOOL:
-                opcode = "argument_reporter_boolean"
-            else:
-                opcode = "argument_reporter_string_number"
-
-            self.flag_referenced_variable(self.variable_map[(arg_name, function_context)], context)
-
             if not block_parent.manufactured:
                 self.register_symbol(
                     SymbolOccurence(
@@ -2764,6 +2771,13 @@ class Assembler:
                         name=ref.root
                     ), ref
                 )
+
+            if arg_type is VariableTypes.BOOL:
+                opcode = "argument_reporter_boolean"
+            else:
+                opcode = "argument_reporter_string_number"
+
+            self.flag_referenced_variable(self.variable_map[(arg_name, function_context)], context)
 
             reporter_id = self.make_block(
                 opcode=opcode,
