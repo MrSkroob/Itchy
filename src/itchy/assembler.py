@@ -960,8 +960,16 @@ class Assembler:
                     (DataType.BROADCAST, arg_expr.value, broadcast_id),
                 )
             elif isinstance(arg_expr, AssetExpr):
+                self.emit_expr(arg_expr, context, block_parent, None)
+                if len(arg_expr.args) == 0:
+                    # this shouldn't happen, but i don't want the assertion to trigger just in case.
+                    return PLACE_HOLDER_0.value
                 assert isinstance(arg_expr.args[0], StringExpr)
                 broadcast_id = self.define_broadcast(arg_expr.args[0].value)
+                return (
+                    InputType.SHADOW_ONLY,
+                    (DataType.BROADCAST, arg_expr.args[0].value, broadcast_id)
+                )
 
             return self.emit_expr(
                 arg_expr,
