@@ -1318,7 +1318,6 @@ class Assembler:
                 args += (NumberExpr(context.thread_id),)
 
         if self.count_args(args) != len(info.argument_ids):
-            print("bad")
             return self.raise_or_return(ArgumentError(
                 f"Function '{stmt.callee}' expects {len(info.argument_ids) - 1} arguments, "
                 f"got {self.count_args(stmt.args)}",
