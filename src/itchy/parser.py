@@ -41,14 +41,14 @@ class ParseResult():
 
 
 class ParseError(Exception):
-    def __init__(self, tokens: list[Token[Definitions]], pos: int, rule_start: int, failed_rule: Rule, node: GrammarNode, expected: ExpectedState,
+    def __init__(self, tokens: list[Token[Definitions]], pos: int, rule_start: int, failed_rule: Rule, node: GrammarNode,
                  previous_valid_tree: ParseResult | None=None) -> None:
         self.tokens = tokens
         self.pos = pos
         self.node = node
         self.rule = failed_rule
         self.rule_start = rule_start
-        self.expected = expected
+        self.expected = ExpectedState(0, set())
         self.previous_valid_tree: ParseResult | None = previous_valid_tree
         super().__init__()
 
@@ -116,7 +116,6 @@ class Parser:
         # `fail_state`/`furthest_error` -- to still report the syntax error
         # even though `read()` itself no longer raises for recoverable
         # failures.
-        self.recovered_from_error: bool = False
         self.accumulated_errors: list[ParseError] = []
         self.speculative_errors: dict[int, ParseError] = {}
 
@@ -211,17 +210,13 @@ class Parser:
 
     def make_error(self, tokens: list[Token[Definitions]], pos: int, rule_start: int, failed_rule: Rule, node: GrammarNode, previous_valid_tree: ParseResult | None=None):
         is_new_furthest = self.furthest_error is None or pos > self.furthest_error.pos
-        if is_new_furthest:
-            expected_snapshot = ExpectedState(0, self.expected.items.copy())
-        else:
-            assert self.furthest_error is not None
-            expected_snapshot = self.furthest_error.expected
-        error = ParseError(tokens, pos, rule_start, failed_rule, node, expected_snapshot, previous_valid_tree)
+        error = ParseError(tokens, pos, rule_start, failed_rule, node, previous_valid_tree)
         if is_new_furthest:
             self.furthest_error = error
         assert self.furthest_error is not None
         if pos in self.speculative_errors:
             self.speculative_errors[pos] = self.furthest_error
+            self.furthest_error.expected = ExpectedState(pos, self.expected_items)
         return error
     
 
@@ -256,7 +251,9 @@ class Parser:
                 # this error might be raised in syntactically correct code. 
                 self.rule_stack.pop()
                 if 0 <= pos < len(tokens):
+                    error = self.furthest_error or error
                     self.speculative_errors[pos] = error
+                    error.expected = ExpectedState(error.pos, self.expected_items)
                     return ParseResult(
                         ParsedNode(rule.name, self.skip_rules_on_fail[rule.name](tokens[pos].line, tokens[pos].char)),
                         error.pos
@@ -344,15 +341,13 @@ class Parser:
                             # debug_print(f"{print_token_safe(tokens, pos)}. Sequence broken {node}.")
                             raise error
 
-                        # print("DAG NABBIT", e.node.child.name)
-
                         recovery_token = self.skip_rules_on_fail.get(e.node.child.name)
                         if not recovery_token:
                             raise error
-
-                        print("recovered")
                         
+                        error.expected = ExpectedState(e.pos, self.expected_items)
                         self.accumulated_errors.append(error)
+                        self.reset_expected()
                         parsed_children.append(recovery_token()[0])
                         # raise error
                 
@@ -577,10 +572,12 @@ class Parser:
                 self.rule_stack.clear()
                 self.furthest_error = None
                 self.deepest_partial = None
-                self.speculative_errors = {}
+                # self.speculative_errors = {}
                 result = self.parse_rule(root, tokens, pos, allow_recovery=self.skip_bad_tokens)
             except ParseError as e:
-                self.accumulated_errors.append(self.furthest_error or e)
+                error = self.furthest_error or e
+                error.expected = ExpectedState(error.pos, self.expected_items) 
+                self.accumulated_errors.append(error)
                 if self.skip_bad_tokens:
                     if self.recovered_tree:
                         if e.previous_valid_tree:
@@ -618,7 +615,6 @@ class Parser:
         self.alt_memo = {}
 
         self.halt = False
-        self.recovered_from_error = False
         root = get_root_node(self.rules)
         tokens = list(self.tokenizer.read(text))
 

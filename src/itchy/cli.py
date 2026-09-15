@@ -49,6 +49,7 @@ def compile_targets(
             print(
                 format_syntax_error(
                     e,
+                    parser.expected,
                     source,
                     str(file),
                 )

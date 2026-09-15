@@ -72,8 +72,9 @@ class SyntaxError(CompilerError):
     pass
 
 
-EXPECTED_PRIORITY: dict[Definitions, int] = {
+EXPECTED_PRIORITY: dict[Definitions | GenericRules, int] = {
     # Closing delimiters
+    GenericRules.StatementSeparator: 0,
     Definitions.StatementSeparator: 0,
     Definitions.CloseBracket: 0,
     Definitions.CloseSquareBracket: 0,
@@ -142,7 +143,7 @@ TOKEN_NAMES: dict[str, str] = {
 }
 
 
-def _expected_sort_key(kind: Definitions) -> tuple[int, str]:
+def _expected_sort_key(kind: Definitions | GenericRules) -> tuple[int, str]:
     return (
         EXPECTED_PRIORITY.get(kind, 3),
         kind.name,
@@ -185,14 +186,14 @@ def format_compiler_error(
 
 
 def _choose_expected(
-    kinds: set[Definitions],
-) -> list[Definitions]:
+    kinds: set[Definitions | GenericRules],
+) -> list[Definitions | GenericRules]:
     closers = kinds & CLOSING_DELIMITERS
 
     if closers:
-        return sorted(closers, key=_expected_sort_key, reverse=True)
+        return sorted(closers, key=_expected_sort_key, reverse=False)
 
-    return sorted(kinds, key=_expected_sort_key, reverse=True)
+    return sorted(kinds, key=_expected_sort_key, reverse=False)
 
 
 def get_message(error: ParseError, expected: ExpectedState):
@@ -211,7 +212,6 @@ def get_message(error: ParseError, expected: ExpectedState):
     expected_kinds = {
         item.definition
         for item in expected.items
-        if isinstance(item.definition, Definitions)
     }
 
     expected_names = [
@@ -231,10 +231,10 @@ def get_message(error: ParseError, expected: ExpectedState):
 
 def format_syntax_error(
     error: ParseError,
+    expected: ExpectedState,
     source: str,
     filename: str,
 ) -> str:
-    expected = error.expected
     pos = expected.pos
     token = (
         error.tokens[pos]
