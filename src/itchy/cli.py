@@ -16,8 +16,6 @@ from pathlib import Path
 import time
 
 
-parser = Parser()
-
 ast_builder = ASTBuilder()
 assembler = Assembler("")
 

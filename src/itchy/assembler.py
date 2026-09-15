@@ -1318,6 +1318,7 @@ class Assembler:
                 args += (NumberExpr(context.thread_id),)
 
         if self.count_args(args) != len(info.argument_ids):
+            print("bad")
             return self.raise_or_return(ArgumentError(
                 f"Function '{stmt.callee}' expects {len(info.argument_ids) - 1} arguments, "
                 f"got {self.count_args(stmt.args)}",
@@ -1541,8 +1542,8 @@ class Assembler:
             arg_id = self.new_id()
 
             var_type = VariableTypes(param.type_name)
-            if var_type == VariableTypes.LIST:
-                self.raise_or_return(TypeMismatch("Lists will be converted into a space separated string. Are you sure this is what you want?", param))
+            # if var_type == VariableTypes.LIST:
+            #     self.raise_or_return(TypeMismatch("Lists will be converted into a space separated string. Are you sure this is what you want?", param))
 
             argument_ids.append(arg_id)
             argument_names.append(param.name)
@@ -2515,6 +2516,8 @@ class Assembler:
             thread_id = VarExpr(VarRef(THREAD_ARG))
         else:
             thread_id = NumberExpr(context.thread_id)
+
+        
 
         self.register_symbol(
             SymbolOccurence(
