@@ -79,7 +79,7 @@ BRACKET_PAIRS: dict[str, str] = {
 
 class Parser:
     def __init__(self, *, skip_bad_tokens: bool=False, skip_rules_on_fail: Strategy=dict(), 
-                 recoverable_rules: set[str] | None=None) -> None:
+                 recoverable_rules: Strategy=dict()) -> None:
         """
         skip_rules_on_fail makes the parser skip the rule entirely if that rule fails.
         
@@ -98,7 +98,7 @@ class Parser:
         self.alt_memo: dict[tuple[str, int], ParseResult] = {} # alternative might back track multiple times.
         self.skip_bad_tokens: bool = skip_bad_tokens
         self.skip_rules_on_fail = skip_rules_on_fail
-        self.recoverable_rules = recoverable_rules or set()
+        self.recoverable_rules = recoverable_rules or {}
         # self.terminators = {"}", ";", ")", "]"}
         # self.opening_terminators = {"{", "(", "["}
         self.unclosed_terminators: list[str] = []
@@ -337,19 +337,28 @@ class Parser:
                         if not self.skip_bad_tokens:
                             # debug_print(f"{print_token_safe(tokens, pos)}. Sequence broken {node}.")
                             raise error
-                        if not isinstance(e.node, Terminal):
+                        if isinstance(e.node, Terminal):
                             # debug_print(f"{print_token_safe(tokens, pos)}. Sequence broken {node}.")
+                            recovery_token = self.skip_rules_on_fail.get(e.node.child.name)
+                            if not recovery_token:
+                                raise error
+                            
+                            error.expected = ExpectedState(e.pos, self.expected_items)
+                            self.accumulated_errors.append(error)
+                            self.reset_expected()
+                            parsed_children.append(recovery_token()[0])
+                    
                             raise error
 
-                        recovery_token = self.skip_rules_on_fail.get(e.node.child.name)
-                        if not recovery_token:
-                            raise error
+                        if self.can_recover_repeat(current_rule):
+                            pos = min(e.pos + 1, len(tokens))
+                            if new_pos := self.advance(pos, error, tokens):
+                                return ParseResult(
+                                    ParsedNode(Sequence.__name__, self.skip_rules_on_fail[current_rule.name]()),
+                                    new_pos
+                                )
                         
-                        error.expected = ExpectedState(e.pos, self.expected_items)
-                        self.accumulated_errors.append(error)
-                        self.reset_expected()
-                        parsed_children.append(recovery_token()[0])
-                        # raise error
+                        raise error
                 
                 if result is None:
                     raise AssertionError("Invalid tree - empty sequence")
@@ -409,11 +418,6 @@ class Parser:
 
                     best_error.previous_valid_tree = partial_result
                     self._consider_partial(partial_result)
-
-                # if self.skip_bad_tokens and self.can_recover_repeat(current_rule):
-                #     if new_pos := self.advance(pos, best_error, tokens):
-                #         self.accumulated_errors.append(best_error)
-                #         return self.parse_node(current_rule, pos, node, tokens, new_pos, allow_recovery=allow_recovery)
 
                 raise best_error
         
@@ -500,46 +504,8 @@ class Parser:
 
                             self._consider_partial(recovered_repeat)
 
-                        # debug_print(f"{print_token_safe(tokens, pos)}. Skipping {node}")
-
-                        # if not allow_recovery:
-                        #     break
-
-                        # # chunks, statements, etc. do not try to recover from rules that
-                        # # would cause the parser to get stuck in a forever loop.
-                        # if not self.can_recover_repeat(current_rule):
-                        #     break
-
-                        # if attempt_pos < len(tokens)\
-                        #     and tokens[attempt_pos].literal in BRACKET_PAIRS.values():
-                        #     break
-
-                        # self.accumulated_errors.append(error)
-
-                        # if new_pos := self.advance(attempt_pos, error, tokens):
-                        #     pos = new_pos
-                        #     continue
 
                         break
-                        # recovery_start = max(
-                        #     attempt_pos,
-                        #     min(error.pos, len(tokens)),
-                        # )
-
-                        # new_pos = self._recover_to_next_line(
-                        #     tokens,
-                        #     recovery_start,
-                        # )
-
-                        # # Guarantee forward progress for an otherwise unrecoverable
-                        # # garbage token.
-                        # if new_pos <= attempt_pos:
-                        #     if new_pos < len(tokens) and tokens[new_pos].literal == "}":
-                        #         break
-
-                        #     new_pos = min(attempt_pos + 1, len(tokens))
-
-                        # pos = new_pos
                             
 
                     if result.pos == pos:
@@ -578,6 +544,9 @@ class Parser:
                 error = self.furthest_error or e
                 error.expected = ExpectedState(error.pos, self.expected_items) 
                 self.accumulated_errors.append(error)
+
+                print(error.rule)
+
                 if self.skip_bad_tokens:
                     if self.recovered_tree:
                         if e.previous_valid_tree:

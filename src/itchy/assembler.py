@@ -3016,36 +3016,6 @@ class Assembler:
     def _asset_id(self, path: Path) -> str:
         return hashlib.md5(path.read_bytes()).hexdigest()
 
-
-    def _load_costumes(self, dir: Path, assets: list[tuple[Path, str]]) -> list[dict[str, Any]]:
-        costumes: list[dict[str, Any]] = []
-
-        if not dir.exists():
-            return costumes
-
-        for path in sorted(dir.iterdir()):
-            if not path.is_file():
-                continue
-
-            extension = path.suffix.lower().lstrip(".")
-
-            if extension not in {"svg", "png", "jpg", "jpeg"}:
-                continue
-
-            asset_id = self._asset_id(path)
-            archive_name = f"{asset_id}.{extension}"
-
-            # shallow copy for this dictionary is okay. 
-            costume = COSTUME_TEMPLATE.copy()
-
-            costumes.append(costume)
-            assets.append(
-                (path, archive_name)
-            )
-
-        return costumes
-
-
     def _load_wav(self, dir: Path) -> dict[str, Any]:
         asset_id = self._asset_id(dir)
 
@@ -3251,12 +3221,43 @@ class Assembler:
 
         return project_file
 
+    def _load_costumes(self, dir: Path, assets: list[tuple[Path, str]]) -> list[dict[str, Any]]:
+        costumes: list[dict[str, Any]] = []
+
+        if not dir.exists():
+            return costumes
+
+        for path in sorted(dir.iterdir()):
+            if not path.is_file():
+                continue
+
+            extension = path.suffix.lower().lstrip(".")
+
+            if extension not in {"svg", "png", "jpg", "jpeg"}:
+                continue
+
+            asset_id = self._asset_id(path)
+            archive_name = f"{asset_id}.{extension}"
+
+            # shallow copy for this dictionary is okay. 
+            costume = COSTUME_TEMPLATE.copy()
+
+            costumes.append(costume)
+            costume["name"] = path.stem
+            costume["assetId"] = asset_id
+            costume["md5ext"] = archive_name
+
+            assets.append(
+                (path, archive_name)
+            )
+
+        return costumes
 
     def _ensure_costume(self, sprite_target: dict[str, Any], assets: list[tuple[Path, str]]) -> None:
         if sprite_target.get("costumes"):
             return
 
-        costume = deepcopy(COSTUME_TEMPLATE)
+        costume = COSTUME_TEMPLATE.copy()
 
         asset_id = uuid.uuid4().hex
         asset_name = f"{asset_id}.svg"

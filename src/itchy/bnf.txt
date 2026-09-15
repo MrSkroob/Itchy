@@ -23,12 +23,14 @@
 <function> ::= <Symbol> <funcbody>
 <funcbody> ::= "(" [<paramlist>] ")" <wrap>
 <slice> ::= "[" <equation> "]"
-<equation> ::= <comparison>
-<comparison> ::= <addition> { ( "and" | "or" | <In> ) <addition> }
+<equation> ::= <or>
+<or> ::= <and> { "or" <and> }
+<and> ::= <comparison> { "and" <comparison> }
+<comparison> ::= <addition> { ( ">" | "<" | "==" | <In> ) <addition> }
 <addition> ::= <multiplication> { ("+" | "-") <multiplication> }
-<multiplication> ::= <unary> { ("*" | "/" | ">" | "<" | "==" ) <unary> }
+<multiplication> ::= <unary> { ("*" | "/") <unary> }
 <unary> ::= ["-" | "not"] <primary>
-<primary> ::= <literals> | "(" <equation> ")"
+<primary> ::= "(" <equation> ")" | <literals>
 <var> ::= <Symbol> [<slice>]
 <literals> ::= <functioncall> | <tableconstructor> | <var> | <Bool> | <Number> | <String> | <asset>
 // <explist1> ::= <equation> {<FieldSeperator> <explist1>}

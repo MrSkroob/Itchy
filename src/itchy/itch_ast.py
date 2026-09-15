@@ -432,7 +432,23 @@ class ASTBuilder:
         return program, self.semantic_tokens.copy()
 
     def build_equation(self, node: ParsedNode) -> Expr:
-        return self.build_comparison(find_first_node(node, "comparison"))
+        return self.build_or(find_first_node(node, "or"))
+
+
+    def build_or(self, node: ParsedNode) -> Expr:
+        return self.build_left_associative(
+            node=node,
+            operand_rule="and",
+            operand_builder=self.build_and,
+        )
+
+
+    def build_and(self, node: ParsedNode) -> Expr:
+        return self.build_left_associative(
+            node=node,
+            operand_rule="comparison",
+            operand_builder=self.build_comparison,
+        )
     
     
     def build_comparison(self, node: ParsedNode) -> Expr:
@@ -508,7 +524,7 @@ class ASTBuilder:
         primary: ParsedNode | None = None
     
         for child in children:
-            if (isinstance(child, Token) and child.literal == "-") and child.kind == Definitions.Binop:
+            if isinstance(child, Token) and child.literal in {"-", "not"}:
                 op = child
             elif isinstance(child, ParsedNode) and child.name == "primary":
                 primary = child
@@ -525,7 +541,7 @@ class ASTBuilder:
     
         return UnaryOpExpr(op.literal, expr, 
                            span=SourceSpan(
-                               start=SourcePosition(op.line, op.char),
+                               start=op.span.start,
                                end=expr.span.end
                            ), dummy=node.dummy_node)
     
