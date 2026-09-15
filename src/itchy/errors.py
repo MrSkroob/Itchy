@@ -231,10 +231,10 @@ def get_message(error: ParseError, expected: ExpectedState):
 
 def format_syntax_error(
     error: ParseError,
-    expected: ExpectedState,
     source: str,
     filename: str,
 ) -> str:
+    expected = error.expected
     pos = expected.pos
     token = (
         error.tokens[pos]
