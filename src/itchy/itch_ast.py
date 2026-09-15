@@ -640,10 +640,8 @@ class ASTBuilder:
                 stmt = FunctionCallExpr(
                     func_name.literal,
                     arg_list,
-                    span=SourceSpan(
-                        func_name.span.start,
-                        arg_list[-1].span.end if len(arg_list) > 0 else func_name.span.end
-                    ), dummy=node.dummy_node
+                    span=func_name.span, 
+                    dummy=node.dummy_node
                 )
                 return stmt
     
