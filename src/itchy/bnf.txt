@@ -24,9 +24,9 @@
 <funcbody> ::= "(" [<paramlist>] ")" <wrap>
 <slice> ::= "[" <equation> "]"
 <equation> ::= <comparison>
-<comparison> ::= <addition> { ("==" | ">" | "<" | <In> ) <addition> }
+<comparison> ::= <addition> { ( "and" | "or" | <In> ) <addition> }
 <addition> ::= <multiplication> { ("+" | "-") <multiplication> }
-<multiplication> ::= <unary> { ("*" | "/" | "and" | "or") <unary> }
+<multiplication> ::= <unary> { ("*" | "/" | ">" | "<" | "==" ) <unary> }
 <unary> ::= ["-" | "not"] <primary>
 <primary> ::= <literals> | "(" <equation> ")"
 <var> ::= <Symbol> [<slice>]
