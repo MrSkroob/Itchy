@@ -17,7 +17,6 @@ import time
 
 
 parser = Parser()
-
 ast_builder = ASTBuilder()
 assembler = Assembler("")
 

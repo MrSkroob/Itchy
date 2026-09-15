@@ -2516,7 +2516,12 @@ class Assembler:
         else:
             thread_id = NumberExpr(context.thread_id)
 
-        
+        if self.count_args(expr.args) != len(proc_info.argument_ids) - 1:
+            return self.raise_or_return(ArgumentError(
+                f"Function '{expr.callee}' expects {len(proc_info.argument_ids) - 1} arguments, "
+                f"got {self.count_args(expr.args)}",
+                expr
+            ), PLACE_HOLDER_0)
 
         self.register_symbol(
             SymbolOccurence(
