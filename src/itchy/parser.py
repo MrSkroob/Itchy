@@ -71,9 +71,10 @@ def print_token_safe(tokens: list[Token[Definitions]], pos: int):
 
 
 BRACKET_PAIRS: dict[str, str] = {
-    "{": "}",
-    "(": ")",
-    "[": "]"
+    # "{": "}",
+    "}": "{"
+    # "(": ")",
+    # "[": "]"
 }
 
 
@@ -148,8 +149,8 @@ class Parser:
         # Guarantee forward progress for an otherwise unrecoverable
         # garbage token.
         if new_pos <= initial_pos:
-            if new_pos < len(tokens) and tokens[new_pos].literal in BRACKET_PAIRS.values():
-                return
+            if new_pos < len(tokens) and tokens[new_pos].literal in BRACKET_PAIRS:
+                return min(new_pos + 1, len(tokens))
 
             new_pos = min(new_pos + 1, len(tokens))
 
@@ -163,18 +164,14 @@ class Parser:
         if pos >= len(tokens):
             return pos
 
-        # line = tokens[pos].line
         i = pos
 
         while i < len(tokens):
             token = tokens[i]
 
             # skip the entire hecking block!
-            if token.literal in BRACKET_PAIRS.values():
-                return min(i + 1, len(tokens) - 1)
-
-            # if token.line > line:
-            #     return i
+            if token.literal in BRACKET_PAIRS:
+                return i
 
             i += 1
 
@@ -540,8 +537,6 @@ class Parser:
                 error = self.furthest_error or e
                 error.expected = ExpectedState(error.pos, self.expected_items) 
                 self.accumulated_errors.append(error)
-
-                print(error.rule)
 
                 if self.skip_bad_tokens:
                     if self.recovered_tree:
