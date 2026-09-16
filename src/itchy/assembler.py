@@ -18,6 +18,7 @@ from enum import Enum, StrEnum
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
+from itchy.image_parser import get_image_size
 from itchy.shared_templates import VARIABLE_TYPE_TO_USER_TYPES, VariableTypes, DataType, SourceSpan, SPRITE_TEMPLATE, COSTUME_TEMPLATE, PROJECT_TEMPLATE, DATA_TO_VARIABLE_TYPE, ASTNode
 from itchy.errors import CompilerError, CompilerWarning, CompilerErrorCodes, Unbound, NotReferenced, Shadow, DuplicateDefinitionError,\
     NeverReached, \
@@ -3262,6 +3263,10 @@ class Assembler:
             if extension not in {"svg", "png", "jpg", "jpeg"}:
                 continue
 
+            width, height = get_image_size(path)
+            rotation_center_x = width / 2
+            rotation_center_y = height / 2
+
             asset_id = self._asset_id(path)
             archive_name = f"{asset_id}.{extension}"
 
@@ -3272,6 +3277,8 @@ class Assembler:
             costume["name"] = path.stem
             costume["assetId"] = asset_id
             costume["md5ext"] = archive_name
+            costume["rotationCenterX"] = rotation_center_x
+            costume["rotationCenterY"] = rotation_center_y
 
             assets.append(
                 (path, archive_name)
