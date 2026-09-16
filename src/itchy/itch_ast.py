@@ -830,7 +830,7 @@ class ASTBuilder:
             if child.kind != Definitions.Type:
                 continue
             types.append(child.literal)
-            self.emit_token(child, "Type")
+            self.emit_token(child, "type")
 
         return tuple(types)
     
