@@ -21,7 +21,7 @@
 <tableconstructor> ::= "[" [<varlist1>] "]"
 <wrap> ::= "{" [<chunk>] "}"
 <function> ::= <Symbol> <funcbody>
-<funcbody> ::= "(" [<paramlist>] ")" <wrap>
+<funcbody> ::= "(" [<paramlist>] ")" ["->" <typelist>] <wrap>
 <slice> ::= "[" <equation> "]"
 <equation> ::= <or>
 <or> ::= <and> { "or" <and> }
@@ -38,6 +38,7 @@
 <args> ::= "(" [<varlist1>] ")"
 <argtype> ::= <Symbol> <Colon> <Type>
 <paramlist> ::= <argtype> {<FieldSeperator> <argtype>} [<FieldSeperator>]
+<typelist> ::= <Type> {"|" <Type>}
 
 // note that rules are evaluated left to right
 // for performance, it's better to have non-terminators at the end. 

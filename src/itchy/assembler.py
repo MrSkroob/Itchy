@@ -149,6 +149,7 @@ class ProcedureInfo:
 
     # if applicable. counts the number of return statements that return nothing.
     return_nothings: int = 0
+    unfulfilled_types: set[VariableTypes]=field(default_factory=lambda: set())
     return_types: set[VariableTypes]=field(default_factory=lambda: {VariableTypes.NOTHING})
 
 
@@ -846,6 +847,8 @@ class Assembler:
                 body.append(
                     FunctionCallStmt(SET_RETURN_VALUE, (value, VarExpr(VarRef(FRAME_INDEX))))
                 )
+
+            proc_data.unfulfilled_types.difference_update(return_type)
         else:
             proc_data.return_nothings += 1
 
@@ -1605,8 +1608,12 @@ class Assembler:
             argument_names=argument_names_tuple,
             argument_defaults=argument_defaults_tuple,
             argument_types=argument_types_tuple,
-            definition_location=stmt.span
+            unfulfilled_types=set(VariableTypes(i) for i in stmt.type_annotation),
+            definition_location=stmt.span,
         )
+
+        if len(stmt.type_annotation) > 0:
+            proc_info.return_types = proc_info.unfulfilled_types.copy()
 
         self.procedures[stmt.name] = proc_info
 
@@ -1619,8 +1626,14 @@ class Assembler:
             self.blocks[definition_id]["next"] = body_range.first
             self.blocks[body_range.first]["parent"] = definition_id
 
-        if body_range.terminates and proc_info.return_nothings == 0: 
+        if body_range.terminates and proc_info.return_nothings == 0 and VariableTypes.NOTHING in proc_info.return_types: 
             proc_info.return_types.remove(VariableTypes.NOTHING)
+
+        if len(proc_info.unfulfilled_types) != 0 and not (len(proc_info.unfulfilled_types) == 1 and VariableTypes.NOTHING in proc_info.unfulfilled_types):
+            self.raise_or_return(TypeMismatch(
+                f"'{stmt.name}': Not all codepaths end in specified types. Missing: ({", ".join(i for i in proc_info.unfulfilled_types)})",
+                stmt
+                ))
 
         return BlockRange(
             first=definition_id,
@@ -2077,7 +2090,7 @@ class Assembler:
 
             if not self.type_check(self.variables[var_id].var_type, expr.return_type, value):
                 error = TypeMismatch(
-                    f"{target.root}: not one of ({", ".join(i.value for i in expr.return_type)}) matches {self.variables[var_id].var_type}", 
+                    f"'{target.root}': not one of ({", ".join(i.value for i in expr.return_type)}) matches {self.variables[var_id].var_type}", 
                     value)
                 self.raise_or_return(error)
 

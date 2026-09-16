@@ -94,6 +94,8 @@ class Definitions(StrEnum):
     # Not = r"\b(not)\b"
     If = r"\b(if)\b"
     In = r"\b(in)\b"
+    ReturnAnnotation = r"->"
+    Pipe = r"\|"
     Forever = r"\b(forever)\b"
     Number = r"[0-9][_0-9]*(\.[0-9][_0-9]*)?"
     Type = fr"\b(?:{"|".join([i.value for i in VariableTypes])})\b"

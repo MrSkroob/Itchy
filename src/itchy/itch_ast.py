@@ -117,6 +117,7 @@ class FunctionDefStmt(Stmt):
     name: str
     params: tuple["Param", ...]
     body: tuple[Stmt, ...]
+    type_annotation: tuple[str, ...]=()
     warp: bool = False
 
 
@@ -236,6 +237,7 @@ class FunctionParts:
     name: str
     params: tuple[Param, ...]
     body: tuple[Stmt, ...]
+    type_annotation: tuple[str, ...]
     span: SourceSpan
 
 
@@ -818,6 +820,19 @@ class ASTBuilder:
         self.var_definitions[stmt] = stmt.span
     
         return stmt
+
+
+    def build_typelist(self, node: ParsedNode) -> tuple[str, ...]:
+        types: list[str] = []
+        for child in flat_children(node):
+            if not isinstance(child, Token):
+                continue
+            if child.kind != Definitions.Type:
+                continue
+            types.append(child.literal)
+            self.emit_token(child, "Type")
+
+        return tuple(types)
     
     
     def build_paramlist(self, node: ParsedNode) -> tuple[Param, ...]:
@@ -865,11 +880,17 @@ class ASTBuilder:
 
         if not body or not body.dummy:
             self.function_scope = None
+
+        typelist = ()
+
+        if has_token(funcbody, Definitions.ReturnAnnotation.name):
+            typelist = self.build_typelist(find_first_node(funcbody, "typelist"))
     
         return FunctionParts(
             name.literal,
             params,
             body.body if body is not None else (),
+            type_annotation=typelist,
             span=name.span
         ) 
     
@@ -887,6 +908,7 @@ class ASTBuilder:
             parts.name,
             parts.params,
             parts.body,
+            parts.type_annotation,
             warp,
             span=parts.span, 
             dummy=node.dummy_node
