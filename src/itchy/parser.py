@@ -342,19 +342,15 @@ class Parser:
                             recovery_token = self.skip_rules_on_fail.get(e.node.child.name)
                             if not recovery_token:
                                 raise error
-                            
+
                             error.expected = ExpectedState(e.pos, self.expected_items)
                             self.accumulated_errors.append(error)
                             self.reset_expected()
                             parsed_children.append(recovery_token()[0])
-                    
-                            raise error
-
-                        if self.can_recover_repeat(current_rule):
-                            pos = min(e.pos + 1, len(tokens))
-                            if new_pos := self.advance(pos, error, tokens):
+                        elif self.can_recover_repeat(current_rule):
+                            if new_pos := self.advance(min(e.pos + 1, len(tokens)), error, tokens):
                                 return ParseResult(
-                                    ParsedNode(Sequence.__name__, self.skip_rules_on_fail[current_rule.name]()),
+                                    ParsedNode(Sequence.__name__, self.recoverable_rules[current_rule.name]()),
                                     new_pos
                                 )
                         
@@ -572,8 +568,6 @@ class Parser:
         new_node = extend_node(result_children, "chunk", tuple(extra_children))
 
         return ParseResult(tree=new_node, pos=0)
-        
-
 
     def read(self, text: str) -> ParseResult:
         # Reset per-parse state so a Parser instance can be reused across

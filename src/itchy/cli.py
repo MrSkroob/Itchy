@@ -23,7 +23,7 @@ strict_assembler = Assembler("")
 non_strict_assembler = Assembler("", compile_with_warnings=True)
 
 
-DEBUG_MODE = True
+DEBUG_MODE = False
 
 
 if DEBUG_MODE:
