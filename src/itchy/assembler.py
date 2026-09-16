@@ -1891,6 +1891,7 @@ class Assembler:
         end
         """
         not_condition = UnaryOpExpr("not", stmt.condition)
+        not_condition = self.fold_expr(not_condition)
 
         block_id = self.new_id()
         inputs: dict[str, ScratchInputRaw] = {}
@@ -2859,6 +2860,31 @@ class Assembler:
                     )
 
             else:
+                if var_type == VariableTypes.BOOL:
+                    block_id = self.make_block(
+                        opcode="operator_equals",
+                        parent=parent,
+                        inputs={
+                            "OPERAND1": ScratchInput(
+                                (
+                                    InputType.BLOCK_AND_SHADOW,
+                                    (
+                                        DataType.VARIABLE,
+                                        ref.root,
+                                        var_id
+                                    )
+                                ),
+                                {var_type}
+                            ).value,
+                            "OPERAND2": ScratchInput((InputType.SHADOW_ONLY, (DataType.STRING, "true")), {VariableTypes.STRING}).value,
+                        }
+                    )
+
+                    return ScratchInput(
+                                (InputType.BLOCK_ONLY, block_id),
+                                {VariableTypes.BOOL},
+                            )
+
                 return ScratchInput(
                     (
                         InputType.BLOCK_AND_SHADOW,
