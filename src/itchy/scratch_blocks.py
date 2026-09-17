@@ -148,7 +148,6 @@ STAGE_BLOCKS: dict[str, Block | Reporter | Event] = {
     # events
     "event_whenflagclicked": Event(),
     "event_whenkeypressed": Event(fields=(Field("KEY_OPTION", VALID_KEYS),)),
-    "event_whenthisspriteclicked": Event(),
     "event_whenbackdropswitchesto": Event(fields=(Field("BACKDROP", (), is_variable=True),)),
     "event_whengreaterthan": Event((ReturnType("VALUE"),), (Field("WHENGREATERTHANMENU", ("LOUDNESS", "TIMER")),)),
     "event_whenbroadcastreceived": Event(fields=(Field("BROADCAST_OPTION", (), is_variable=True),), broadcasts=("BROADCAST_OPTION",)),
@@ -270,6 +269,7 @@ SCRATCH_BLOCKS: dict[str, Block | Reporter | Event] = {
     ),
 
     # --- control ------------------------------------------------------------
+    "event_whenthisspriteclicked": Event(),
     "control_start_as_clone": Event(),
     "control_delete_this_clone": Block(()),
 

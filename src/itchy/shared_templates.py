@@ -139,7 +139,7 @@ VARIABLE_TYPE_TO_USER_TYPES: dict[VariableTypes, VariableTypes] = {
 
 DATA_TO_VARIABLE_TYPE: dict[DataType, VariableTypes] = {
     DataType.NUMBER: VariableTypes.NUMBER,
-    DataType.POSITIVE_NUMBER: VariableTypes.NUMBER,
+    DataType.POSITIVE_NUMBER: VariableTypes.BOOL, # only control_wait_until uses this, and its input is obviously a boolean. 
     DataType.POSITIVE_INTEGER: VariableTypes.NUMBER,
     DataType.INTEGER: VariableTypes.NUMBER,
     DataType.ANGLE: VariableTypes.NUMBER,
