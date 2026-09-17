@@ -1,4 +1,5 @@
 from dataclasses import dataclass, replace
+from typing import TypeVar
 from itchy.tree import ParsedNode
 from itchy.parser import Token, Sequence, Repeat, OptionalNode, Alternative
 from itchy.shared_templates import ASTNode, AssetTypes
@@ -7,7 +8,7 @@ from itchy.shared_templates import SourceSpan, SourcePosition
 from typing import Callable
 import ast
 
-
+T = TypeVar("T")
 ParsedChild = ParsedNode | Token[Definitions]
 
 
@@ -18,31 +19,6 @@ class SemanticToken:
     length: int
     token_type: str
     modifiers: tuple[str, ...] = ()
-
-def utf16_length(text: str) -> int:
-    return len(text.encode("utf-16-le")) // 2
-
-
-def collect_comment_tokens(source: str) -> list[SemanticToken]:
-    """
-    Comments are dropped by the tokenizer the parser uses (they're
-    blacklisted), so they never reach build_ast at all. Run a second,
-    throwaway tokenizer pass over the raw source that keeps comments, just
-    to harvest their positions for highlighting.
-    """
-    raw_tokenizer = Tokenizer(Definitions, {"Whitespace", "Newline"})
-
-    return [
-        SemanticToken(
-            line=token.line - 1,
-            character=token.char - 1,
-            length=utf16_length(token.literal),
-            token_type="comment",
-        )
-        for token in raw_tokenizer.read(source)
-        if token.kind == Definitions.Comment
-    ]
-
 
 class Stmt(ASTNode):
     pass
@@ -255,119 +231,6 @@ ForBody = ForRangeBody | ForInBody
 AssignOrCall = AssignAction | CallAction
 
 
-def is_token(
-    x: ParsedChild,
-    name: str | None = None,
-    literal: str | None = None
-) -> bool:
-    if not isinstance(x, Token):
-        return False
-
-    if name is not None and x.kind.name != name:
-        return False
-
-    if literal is not None and x.literal != literal:
-        return False
-
-    return True
-
-
-def is_node(node: ParsedChild, name: str | None = None) -> bool:
-    return isinstance(node, ParsedNode) and (name is None or node.name == name)
-
-
-def expect_node(node: ParsedChild, name: str) -> ParsedNode:
-    if not is_node(node, name):
-        raise ValueError(f"Expected `{name}` got {node}")
-    
-    assert isinstance(node, ParsedNode)
-
-    return node
-
-
-def expect_token(token: ParsedChild, name: str | None=None, literal: str | None=None) -> Token[Definitions]:
-    if not is_token(token, name, literal):
-        raise ValueError(f"Expected token with name {name}, literal {literal}, got {token}")
-
-    assert type(token) is Token
-
-    return token
-
-
-def flat_children(node: ParsedNode):
-    """
-    Removes sequence/repeat/optional/alternative identifiers
-    """
-    output: list[ParsedChild] = []
-
-    def visit(child: ParsedChild):
-        if isinstance(child, ParsedNode) and child.name in {Sequence.__name__, Repeat.__name__, OptionalNode.__name__, Alternative.__name__}:
-            for grandchild in child.children:
-                visit(grandchild)
-        else:
-            output.append(child)
-    
-    for child in node.children:
-        visit(child)
-
-    return output
-
-
-def find_first_node(node: ParsedNode, name: str, children: list[ParsedChild] | None=None):
-    """
-    Strictly finds the first occuring node with said name
-    """
-    for child in children or flat_children(node):
-        if is_node(child, name):
-            assert isinstance(child, ParsedNode)
-            return child
-    
-    raise ValueError(f"No child found with name {name}")
-
-
-def search_nodes(nodes: list[ParsedChild], name: str) -> list[ParsedNode]:
-    return [
-        i for i in nodes
-        if isinstance(i, ParsedNode) and i.name == name
-    ]
-
-
-# def all_nodes(node: ParsedNode, name: str):
-#     return search_nodes(flat_children(node), name)
-def has_node(node: ParsedNode, name: str) -> bool:
-    return any(is_node(i, name) for i in flat_children(node))
-
-
-def find_first_token(node: ParsedNode, name: str, children: list[ParsedChild] | None=None):
-    for child in children or flat_children(node):
-        if is_token(child, name):
-            assert isinstance(child, Token)
-            return child
-
-    raise ValueError(f"No token found with name {name}")
-
-
-def has_token(node: ParsedNode, name: str, children: list[ParsedChild] | None=None):
-    return any(is_token(i, name) for i in children or flat_children(node))
-
-
-def parse_number(text: str):
-    value = float(text)
-    return int(value) if value.is_integer() else value
-
-
-def parse_string(text: str):
-    try:
-        value = ast.literal_eval(text)
-    except ValueError:
-        return text.strip('"')
-    
-    if not isinstance(value, str):
-        raise ValueError("STRING NOT STRING?! OOGA BOOGA")
-
-    return value
-
-
 class ASTBuilder:
     """
     Finally, a tangible reason for a class!
@@ -375,7 +238,14 @@ class ASTBuilder:
     `function_scope` to be different between threads (files)
     """
 
-    def __init__(self) -> None:
+    def __init__(self, is_strict: bool=True) -> None:
+        """
+        Being strict is default behaviour. If not strict, AST will accept malformed parse trees (typically trees with incomplete nodes)
+        and will append those to the semantic_tokens list as usual.
+
+        As the list name suggests, this is only useful for syntax highlighting and not linting. 
+        """
+        self.is_strict = is_strict
         self.semantic_tokens: dict[SourceSpan, SemanticToken] = {}
         self.argument_index: int = 0
         self.function_definitions: dict[FunctionDefStmt, SourceSpan] = {}
@@ -388,6 +258,187 @@ class ASTBuilder:
         self.semantic_tokens = {}
         self.function_definitions = {}
         self.var_definitions = {}
+
+
+    def utf16_length(self, text: str) -> int:
+        return len(text.encode("utf-16-le")) // 2
+
+
+    def collect_comment_tokens(self, source: str) -> list[SemanticToken]:
+        """
+        Comments are dropped by the tokenizer the parser uses (they're
+        blacklisted), so they never reach build_ast at all. Run a second,
+        throwaway tokenizer pass over the raw source that keeps comments, just
+        to harvest their positions for highlighting.
+        """
+        raw_tokenizer = Tokenizer(Definitions, {"Whitespace", "Newline"})
+
+        return [
+            SemanticToken(
+                line=token.line - 1,
+                character=token.char - 1,
+                length=self.utf16_length(token.literal),
+                token_type="comment",
+            )
+            for token in raw_tokenizer.read(source)
+            if token.kind == Definitions.Comment
+        ]
+
+
+    def is_token(
+        self,
+        x: ParsedChild,
+        name: str | None = None,
+        literal: str | None = None
+    ) -> bool:
+        if not isinstance(x, Token):
+            return False
+
+        if name is not None and x.kind.name != name:
+            return False
+
+        if literal is not None and x.literal != literal:
+            return False
+
+        return True
+
+
+    def is_node(self, node: ParsedChild, name: str | None = None) -> bool:
+        return isinstance(node, ParsedNode) and (name is None or node.name == name)
+
+
+    def expect_node(self, node: ParsedChild, name: str) -> ParsedNode:
+        if not self.is_node(node, name):
+            raise ValueError(f"Expected `{name}` got {node}")
+
+        assert isinstance(node, ParsedNode)
+        return node
+
+
+    def expect_token(
+        self,
+        token: ParsedChild,
+        name: str | None = None,
+        literal: str | None = None
+    ) -> Token[Definitions]:
+        if not self.is_token(token, name, literal):
+            raise ValueError(
+                f"Expected token with name {name}, literal {literal}, got {token}"
+            )
+
+        assert type(token) is Token
+        return token
+
+
+    def flat_children(self, node: ParsedNode) -> list[ParsedChild]:
+        """
+        Removes sequence/repeat/optional/alternative identifiers.
+        """
+        output: list[ParsedChild] = []
+
+        def visit(child: ParsedChild) -> None:
+            if (
+                isinstance(child, ParsedNode)
+                and child.name in {
+                    Sequence.__name__,
+                    Repeat.__name__,
+                    OptionalNode.__name__,
+                    Alternative.__name__,
+                }
+            ):
+                for grandchild in child.children:
+                    visit(grandchild)
+            else:
+                output.append(child)
+
+        for child in node.children:
+            visit(child)
+
+        return output
+
+
+    def find_first_node(
+        self,
+        node: ParsedNode,
+        name: str,
+        children: list[ParsedChild] | None = None,
+    ) -> ParsedNode:
+        """
+        Strictly finds the first occurring node with said name.
+        """
+        for child in children or self.flat_children(node):
+            if self.is_node(child, name):
+                assert isinstance(child, ParsedNode)
+                return child
+
+        raise ValueError(f"No child found with name {name}")
+
+
+    def search_nodes(
+        self,
+        nodes: list[ParsedChild],
+        name: str,
+    ) -> list[ParsedNode]:
+        return [
+            child
+            for child in nodes
+            if isinstance(child, ParsedNode) and child.name == name
+        ]
+
+
+    def has_node(self, node: ParsedNode, name: str) -> bool:
+        return any(
+            self.is_node(child, name)
+            for child in self.flat_children(node)
+        )
+
+
+    def find_first_token(
+        self,
+        node: ParsedNode,
+        name: str,
+        children: list[ParsedChild] | None = None,
+    ) -> Token[Definitions]:
+        for child in children or self.flat_children(node):
+            if self.is_token(child, name):
+                assert isinstance(child, Token)
+                return child
+
+        raise ValueError(f"No token found with name {name}")
+
+
+    def has_token(
+        self,
+        node: ParsedNode,
+        name: str,
+        children: list[ParsedChild] | None = None,
+    ) -> bool:
+        return any(
+            self.is_token(child, name)
+            for child in children or self.flat_children(node)
+        )
+
+
+    def parse_number(self, text: str) -> int | float:
+        value = float(text)
+        return int(value) if value.is_integer() else value
+
+
+    def parse_string(self, text: str) -> str:
+        try:
+            value = ast.literal_eval(text)
+        except ValueError:
+            return text.strip('"')
+
+        if not isinstance(value, str):
+            raise ValueError("STRING NOT STRING?! OOGA BOOGA")
+
+        return value
+
+    def raise_or_return(self, error: BaseException, return_type: T) -> T:
+        if self.is_strict:
+            raise error
+        return return_type
 
     def emit_token(
         self,
@@ -405,7 +456,7 @@ class ASTBuilder:
         self.semantic_tokens[token.span] = SemanticToken(
             line=token.line - 1,
             character=token.char - 1,
-            length=utf16_length(token.literal),
+            length=self.utf16_length(token.literal),
             token_type=token_type,
             modifiers=modifiers,
         )
@@ -419,7 +470,7 @@ class ASTBuilder:
         program = self._build_ast(tree)
 
         # if include_comments and source is not None:
-        #     self.semantic_tokens.extend(collect_comment_tokens(source))
+        #     self.semantic_tokens.extend(self.collect_comment_tokens(source))
 
         # self.semantic_tokens.sort(key=lambda token: (token.line, token.character))
         return program
@@ -434,7 +485,7 @@ class ASTBuilder:
         return program, self.semantic_tokens.copy()
 
     def build_equation(self, node: ParsedNode) -> Expr:
-        return self.build_or(find_first_node(node, "or"))
+        return self.build_or(self.find_first_node(node, "or"))
 
 
     def build_or(self, node: ParsedNode) -> Expr:
@@ -484,7 +535,7 @@ class ASTBuilder:
         operand_rule: str,
         operand_builder: Callable[[ParsedNode], Expr],
     ) -> Expr:
-        children = flat_children(node)
+        children = self.flat_children(node)
     
         operands: list[ParsedNode] = []
         operators: list[Token[Definitions]] = []
@@ -520,7 +571,7 @@ class ASTBuilder:
     
     
     def build_unary(self, node: ParsedNode) -> Expr:
-        children = flat_children(node)
+        children = self.flat_children(node)
     
         op: Token[Definitions] | None = None
         primary: ParsedNode | None = None
@@ -549,7 +600,7 @@ class ASTBuilder:
     
     
     def build_primary(self, node: ParsedNode) -> Expr:
-        children = flat_children(node)
+        children = self.flat_children(node)
     
         for child in children:
             if isinstance(child, ParsedNode) and child.name == "literals":
@@ -569,7 +620,7 @@ class ASTBuilder:
         """Returns the span of the complete @sound(...)/@image(...) expression."""
         tokens = [
             child
-            for child in flat_children(node)
+            for child in self.flat_children(node)
             if isinstance(child, Token) and not child.dummy_token
         ]
 
@@ -583,9 +634,9 @@ class ASTBuilder:
 
 
     def build_asset(self, node: ParsedNode) -> AssetExpr:
-        label = find_first_token(node, Definitions.AssetType.name)
+        label = self.find_first_token(node, Definitions.AssetType.name)
         self.emit_token(label, "type")
-        arg_list = self.build_varlist1(find_first_node(node, "args"))
+        arg_list = self.build_varlist1(self.find_first_node(node, "args"))
 
         span = None
         if len(arg_list) > 0:
@@ -601,37 +652,37 @@ class ASTBuilder:
 
 
     def build_literals(self, node: ParsedNode) -> Expr:
-        children = flat_children(node)
+        children = self.flat_children(node)
     
         for child in children:
             if isinstance(child, ParsedNode) and child.name == "asset":
                 return self.build_asset(child)
 
-            if is_token(child, name="Bool"):
+            if self.is_token(child, name="Bool"):
                 assert isinstance(child, Token)
                 # self.emit_token(child, "boolean")
                 return BoolExpr(child.literal.lower() == "true", span=child.span, dummy=node.dummy_node)
     
-            if is_token(child, name="Number"):
+            if self.is_token(child, name="Number"):
                 assert isinstance(child, Token)
                 # self.emit_token(child, "number")
-                return NumberExpr(parse_number(child.literal), span=child.span, dummy=node.dummy_node)
+                return NumberExpr(self.parse_number(child.literal), span=child.span, dummy=node.dummy_node)
     
-            if is_token(child, name="String"):
+            if self.is_token(child, name="String"):
                 assert isinstance(child, Token)
                 # self.emit_token(child, "string")
-                return StringExpr(parse_string(child.literal), span=child.span, dummy=node.dummy_node)
+                return StringExpr(self.parse_string(child.literal), span=child.span, dummy=node.dummy_node)
     
             if isinstance(child, ParsedNode) and child.name == "tableconstructor":
                 return self.build_tableconstructor(child)
             
             if isinstance(child, ParsedNode) and child.name == "var":
-                has_slice = has_node(child, "slice")
-                var_name = find_first_token(child, Definitions.Symbol.name)
+                has_slice = self.has_node(child, "slice")
+                var_name = self.find_first_token(child, Definitions.Symbol.name)
                 self.emit_token(var_name, "variable")
     
                 if has_slice:
-                    slice_expr = self.build_slice(find_first_node(child, "slice"))
+                    slice_expr = self.build_slice(self.find_first_node(child, "slice"))
     
                     span = SourceSpan(
                         var_name.span.start,
@@ -652,9 +703,9 @@ class ASTBuilder:
                     ), span=var_name.span, dummy=node.dummy_node)
             
             if isinstance(child, ParsedNode) and child.name == "functioncall":
-                func_name = find_first_token(child, Definitions.Symbol.name)
+                func_name = self.find_first_token(child, Definitions.Symbol.name)
                 self.emit_token(func_name, "function")
-                arg_list = self.build_varlist1(find_first_node(child, "args"))
+                arg_list = self.build_varlist1(self.find_first_node(child, "args"))
                 stmt = FunctionCallExpr(
                     func_name.literal,
                     arg_list,
@@ -667,14 +718,14 @@ class ASTBuilder:
     
     
     def build_var(self, node: ParsedNode, modifiers: tuple[str, ...] = ()) -> VarRef:
-        # children = flat_children(node)
+        # children = self.flat_children(node)
     
-        symbol: Token[Definitions] = find_first_token(node, Definitions.Symbol.name)
+        symbol: Token[Definitions] = self.find_first_token(node, Definitions.Symbol.name)
         self.emit_token(symbol, "variable", modifiers)
         slice_expr: Expr | None = None
-        has_slice = has_node(node, "slice")
+        has_slice = self.has_node(node, "slice")
         if has_slice:
-            slice_expr = self.build_slice(find_first_node(node, "slice"))
+            slice_expr = self.build_slice(self.find_first_node(node, "slice"))
     
         if not symbol:
             raise ValueError(f"how u gonna want a variable with no name: {node!r}")
@@ -690,11 +741,11 @@ class ASTBuilder:
     
     
     def build_slice(self, node: ParsedNode) -> Expr:
-        return self.build_equation(find_first_node(node, "equation"))
+        return self.build_equation(self.find_first_node(node, "equation"))
     
     
     def build_tableconstructor(self, node: ParsedNode) -> TableExpr:
-        children = flat_children(node)
+        children = self.flat_children(node)
     
         bracket_tokens = [
             child
@@ -722,7 +773,7 @@ class ASTBuilder:
     
     def build_varlist1(self, node: ParsedNode) -> tuple[Expr, ...]:
         values: list[Expr] = []
-        children = flat_children(node)
+        children = self.flat_children(node)
 
         index = 0
 
@@ -741,15 +792,15 @@ class ASTBuilder:
     
     def build_namelist(self, node: ParsedNode) -> tuple[str, ...]:
         return tuple(
-            i.literal for i in flat_children(node) if is_token(i, "Symbol") and isinstance(i, Token)
+            i.literal for i in self.flat_children(node) if self.is_token(i, "Symbol") and isinstance(i, Token)
         )
     
     
     def build_functioncall(self, node: ParsedNode) -> FunctionCallStmt:
-        function_name = find_first_token(node, Definitions.Symbol.name)
+        function_name = self.find_first_token(node, Definitions.Symbol.name)
         self.emit_token(function_name, "function")
         self.argument_index = 0
-        args = self.build_varlist1(find_first_node(node, "args"))
+        args = self.build_varlist1(self.find_first_node(node, "args"))
         stmt = FunctionCallStmt(
             function_name.literal,
             args,
@@ -759,9 +810,9 @@ class ASTBuilder:
         return stmt 
     
     def build_varassignstat(self, node: ParsedNode) -> AssignStmt:
-        var_node = find_first_node(node, "var")
-        operation = find_first_token(node, Definitions.Assign.name)
-        action_node = find_first_node(node, "equation")
+        var_node = self.find_first_node(node, "var")
+        operation = self.find_first_token(node, Definitions.Assign.name)
+        action_node = self.find_first_node(node, "equation")
     
         target = self.build_var(var_node, ("modification",))
         self.emit_token(operation, "operator")
@@ -801,12 +852,12 @@ class ASTBuilder:
             )
     
     def build_vardefstat(self, node: ParsedNode) -> VarDefStmt:
-        shared = has_token(node, "Shared")
+        shared = self.has_token(node, "Shared")
     
-        type_token = find_first_token(node, "Type")
+        type_token = self.find_first_token(node, "Type")
         self.emit_token(type_token, "type")
 
-        symbol_token = find_first_token(node, "Symbol")
+        symbol_token = self.find_first_token(node, "Symbol")
     
         self.emit_token(symbol_token, "variable", ("declaration",))
     
@@ -824,7 +875,7 @@ class ASTBuilder:
 
     def build_typelist(self, node: ParsedNode) -> tuple[str, ...]:
         types: list[str] = []
-        for child in flat_children(node):
+        for child in self.flat_children(node):
             if not isinstance(child, Token):
                 continue
             if child.kind != Definitions.Type:
@@ -838,18 +889,18 @@ class ASTBuilder:
     def build_paramlist(self, node: ParsedNode) -> tuple[Param, ...]:
         return tuple(
             self.build_argtype(child)
-            for child in flat_children(node)
+            for child in self.flat_children(node)
             if isinstance(child, ParsedNode) and child.name == "argtype"
         )
     
     
     def build_argtype(self, node: ParsedNode) -> Param:
-        children = flat_children(node)
+        children = self.flat_children(node)
     
-        name = expect_token(children[0], name="Symbol")
+        name = self.expect_token(children[0], name="Symbol")
         self.emit_token(name, "parameter", ("declaration", "readonly"))
         
-        type_name = expect_token(children[2], name="Type")
+        type_name = self.expect_token(children[2], name="Type")
         self.emit_token(type_name, "type")
     
         return Param(name.literal, type_name.literal, span=name.span, dummy=node.dummy_node)
@@ -859,7 +910,7 @@ class ASTBuilder:
         params: tuple[Param, ...] = ()
         body: BlockStmt | None = None
     
-        for child in flat_children(node):
+        for child in self.flat_children(node):
             if isinstance(child, ParsedNode) and child.name == "paramlist":
                 params = self.build_paramlist(child)
     
@@ -870,11 +921,11 @@ class ASTBuilder:
     
     
     def build_function(self, node: ParsedNode) -> FunctionParts:
-        children = flat_children(node)
-        name = expect_token(children[0], Definitions.Symbol.name)
+        children = self.flat_children(node)
+        name = self.expect_token(children[0], Definitions.Symbol.name)
         self.emit_token(name, "function", ("declaration",))
         self.function_scope = name.literal
-        funcbody = expect_node(children[1], "funcbody")
+        funcbody = self.expect_node(children[1], "funcbody")
     
         params, body = self.build_funcbody(funcbody)
 
@@ -883,8 +934,8 @@ class ASTBuilder:
 
         typelist = ()
 
-        if has_token(funcbody, Definitions.ReturnAnnotation.name):
-            typelist = self.build_typelist(find_first_node(funcbody, "typelist"))
+        if self.has_token(funcbody, Definitions.ReturnAnnotation.name):
+            typelist = self.build_typelist(self.find_first_node(funcbody, "typelist"))
     
         return FunctionParts(
             name.literal,
@@ -896,12 +947,12 @@ class ASTBuilder:
     
     
     def build_functionstat(self, node: ParsedNode) -> FunctionDefStmt:
-        warp = has_token(node, Definitions.Warp.name)
+        warp = self.has_token(node, Definitions.Warp.name)
     
-        # define = find_first_token(node, Definitions.Define.name)
+        # define = self.find_first_token(node, Definitions.Define.name)
         # self.emit_token(define_token, "keyword")
     
-        function = find_first_node(node, "function")
+        function = self.find_first_node(node, "function")
         parts = self.build_function(function)
 
         stmt = FunctionDefStmt(
@@ -920,13 +971,13 @@ class ASTBuilder:
     
     
     def build_eventstat(self, node: ParsedNode) -> EventHandlerStmt:
-        children = flat_children(node)
-        # event = expect_token(children[0], Definitions.Event.name)
+        children = self.flat_children(node)
+        # event = self.expect_token(children[0], Definitions.Event.name)
         # self.emit_token(event_token, "keyword")
-        name = expect_token(children[1], Definitions.Symbol.name)
+        name = self.expect_token(children[1], Definitions.Symbol.name)
         self.emit_token(name, "event")
-        eventbody = expect_node(children[2], "args")
-        wrap = expect_node(children[3], "wrap")
+        eventbody = self.expect_node(children[2], "args")
+        wrap = self.expect_node(children[3], "wrap")
         
         args = self.build_varlist1(eventbody)
         wrap_nodes = self.build_wrap(wrap)
@@ -942,14 +993,14 @@ class ASTBuilder:
     
     
     def build_for_body(self, node: ParsedNode) -> ForBody:
-        children = flat_children(node)
+        children = self.flat_children(node)
     
-        if any(is_token(child, Definitions.In.name) for child in children):
-            in_token = next(child for child in children if is_token(child, Definitions.In.name))
+        if any(self.is_token(child, Definitions.In.name) for child in children):
+            in_token = next(child for child in children if self.is_token(child, Definitions.In.name))
             assert isinstance(in_token, Token)
             # self.emit_token(in_token, "keyword")
     
-            # var_node = next(search_nodes(children, "var"))
+            # var_node = next(self.search_nodes(children, "var"))
             var_node = self.build_var(next(
                 i for i in children 
                 if isinstance(i, ParsedNode) and i.name == "var"
@@ -978,17 +1029,17 @@ class ASTBuilder:
     
     
     def build_forstat(self, node: ParsedNode):
-        children = flat_children(node)
+        children = self.flat_children(node)
     
-        for_token = expect_token(children[0], "For")
+        for_token = self.expect_token(children[0], "For")
         # self.emit_token(for_token, "keyword")
     
-        var_name_token = expect_token(children[1], "Symbol")
+        var_name_token = self.expect_token(children[1], "Symbol")
         self.emit_token(var_name_token, "variable", ("declaration",))
         var_name = var_name_token.literal
     
-        forbody = expect_node(children[2], "forbody")
-        wrap = expect_node(children[3], "wrap")
+        forbody = self.expect_node(children[2], "forbody")
+        wrap = self.expect_node(children[3], "wrap")
     
         body_spec = self.build_for_body(forbody)
         body = self.build_wrap(wrap)
@@ -1020,7 +1071,7 @@ class ASTBuilder:
     
     
     def build_ifstat(self, node: ParsedNode):
-        children = flat_children(node)
+        children = self.flat_children(node)
     
         branches: list[IfBranch] = []
         else_body: BlockStmt | None = None
@@ -1028,37 +1079,37 @@ class ASTBuilder:
         if_token = children[0]
         assert isinstance(if_token, Token) and if_token.kind.name == Definitions.If.name
         # self.emit_token(if_token, "keyword")
-        condition = self.build_equation(expect_node(children[1], "equation"))
-        body = self.build_wrap(expect_node(children[2], "wrap"))
+        condition = self.build_equation(self.expect_node(children[1], "equation"))
+        body = self.build_wrap(self.expect_node(children[2], "wrap"))
         i = 3
     
         branches.append(IfBranch(condition, body.body, 
                                  span=SourceSpan(if_token.span.start, body.span.end), 
                                  dummy=node.dummy_node))
     
-        while i < len(children) and is_token(children[i], "ElseIf"):
+        while i < len(children) and self.is_token(children[i], "ElseIf"):
             elseif_token = children[i]
             assert isinstance(elseif_token, Token)
             # self.emit_token(elseif_token, "keyword")
     
             i += 1
     
-            condition = self.build_equation(expect_node(children[i], "equation"))
+            condition = self.build_equation(self.expect_node(children[i], "equation"))
             i += 1
     
-            body = self.build_wrap(expect_node(children[i], "wrap"))
+            body = self.build_wrap(self.expect_node(children[i], "wrap"))
             i += 1
     
             branches.append(IfBranch(condition, body.body, 
                                      span=SourceSpan(elseif_token.span.start, body.span.end),
                                      dummy=node.dummy_node))
         
-        if i < len(children) and is_token(children[i], "Else"):
+        if i < len(children) and self.is_token(children[i], "Else"):
             else_token = children[i]
             assert isinstance(else_token, Token)
             # self.emit_token(else_token, "keyword")
             i += 1
-            else_body = self.build_wrap(expect_node(children[i], "wrap"))
+            else_body = self.build_wrap(self.expect_node(children[i], "wrap"))
 
         if else_body is None:
             end = body.span.end
@@ -1074,8 +1125,8 @@ class ASTBuilder:
 
 
     def build_foreverstat(self, node: ParsedNode):
-        forever_token = find_first_token(node, Definitions.Forever.name)
-        body = find_first_node(node, "wrap")
+        forever_token = self.find_first_token(node, Definitions.Forever.name)
+        body = self.find_first_node(node, "wrap")
         wrap = self.build_wrap(body)
 
         return ForeverStmt(
@@ -1085,10 +1136,10 @@ class ASTBuilder:
 
     
     def build_whilestat(self, node: ParsedNode):
-        while_token = find_first_token(node, Definitions.While.name)
+        while_token = self.find_first_token(node, Definitions.While.name)
         # self.emit_token(while_token, "keyword")
-        condition = find_first_node(node, "equation")
-        body = find_first_node(node, "wrap")
+        condition = self.find_first_node(node, "equation")
+        body = self.find_first_node(node, "wrap")
     
         equation = self.build_equation(condition)
         wrap = self.build_wrap(body)
@@ -1108,7 +1159,7 @@ class ASTBuilder:
         chunk = ()
         brackets: list[Token[Definitions]] = []
 
-        for child in flat_children(node):
+        for child in self.flat_children(node):
             # if it passed the parser, we can sort of guarantee that the next node will be a chunk node,
             # but whatever...
     
@@ -1127,10 +1178,10 @@ class ASTBuilder:
     
     
     def build_laststat(self, node: ParsedNode) -> ReturnStmt:
-        children = flat_children(node)
+        children = self.flat_children(node)
     
-        # if has_token(node, Definitions.Break.name, children):
-        #     break_token = find_first_token(
+        # if self.has_token(node, Definitions.Break.name, children):
+        #     break_token = self.find_first_token(
         #         node,
         #         Definitions.Break.name,
         #         children,
@@ -1138,8 +1189,8 @@ class ASTBuilder:
         #     self.emit_token(break_token, "keyword")
         #     return BreakStmt(span=break_token.span)
     
-        if has_token(node, Definitions.Return.name, children):
-            return_token = find_first_token(
+        if self.has_token(node, Definitions.Return.name, children):
+            return_token = self.find_first_token(
                 node,
                 Definitions.Return.name,
                 children,
@@ -1180,7 +1231,7 @@ class ASTBuilder:
         raise ValueError("that's not good :[")
     
     def build_stat(self, node: ParsedNode) -> Stmt:
-        for child in flat_children(node):
+        for child in self.flat_children(node):
             if not isinstance(child, ParsedNode):
                 continue
             
@@ -1189,7 +1240,7 @@ class ASTBuilder:
                     wrap = self.build_wrap(child)
                     return wrap
                 case "laststat":
-                    separator = find_first_token(node, Definitions.StatementSeparator.name)
+                    separator = self.find_first_token(node, Definitions.StatementSeparator.name)
                     laststat = self.build_laststat(child)
                     laststat = replace(laststat, span=SourceSpan(laststat.span.start, separator.span.end))
                     return laststat
@@ -1227,10 +1278,10 @@ class ASTBuilder:
     def build_chunk(self, node: ParsedNode):
         statements: list[Stmt] = []
     
-        for child in flat_children(node):
-            if is_token(child, name=GenericRules.StatementSeparator.name):
+        for child in self.flat_children(node):
+            if self.is_token(child, name=GenericRules.StatementSeparator.name):
                 continue
-            if is_token(child, name=GenericRules.EOF.name):
+            if self.is_token(child, name=GenericRules.EOF.name):
                 continue
     
             if isinstance(child, ParsedNode):
@@ -1241,7 +1292,7 @@ class ASTBuilder:
     
     
     def build_program(self, node: ParsedNode) -> Program:
-        children = flat_children(node)
+        children = self.flat_children(node)
     
         variable_definitions = tuple(
             self.build_vardefstat(child)
