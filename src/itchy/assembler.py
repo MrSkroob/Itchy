@@ -1613,9 +1613,6 @@ class Assembler:
             definition_location=stmt.span,
         )
 
-        if len(stmt.type_annotation) > 0:
-            proc_info.return_types = proc_info.unfulfilled_types.copy()
-
         self.procedures[stmt.name] = proc_info
 
         self.flag_non_referenced_function(stmt)
@@ -1635,6 +1632,9 @@ class Assembler:
                 f"'{stmt.name}': Not all codepaths end in specified types. Missing: ({", ".join(i for i in proc_info.unfulfilled_types)})",
                 stmt
                 ))
+
+        if len(stmt.type_annotation) > 0:
+            proc_info.return_types = set(VariableTypes(i) for i in stmt.type_annotation)
 
         return BlockRange(
             first=definition_id,
