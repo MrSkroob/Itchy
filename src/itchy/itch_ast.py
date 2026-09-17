@@ -10,6 +10,10 @@ import ast
 
 T = TypeVar("T")
 ParsedChild = ParsedNode | Token[Definitions]
+DUMMY_SPAN = SourceSpan(
+    start=SourcePosition(-1, -1),
+    end=SourcePosition(-1, -1)
+)
 
 
 @dataclass(frozen=True)
@@ -260,7 +264,8 @@ class ASTBuilder:
         self.var_definitions = {}
 
 
-    def utf16_length(self, text: str) -> int:
+    @staticmethod
+    def utf16_length(text: str) -> int:
         return len(text.encode("utf-16-le")) // 2
 
 
@@ -307,9 +312,12 @@ class ASTBuilder:
         return isinstance(node, ParsedNode) and (name is None or node.name == name)
 
 
-    def expect_node(self, node: ParsedChild, name: str) -> ParsedNode:
+    def expect_node(self, node: ParsedChild, name: str) -> ParsedNode | None:
         if not self.is_node(node, name):
-            raise ValueError(f"Expected `{name}` got {node}")
+            if self.is_strict:
+                raise ValueError(f"Expected `{name}` got {node}")
+            print(f"Expected `{name}` got {node}")
+            return
 
         assert isinstance(node, ParsedNode)
         return node
@@ -322,6 +330,8 @@ class ASTBuilder:
         literal: str | None = None
     ) -> Token[Definitions]:
         if not self.is_token(token, name, literal):
+            if not self.is_strict:
+                return Token(Definitions(name), "", line=-1, char=-1, dummy_token=True)
             raise ValueError(
                 f"Expected token with name {name}, literal {literal}, got {token}"
             )
@@ -926,6 +936,11 @@ class ASTBuilder:
         self.emit_token(name, "function", ("declaration",))
         self.function_scope = name.literal
         funcbody = self.expect_node(children[1], "funcbody")
+
+        if not funcbody:
+            return self.raise_or_return(ValueError("Expected funcbody, got something else"), FunctionParts(
+                name.literal, (), (), (), span=DUMMY_SPAN
+            ))
     
         params, body = self.build_funcbody(funcbody)
 
@@ -977,7 +992,18 @@ class ASTBuilder:
         name = self.expect_token(children[1], Definitions.Symbol.name)
         self.emit_token(name, "event")
         eventbody = self.expect_node(children[2], "args")
+
+        # default_stmt = EventHandlerStmt(name.literal, (), (), dummy=True)
+        # if not eventbody:
+        #     return default_stmt
+
         wrap = self.expect_node(children[3], "wrap")
+
+        if not wrap:
+            wrap = ParsedNode("wrap", (), True)
+
+        if not eventbody:
+            eventbody = ParsedNode("args", (), True)
         
         args = self.build_varlist1(eventbody)
         wrap_nodes = self.build_wrap(wrap)
@@ -1037,11 +1063,31 @@ class ASTBuilder:
         var_name_token = self.expect_token(children[1], "Symbol")
         self.emit_token(var_name_token, "variable", ("declaration",))
         var_name = var_name_token.literal
+
+        default_stmt = ForRangeStmt(
+            var_name,
+            start=NumberExpr(-1),
+            step=NumberExpr(1),
+            stop=NumberExpr(-1),
+            body=(),
+            dummy=True
+        )
     
         forbody = self.expect_node(children[2], "forbody")
+        if not forbody:
+            return default_stmt
+        
         wrap = self.expect_node(children[3], "wrap")
+
+        if not wrap:
+            return default_stmt
     
         body_spec = self.build_for_body(forbody)
+        
+
+        if not body_spec:
+            return default_stmt
+
         body = self.build_wrap(wrap)
 
     
@@ -1079,8 +1125,21 @@ class ASTBuilder:
         if_token = children[0]
         assert isinstance(if_token, Token) and if_token.kind.name == Definitions.If.name
         # self.emit_token(if_token, "keyword")
-        condition = self.build_equation(self.expect_node(children[1], "equation"))
-        body = self.build_wrap(self.expect_node(children[2], "wrap"))
+
+        if len(children) < 3:
+            children.append(ParsedNode("equation", (), dummy_node=True))
+
+        equation_node = self.expect_node(children[1], "equation")
+        assert equation_node is not None
+        
+        if len(children) < 3:
+            children.append(ParsedNode("wrap", (), dummy_node=True))
+
+        wrap_node = self.expect_node(children[2], "wrap")
+        assert wrap_node is not None
+
+        condition = self.build_equation(equation_node)
+        body = self.build_wrap(wrap_node)
         i = 3
     
         branches.append(IfBranch(condition, body.body, 
@@ -1093,11 +1152,27 @@ class ASTBuilder:
             # self.emit_token(elseif_token, "keyword")
     
             i += 1
-    
-            condition = self.build_equation(self.expect_node(children[i], "equation"))
+
+            equation_node = self.expect_node(children[i], "equation")
+            if not equation_node:
+                return IfStmt(
+                    tuple(branches),
+                    (),
+                    dummy=False
+                )
+            
+            condition = self.build_equation(equation_node)
             i += 1
-    
-            body = self.build_wrap(self.expect_node(children[i], "wrap"))
+
+            wrap_node = self.expect_node(children[i], "wrap")
+            if not wrap_node:
+                return IfStmt(
+                    tuple(branches),
+                    (),
+                    dummy=False
+                )
+            
+            body = self.build_wrap(wrap_node)
             i += 1
     
             branches.append(IfBranch(condition, body.body, 
@@ -1109,7 +1184,15 @@ class ASTBuilder:
             assert isinstance(else_token, Token)
             # self.emit_token(else_token, "keyword")
             i += 1
-            else_body = self.build_wrap(self.expect_node(children[i], "wrap"))
+            else_wrap = self.expect_node(children[i], "wrap")
+            if not else_wrap:
+                return IfStmt(
+                    tuple(branches),
+                    (),
+                    dummy=False
+                )
+
+            else_body = self.build_wrap(else_wrap)
 
         if else_body is None:
             end = body.span.end
