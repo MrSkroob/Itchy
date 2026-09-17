@@ -475,6 +475,7 @@ class Assembler:
         emits statements that do not necessarily have to be linked together.
         """
         for stmt in statements:
+            print(stmt.__class__.__name__)
             block_range = self.emit_stmt(stmt, None, Context(
                 function_context=None, 
                 thread_id=DEFAULT_THREAD, 
@@ -637,8 +638,8 @@ class Assembler:
         Takes a program object only and emits each sequence within said program.
         uses .emit_statements() internally so statements do not connect to each other. 
         """
-        self.emit_statements(program.body)
-
+        # we want to allow the function definition statements to be first 
+        self.emit_statements(sorted(program.body, key=lambda key: isinstance(key, FunctionDefStmt), reverse=True))
 
         for variables in self.non_referenced_variables.values():
             for variable in variables:
