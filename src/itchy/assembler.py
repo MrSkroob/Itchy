@@ -475,7 +475,6 @@ class Assembler:
         emits statements that do not necessarily have to be linked together.
         """
         for stmt in statements:
-            print(stmt.__class__.__name__)
             block_range = self.emit_stmt(stmt, None, Context(
                 function_context=None, 
                 thread_id=DEFAULT_THREAD, 
