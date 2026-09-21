@@ -72,10 +72,13 @@ class ParseResult():
 
         return result
 
+    def __repr__(self) -> str:
+        return str(self.node) + ": " + str(self.tree)
 
 class Parser():
     def __init__(self, allow_recovery: bool=False, 
                        allow_insertions: bool=False,
+                       stat_rule: str="stat",
                        recovery_rules: dict[str, set[str]] | None=None, 
                        statement_separator: str=";",
                        recovery_nodes: Strategy | None=None) -> None:
@@ -84,10 +87,18 @@ class Parser():
         self.recovery_nodes = recovery_nodes or {}
         self.recovery_rules = recovery_rules or {
             "stat": {";", "}"},
-            "chunk": {";", "}"}
+            "chunk": {";", "}"},
         }
         self.statement_separator = statement_separator
         self.rules=build_parse_tree()
+
+        for rule in self.rules:
+            if rule.name == stat_rule:
+                self.stat_rule = rule
+
+        if not self.stat_rule:
+            raise NameError(f"no stat rule with the name {stat_rule}")
+    
         self.pos: int = 0
         self.rule_stack: list[str] = []
         self.accumulated_errors: list[ParseResult] = []
@@ -118,6 +129,19 @@ class Parser():
             or node.literal == token.literal
         )
 
+    def _skip_statement(self, tokens: TokenList, recovery_chars: set[str]):
+        while self.pos < len(tokens):
+            token = tokens[self.pos]
+
+            for terminal in self.stat_rule.first:
+                if self.matches_terminal(token, terminal):
+                    return
+
+            if token.literal in recovery_chars:
+                return
+
+            self.pos += 1
+
     def recover(self, result: ParseResult, tokens: TokenList):
         result.expected = self.expected.create_and_reset()
         self.accumulated_errors.append(result)
@@ -132,19 +156,13 @@ class Parser():
         self.pos = target.pos
 
         # advance to next statement
-        while self.pos < len(tokens):
-            token = tokens[self.pos]
-
-            if token.literal in recovery_chars:
-                break
-
-            self.pos += 1
+        self._skip_statement(tokens, recovery_chars)
 
         # we reached EOF. this is truly a bruh moment.
         if self.pos >= len(tokens):
             return None
 
-        if tokens[self.pos].literal == self.statement_separator:
+        if tokens[self.pos].literal in recovery_chars:
             self.pos += 1
 
         return ParseResult(
@@ -160,30 +178,7 @@ class Parser():
             pos=self.pos,
             failed=False
         )
-
-    def skip(self, tokens: TokenList, count: int=1) -> None: 
-        """ Skips up to `count` tokens. """ 
-        self.pos = min(len(tokens), self.pos + count)
-
-    def token_at(self, tokens: TokenList, pos: int, ahead: int=0):
-        index = pos + ahead
-
-        if index >= len(tokens):
-            return None
-
-        return tokens[index]
-
-    def peek(self, tokens: TokenList, ahead: int=0):
-        """
-        Gets the next token without advancing by `ahead` amount
-        """
-        index = self.pos + ahead
-
-        if index >= len(tokens):
-            return
-
-        return tokens[index]
-
+    
     def parse_alternative(self, node: Alternative, 
                                 tokens: TokenList, 
                                 parent_node: GrammarNode | None=None) -> ParseResult:
