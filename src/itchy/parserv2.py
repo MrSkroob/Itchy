@@ -1,12 +1,16 @@
 from dataclasses import dataclass
 from typing import cast
 
-from itchy.tokenizer import Token, Definitions
-from itchy.tree import Rule, ParsedNode, GrammarNode, get_root_node, \
+from itchy.dummy_nodes import Strategy
+from itchy.tokenizer import Token, Definitions, Tokenizer
+from itchy.tree import Rule, ParsedNode, GrammarNode, get_root_node, build_parse_tree, \
     Alternative, Sequence, OptionalNode, Repeat, NonTerminal, Terminal
 
 
 TokenList = list[Token[Definitions]]
+
+
+tokenizer = Tokenizer(Definitions, {"Comment", "Whitespace", "Newline", "BlockComment"})
 
 
 @dataclass(kw_only=True)
@@ -39,24 +43,93 @@ class ParseResult():
 
 
 class Parser():
-    def __init__(self, rules: list[Rule], allow_recovery: bool=False) -> None:
+    def __init__(self, allow_recovery: bool=False, 
+                       recovery_rules: dict[str, set[str]] | None=None, 
+                       statement_separator: str=";",
+                       recovery_nodes: Strategy | None=None) -> None:
         self.allow_recovery = allow_recovery
-        self.rollback_stack: TokenList = []
-        self.rules=rules
+        self.recovery_nodes = recovery_nodes or {}
+        self.recovery_rules = recovery_rules or {
+            "stat": {";", "}"},
+            "chunk": {";", "}"}
+        }
+        self.statement_separator = statement_separator
+        self.rules=build_parse_tree()
         self.pos: int = 0
+        self.accumulated_errors: list[ParseResult] = []
 
-    def next_token(self, tokens: TokenList):
-        token = self.peek(tokens, 1)
-        if token:
+    def get_recovery_target(self, result: ParseResult) -> ParseResult | None:
+        """
+        Returns the deepest rule to recover from (i.e. the root cause that's not the Terminal)
+        """
+        current: ParseResult | None = result
+        target: ParseResult | None = None
+
+        while current is not None:
+            if isinstance(current.node, NonTerminal):
+                rule = cast(Rule, current.node.rule)
+
+                if rule.name in self.recovery_rules and current.progress_made > 0:
+                    target = current
+
+            current = current.failure_cause
+
+        return target
+
+    def recover(self, result: ParseResult, tokens: TokenList):
+        self.accumulated_errors.append(result)
+        target = self.get_recovery_target(result)
+
+        if target is None:
+            return
+
+        rule = cast(Rule, cast(NonTerminal, target.node).rule)
+        recovery_chars = self.recovery_rules[rule.name]
+
+        self.pos = target.pos
+
+        # advance to next statement
+        while self.pos < len(tokens):
+            token = tokens[self.pos]
+
+            if token.literal in recovery_chars:
+                break
+
             self.pos += 1
 
-        return token
+        # we reached EOF. this is truly a bruh moment.
+        if self.pos >= len(tokens):
+            return None
 
-    def skip(self, tokens: TokenList, count: int = 1) -> None: 
+        if tokens[self.pos].literal == self.statement_separator:
+            self.pos += 1
+
+        return ParseResult(
+            tree=ParsedNode(
+                name=rule.name,
+                children=(),
+                dummy_node=True,
+            ),
+            node=target.node,
+            parent_node=target.parent_node,
+            start_pos=target.start_pos,
+            pos=self.pos,
+            failed=False
+        )
+
+    def skip(self, tokens: TokenList, count: int=1) -> None: 
         """ Skips up to `count` tokens. """ 
         self.pos = min(len(tokens), self.pos + count)
 
-    def peek(self, tokens: TokenList, ahead: int):
+    def token_at(self, tokens: TokenList, pos: int, ahead: int=0):
+        index = pos + ahead
+
+        if index >= len(tokens):
+            return None
+
+        return tokens[index]
+
+    def peek(self, tokens: TokenList, ahead: int=0):
         """
         Gets the next token without advancing by `ahead` amount
         """
@@ -107,31 +180,50 @@ class Parser():
             node=node,
             parent_node=parent_node,
             start_pos=start_pos,
-            pos=start_pos,
+            pos=furthest_result.pos,
             failed=True,
             failure_cause=furthest_result
         )
 
-    def parse_sequence(self, node: Sequence, tokens: TokenList, parent_node: GrammarNode | None):
+    def parse_sequence(self, node: Sequence, 
+                             tokens: TokenList, 
+                             parent_node: GrammarNode | None):
         start_pos = self.pos
         children: list[ParsedNode | Token[Definitions]] = []
         for index, part in enumerate(node.children):
             result = self.parse_node(part, tokens, node)
             if result.failed:
-                self.pos = start_pos
-                return ParseResult(
-                    tree=ParsedNode(
-                        Sequence.__name__, 
-                        tuple(children)
-                    ),
-                    node=node,
-                    parent_node=parent_node,
-                    child_index=index,
-                    start_pos=start_pos,
-                    pos=result.pos,
-                    failed=True,
-                    failure_cause=result,
-                )
+                recovered = False
+                if self.allow_recovery:
+                    if isinstance(part, Terminal):
+                        if part.child.name in self.recovery_nodes:
+                            self.accumulated_errors.append(result)
+                            result = ParseResult(
+                                tree=cast(Token[Definitions], 
+                                          self.recovery_nodes[part.child.name]()),
+                                node=node,
+                                parent_node=parent_node,
+                                start_pos=result.start_pos,
+                                pos=result.pos + 1,
+                                failed=False
+                            )
+                            recovered = True
+
+                if not recovered:
+                    self.pos = start_pos
+                    return ParseResult(
+                        tree=ParsedNode(
+                            Sequence.__name__, 
+                            tuple(children)
+                        ),
+                        node=node,
+                        parent_node=parent_node,
+                        child_index=index,
+                        start_pos=start_pos,
+                        pos=result.pos,
+                        failed=True,
+                        failure_cause=result,
+                    )
 
             children.append(result.tree)
 
@@ -147,13 +239,29 @@ class Parser():
             failed=False
         )
 
-    def parse_optional(self, node: OptionalNode, tokens: TokenList, parent_node: GrammarNode | None=None):
+    def parse_optional(self, node: OptionalNode, 
+                             tokens: TokenList, 
+                             parent_node: GrammarNode | None=None):
         start_pos = self.pos
 
         result = self.parse_node(node.child, tokens, parent_node=node)
 
         if result.failed:
             self.pos = start_pos
+
+            if result.pos == start_pos:
+                return ParseResult(
+                    tree=ParsedNode(
+                        OptionalNode.__name__,
+                        children=()
+                    ),
+                    node=node,
+                    parent_node=parent_node,
+                    start_pos=start_pos,
+                    pos=start_pos,
+                    failed=False
+                )
+            
             return ParseResult(
                 tree=ParsedNode(
                     OptionalNode.__name__,
@@ -179,7 +287,9 @@ class Parser():
             failed=False
         )
 
-    def parse_repeat(self, node: Repeat, tokens: TokenList, parent_node: GrammarNode | None=None):
+    def parse_repeat(self, node: Repeat, 
+                           tokens: TokenList, 
+                           parent_node: GrammarNode | None=None):
         start_pos = self.pos
         children: list[ParsedNode | Token[Definitions]] = []
 
@@ -194,6 +304,17 @@ class Parser():
 
                 # we matched into something then failed. 
                 # not good!
+
+                if self.allow_recovery:
+                    recovered = self.recover(result, tokens)
+
+                    if recovered is not None:
+                        children.append(recovered.tree)
+
+                        if self.pos <= iter_start:
+                            raise RuntimeError("Recovery succeeded but no progress was made.")
+
+                        continue
 
                 self.pos = start_pos
 
@@ -227,7 +348,39 @@ class Parser():
             failed=False
         )
 
-    def parse_terminal(self, node: Terminal, tokens: TokenList, parent_node: GrammarNode | None=None):
+    def parse_non_terminal(self, node: NonTerminal, 
+                                 tokens: TokenList, 
+                                 parent_node: GrammarNode | None=None):
+        start_pos = self.pos
+        rule = cast(Rule, node.rule)
+
+        result = self.parse_rule(rule, tokens)
+
+        if result.failed:
+            self.pos = start_pos
+
+            return ParseResult(
+                tree=result.tree,
+                node=node,
+                parent_node=parent_node,
+                start_pos=start_pos,
+                pos=result.pos,
+                failed=True,
+                failure_cause=result
+            )
+
+        return ParseResult(
+            tree=result.tree,
+            node=node,
+            parent_node=parent_node,
+            start_pos=start_pos,
+            pos=self.pos,
+            failed=False
+        )
+
+    def parse_terminal(self, node: Terminal, 
+                             tokens: TokenList, 
+                             parent_node: GrammarNode | None=None):
         pos = self.pos
         if pos < len(tokens) and node.child.name == tokens[pos].kind.name \
             and (node.literal and node.literal == tokens[pos].literal or not node.literal):
@@ -254,7 +407,9 @@ class Parser():
             failed=True
         )
 
-    def parse_node(self, node: GrammarNode, tokens: TokenList, parent_node: GrammarNode | None=None) -> ParseResult:
+    def parse_node(self, node: GrammarNode, 
+                         tokens: TokenList, 
+                         parent_node: GrammarNode | None=None) -> ParseResult:
         match node:
             case Alternative():
                 return self.parse_alternative(node, tokens, parent_node)
@@ -265,16 +420,20 @@ class Parser():
             case Repeat():
                 return self.parse_repeat(node, tokens, parent_node)
             case NonTerminal():
-                return self.parse_rule(cast(Rule, node.rule), tokens)
+                return self.parse_non_terminal(node, tokens, parent_node)
             case Terminal():
                 return self.parse_terminal(node, tokens, parent_node)
+            case GrammarNode():
+                raise RuntimeError("A bare grammarnode was found. Check `tree.py`")
 
 
     def parse_rule(self, rule: Rule, tokens: TokenList) -> ParseResult:
         return self.parse_node(rule.body, tokens)
 
+    def read(self, text: str) -> ParseResult:
+        return self.parse(list(tokenizer.read(text)))
+
     def parse(self, tokens: TokenList) -> ParseResult:
-        self.stack = []
         program_node = get_root_node(self.rules)
         self.pos=0
         return self.parse_rule(program_node, tokens)

@@ -1,11 +1,27 @@
 import pytest
 
+from typing import TypeVar
 from itchy.parser import Parser, ParseError
+from itchy.parserv2 import Parser as Parser2
 from itchy.dummy_nodes import ANALYSIS_STRATEGIES, make_wrap
 
 
-def make_parser() -> Parser:
+OLD_PARSER = "Parser"
+NEW_PARSER = "Parser2"
+PARSER_OPTION = NEW_PARSER
+
+
+ParserTest = TypeVar("ParserTest", Parser, Parser2)
+
+
+def make_parser() -> Parser | Parser2:
     # Replace these with the same strategies/options your compiler normally uses.
+    if PARSER_OPTION == NEW_PARSER:
+        return Parser2(
+            allow_recovery=True,
+            recovery_nodes=ANALYSIS_STRATEGIES
+        )
+    
     return Parser(
         skip_bad_tokens=True,
         skip_rules_on_fail=ANALYSIS_STRATEGIES,
@@ -219,3 +235,74 @@ def test_invalid_statement_without_semicolon_inside_while():
         }
         """
     )
+
+
+def test_repeat_allows_empty_function_body():
+    assert_valid(
+        """
+        define foo() {
+        }
+        """
+    )
+
+
+def test_repeat_allows_single_statement():
+    assert_valid(
+        """
+        define foo() {
+            motion_movesteps(10);
+        }
+        """
+    )
+
+
+def test_repeat_stops_at_closing_brace():
+    assert_valid(
+        """
+        define foo() {
+            motion_movesteps(10);
+        }
+
+        define bar() {
+            motion_movesteps(20);
+        }
+        """
+    )
+
+
+def test_nested_repeat_blocks():
+    assert_valid(
+        """
+        define foo() {
+            if true {
+                motion_movesteps(10);
+                motion_movesteps(20);
+            }
+
+            motion_movesteps(30);
+        }
+        """
+    )
+
+
+def test_repeat_rejects_partially_matched_statement():
+    assert_invalid(
+        """
+        define foo() {
+            motion_movesteps(
+        }
+        """
+    )
+
+
+def test_repeat_rejects_invalid_statement_between_valid_statements():
+    assert_invalid(
+        """
+        define foo() {
+            motion_movesteps(10);
+            @
+            motion_movesteps(20);
+        }
+        """
+    )
+
