@@ -120,6 +120,9 @@ class Parser:
         self.accumulated_errors: list[ParseError] = []
         self.speculative_errors: dict[int, ParseError] = {}
 
+    def peek(self, tokens: list[Token[Definitions]], index: int):
+        next_index = min(index + 1, len(tokens) - 1)
+        return tokens[next_index]
 
     def reset_expected(self):
         self.expected = ExpectedState()

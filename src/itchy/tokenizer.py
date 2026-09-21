@@ -79,6 +79,9 @@ class Token(Generic[TokenRule]):
 # your BNF file. 
 # typically, they'd be rules that are too generic or simple to warrant a rule, like numbers and symbols and keywords.
 class Definitions(StrEnum):
+    """
+    Bunch of regex used to give patterns a defined name
+    """
     Comment = r"//[^\r\n]*"
     BlockComment = r"/\*[\s\S]*?\*/"
     Define = r"\b(define)\b"
@@ -151,6 +154,9 @@ class Tokenizer(Generic[TokenRule]):
         rules: type[TokenRule],
         blacklist: set[str],
     ) -> None:
+        """
+        Iterates through a file and creates tokens based off of the `rules`
+        """
         self.rules = rules
         self.regex = compile_rules(rules)
         self.blacklist = blacklist

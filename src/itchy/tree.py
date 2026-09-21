@@ -1,5 +1,6 @@
 from __future__ import annotations
 # special multi node tree for easier traversal
+from abc import abstractmethod
 from dataclasses import dataclass
 # from tokenizer import *
 from itchy.tokenizer import BNFRules, Definitions, GenericRules, Token, Tokenizer, compile_rules
@@ -28,9 +29,10 @@ class ParsedNode():
         return f"[{', '.join(output)}]"
 
 
-
 class GrammarNode():
-    pass
+    @abstractmethod
+    def lookahead(self) -> tuple[GrammarNode]:
+        raise NotImplementedError()
 
 
 @dataclass(frozen=True)
@@ -40,6 +42,19 @@ class Rule:
 
 
 def print_array(array: Iterable[Any], brackets: tuple[str, str], glue: str):
+    """
+    Prints an iterable with 'brackets' to wrap around and 'glue' as a separator
+
+    For example, 
+    
+    array=[1,2,3,4,5], 
+    
+    brackets=("(",")"), 
+    
+    glue=" | " gives you an output of:
+
+    (1 | 2 | 3 | 4 | 5)
+    """
     output: list[str] = []
     for thing in array:
         output.append(str(thing))
@@ -136,6 +151,9 @@ class BNFTreeBuilder:
         return Definitions[group]
 
     def peek(self) -> BNFToken | None:
+        """
+        Returns the next valid token that isn't a comment or whitespace
+        """
         if self.pos >= len(self.tokens):
             return None
         token = self.tokens[self.pos]
@@ -145,6 +163,9 @@ class BNFTreeBuilder:
         return token
     
     def match(self, kind: BNFRules | GenericRules) -> BNFToken | None:
+        """
+        Returns the token if the token matches the kind supplied
+        """
         token = self.peek()
         if token is not None and token.kind is kind:
             self.pos += 1
@@ -152,12 +173,18 @@ class BNFTreeBuilder:
         return None
     
     def expect(self, kind: BNFRules | GenericRules) -> BNFToken:
+        """
+        Raises an error if match doesn't find anything
+        """
         token = self.match(kind)
         if token is None:
             raise SyntaxError(f"Expected {kind}, got {self.peek()}")
         return token
     
     def parse_rules(self) -> list[Rule]:
+        """
+        Parses all rules
+        """
         rules: list[Rule] = []
         while True:
             rules.append(self.parse_rule())
@@ -169,6 +196,7 @@ class BNFTreeBuilder:
         
     def parse_rule(self) -> Rule:
         name_token = self.expect(BNFRules.NonTerminalRule)
+        # THERE BETTER BE AN ASSIGN SYMBOL ':='
         self.expect(BNFRules.Assign)
         body = self.parse_alternative()
 
@@ -195,6 +223,7 @@ class BNFTreeBuilder:
             if tok is None:
                 break
 
+            # these indicate the sequence has terminated, so stop parsing. 
             if tok.kind in {BNFRules.Pipe, BNFRules.CloseSquareBrace, BNFRules.CloseCurlyBrace, BNFRules.CloseBrace, GenericRules.StatementSeparator, GenericRules.Newline}:
                 break
 
@@ -227,16 +256,19 @@ class BNFTreeBuilder:
             case BNFRules.OpenSquareBrace:
                 self.pos += 1
                 child = self.parse_alternative()
+                # there better be a closing square bracket or I SWEAR TO GOD
                 self.expect(BNFRules.CloseSquareBrace)
                 return OptionalNode(child)
             case BNFRules.OpenCurlyBrace:
                 self.pos += 1
                 child = self.parse_alternative()
+                # THERE BETTER BE A CLOSING CURLY BRACKET
                 self.expect(BNFRules.CloseCurlyBrace)
                 return Repeat(child)
             case BNFRules.OpenBrace:
                 self.pos += 1
                 child = self.parse_alternative()
+                # BETTER BE A CLOSING BRACKET!!!
                 self.expect(BNFRules.CloseBrace)
                 return child
             case _:
@@ -246,6 +278,9 @@ class BNFTreeBuilder:
 
 
 def link_grammar(rules: list[Rule]):
+    """
+    Applies link_node to all nodes (if applicable)
+    """
     rule_map = {rule.name: rule for rule in rules}
 
     for rule in rules:
@@ -253,6 +288,14 @@ def link_grammar(rules: list[Rule]):
 
 
 def link_node(node: GrammarNode, rule_map: dict[str, Rule]) -> None:
+    """
+    Points to the rule that a node is referencing (if it's a NonTerminal)
+
+    For example, 
+
+    <alphabet> := "a" | "b" | "c" | ...
+    <word> := <alphabet> {<alphabet>} // <-- <alphabet> links to the original <alphabet> rule
+    """
     match node:
         case NonTerminal():
             node.rule = rule_map[node.name]
