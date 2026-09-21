@@ -2,8 +2,8 @@
 # This code was developed with assistance from OpenAI's ChatGPT.
 # AI-generated suggestions were reviewed, modified, and integrated by the author.
 
-from itchy.dummy_nodes import ANALYSIS_STRATEGIES, make_wrap
-from itchy.parser import Parser, ParseError
+from itchy.dummy_nodes import ANALYSIS_STRATEGIES
+from itchy.parserv2 import Parser, ParseResult
 from itchy.itch_ast import ASTBuilder, Program
 from itchy.errors import format_compiler_error, format_syntax_error
 from itchy.assembler import Assembler, CompilerError
@@ -15,72 +15,93 @@ from pathlib import Path
 # from tools.ast_printer import print_ast
 import time
 
+from tools.ast_printer import print_ast
 
-non_strict_parser = Parser(skip_bad_tokens=True, skip_rules_on_fail=ANALYSIS_STRATEGIES, recoverable_rules={"wrap": make_wrap})
+
+# Replace RULES with whatever list of grammar rules your parser uses.
 strict_parser = Parser()
-ast_builder = ASTBuilder()
-strict_assembler = Assembler("")
-non_strict_assembler = Assembler("", compile_with_warnings=True)
 
+non_strict_parser = Parser(
+    allow_recovery=False,
+    allow_insertions=True,
+    recovery_nodes=ANALYSIS_STRATEGIES
+)
 
-DEBUG_MODE = False
-
+DEBUG_MODE = True
 
 if DEBUG_MODE:
     parser = non_strict_parser
 else:
     parser = strict_parser
 
+ast_builder = ASTBuilder(is_strict=not DEBUG_MODE)
+strict_assembler = Assembler("")
+non_strict_assembler = Assembler("", compile_with_warnings=True)
+
 
 def compile_targets(
     files: list[Path],
     project: Path,
     output: Path | None,
-    allow_warnings: bool=False
+    allow_warnings: bool = False,
 ) -> Path | None:
     programs: dict[str, Program] = {}
     metadata: dict[str, tuple[str, Path]] = {}
 
     start = time.time()
-    
+
     for file in files:
         source = file.read_text(encoding="utf-8")
-        
+
         if output is None:
             output = project / "Scratch Project.sb3"
+
         if output.is_dir():
             output = output / "Scratch Project.sb3"
-    
-        try:
-            parsed = parser.read(source)
-            tree = ast_builder.build(parsed.tree)
-            programs[file.stem] = tree
-            metadata[file.stem] = (source, file)
-        except ParseError as e:
+
+        parsed: ParseResult = parser.read(source)
+
+        if parsed.failed:
+            parsed = parsed.deepest
             print(
                 format_syntax_error(
-                    e,
-                    parser.expected,
+                    parsed,
+                    parsed.expected,
                     source,
                     str(file),
                 )
             )
             return None
-            # else:
+
+        print_ast(parsed.tree)
+
+        tree = ast_builder.build(parsed.tree)
+
+        programs[file.stem] = tree
+        metadata[file.stem] = (source, file)
+
     finish = time.time()
-    print("COMPILATION TIME: ", finish-start)
+    print("COMPILATION TIME: ", finish - start)
+
     if allow_warnings:
         assembler = non_strict_assembler
     else:
         assembler = strict_assembler
 
     try:
-        return assembler.assemble(programs, project, output)
+        return assembler.assemble(
+            programs,
+            project,
+            output,
+        )
+
     except CompilerError as e:
         if assembler.compiling is None:
             print(e.message)
+
         else:
             file_metadata = metadata[assembler.compiling]
+
             print(
                 format_compiler_error(
                     e,
@@ -95,8 +116,8 @@ def compile_targets(
 def compile_project(
     project: Path,
     output: Path | None,
-    exact_target: str | None=None,
-    allow_warnings: bool=False
+    exact_target: str | None = None,
+    allow_warnings: bool = False,
 ) -> bool:
     """
     Compiles an Itchy project directory into an .sb3.
@@ -146,7 +167,11 @@ def compile_project(
         if not directory.is_dir():
             continue
 
-        if exact_target and directory.stem.casefold() != exact_target.casefold() and directory.stem.casefold() != "stage":
+        if (
+            exact_target
+            and directory.stem.casefold() != exact_target.casefold()
+            and directory.stem.casefold() != "stage"
+        ):
             continue
 
         source_file = directory / f"{directory.name}.itch"
@@ -154,45 +179,17 @@ def compile_project(
         if not source_file.is_file():
             continue
 
-        sprites.append(
-            source_file
-        )
+        sprites.append(source_file)
 
-    output_path = compile_targets(sprites, project, output, allow_warnings)
+    output_path = compile_targets(
+        sprites,
+        project,
+        output,
+        allow_warnings,
+    )
 
     if output_path is None:
         return False
-    # # Keep build order deterministic.
-    # sprites.sort(key=lambda sprite: sprite[0])
-
-    # # Start from a clean Scratch project.
-    # #
-    # # Otherwise, if Sprite2 was present in an earlier build and its
-    # # directory is later deleted, Sprite2 could remain in the old .sb3.
-    # if output and output.exists() and not output.is_dir():
-    #     output.unlink()
-
-    # # Stage must be assembled first because it owns project-wide
-    # # Scratch state such as shared variables and broadcasts.
-
-    # output_path = compile_target(
-    #     stage_file,
-    #     project,
-    #     output,
-    #     "Stage",
-    # )
-        
-    # if output_path is None:
-    #     return False
-
-    # for target, source_file in sprites:
-    #     if not compile_target(
-    #         source_file,
-    #         project,
-    #         output,
-    #         target,
-    #     ):            
-    #         return False
 
     print(f"Done. Output: {str(output_path)}")
     return True
@@ -220,7 +217,7 @@ def main() -> int:
         help="Output .sb3 file",
         nargs="?",
         type=str,
-        default=""
+        default="",
     )
 
     args = cli_parser.parse_args()
@@ -228,14 +225,13 @@ def main() -> int:
     project_path = Path(args.source)
     output_path = Path(args.output) if args.output else None
 
-    compile_file = False
+    compile_file = not project_path.is_dir()
 
-    if not project_path.is_dir():
-        compile_file = True
-        # return 1
-    
-
-    if output_path and output_path.suffix.lower() != ".sb3" and not output_path.is_dir():
+    if (
+        output_path
+        and output_path.suffix.lower() != ".sb3"
+        and not output_path.is_dir()
+    ):
         print(
             f"Provided output '{output_path}' "
             "is not an .sb3 file or a directory."
@@ -247,14 +243,15 @@ def main() -> int:
             project_path.parent.parent,
             output_path,
             project_path.stem,
-            args.allow_warnings
+            args.allow_warnings,
         ):
             return 1
+
     else:
         if not compile_project(
             project_path,
             output_path,
-            allow_warnings=args.allow_warnings
+            allow_warnings=args.allow_warnings,
         ):
             return 1
 

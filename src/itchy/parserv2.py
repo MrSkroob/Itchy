@@ -1,8 +1,8 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import cast
 
 from itchy.dummy_nodes import Strategy
-from itchy.tokenizer import Token, Definitions, Tokenizer
+from itchy.tokenizer import Token, Definitions, GenericRules, Tokenizer
 from itchy.tree import Rule, ParsedNode, GrammarNode, get_root_node, build_parse_tree, \
     Alternative, Sequence, OptionalNode, Repeat, NonTerminal, Terminal
 
@@ -13,10 +13,40 @@ TokenList = list[Token[Definitions]]
 tokenizer = Tokenizer(Definitions, {"Comment", "Whitespace", "Newline", "BlockComment"})
 
 
+@dataclass(frozen=True)
+class ExpectedToken:
+    definition: Definitions | GenericRules
+    path: tuple[str, ...]
+
+
+@dataclass()
+class ExpectedState:
+    pos: int = -1
+    items: set[ExpectedToken] = field(default_factory=set[ExpectedToken])
+
+    def record(self, pos: int, definition: Definitions | GenericRules, rule_path: tuple[str, ...]) -> None:
+        expectation = ExpectedToken(definition, rule_path)
+
+        if pos > self.pos:
+            self.pos = pos
+            self.items = {expectation}
+        elif pos == self.pos:
+            self.items.add(expectation)
+
+    def return_copy(self):
+        return ExpectedState(self.pos, self.items.copy())
+
+    def create_and_reset(self):
+        new_state = self.return_copy()
+        self.items = set()
+        return new_state
+
+
 @dataclass(kw_only=True)
 class ParseResult():
     # used for AST
     tree: ParsedNode | Token[Definitions]
+    tokens: list[Token[Definitions]]
 
     # used for error recovery
     node: GrammarNode
@@ -26,6 +56,7 @@ class ParseResult():
     start_pos: int
     pos: int
     failed: bool
+    expected: ExpectedState=field(default_factory=ExpectedState)
     failure_cause: ParseResult | None=None
 
     @property
@@ -44,10 +75,12 @@ class ParseResult():
 
 class Parser():
     def __init__(self, allow_recovery: bool=False, 
+                       allow_insertions: bool=False,
                        recovery_rules: dict[str, set[str]] | None=None, 
                        statement_separator: str=";",
                        recovery_nodes: Strategy | None=None) -> None:
         self.allow_recovery = allow_recovery
+        self.allow_insertions = allow_insertions
         self.recovery_nodes = recovery_nodes or {}
         self.recovery_rules = recovery_rules or {
             "stat": {";", "}"},
@@ -56,7 +89,9 @@ class Parser():
         self.statement_separator = statement_separator
         self.rules=build_parse_tree()
         self.pos: int = 0
+        self.rule_stack: list[str] = []
         self.accumulated_errors: list[ParseResult] = []
+        self.expected = ExpectedState()
 
     def get_recovery_target(self, result: ParseResult) -> ParseResult | None:
         """
@@ -76,7 +111,15 @@ class Parser():
 
         return target
 
+    def matches_terminal(self, token: Token[Definitions], node: Terminal):
+        return (
+            node.child.name == token.kind.name
+            and node.literal is None 
+            or node.literal == token.literal
+        )
+
     def recover(self, result: ParseResult, tokens: TokenList):
+        result.expected = self.expected.create_and_reset()
         self.accumulated_errors.append(result)
         target = self.get_recovery_target(result)
 
@@ -110,6 +153,7 @@ class Parser():
                 children=(),
                 dummy_node=True,
             ),
+            tokens=tokens,
             node=target.node,
             parent_node=target.parent_node,
             start_pos=target.start_pos,
@@ -161,6 +205,7 @@ class Parser():
                         children=(result.tree,)
                     ),
                     node=node,
+                    tokens=tokens,
                     parent_node=parent_node,
                     start_pos=start_pos,
                     pos=result.pos,
@@ -178,9 +223,11 @@ class Parser():
                 children=(furthest_result.tree,)
             ),
             node=node,
+            tokens=tokens,
             parent_node=parent_node,
             start_pos=start_pos,
             pos=furthest_result.pos,
+            expected=self.expected.return_copy(),
             failed=True,
             failure_cause=furthest_result
         )
@@ -194,20 +241,12 @@ class Parser():
             result = self.parse_node(part, tokens, node)
             if result.failed:
                 recovered = False
-                if self.allow_recovery:
+                if self.allow_insertions:
                     if isinstance(part, Terminal):
                         if part.child.name in self.recovery_nodes:
                             self.accumulated_errors.append(result)
-                            result = ParseResult(
-                                tree=cast(Token[Definitions], 
-                                          self.recovery_nodes[part.child.name]()),
-                                node=node,
-                                parent_node=parent_node,
-                                start_pos=result.start_pos,
-                                pos=result.pos + 1,
-                                failed=False
-                            )
-                            recovered = True
+                            children.extend(self.recovery_nodes[part.child.name]())
+                            continue
 
                 if not recovered:
                     self.pos = start_pos
@@ -216,11 +255,13 @@ class Parser():
                             Sequence.__name__, 
                             tuple(children)
                         ),
+                        tokens=tokens,
                         node=node,
                         parent_node=parent_node,
                         child_index=index,
                         start_pos=start_pos,
                         pos=result.pos,
+                        expected=self.expected.return_copy(),
                         failed=True,
                         failure_cause=result,
                     )
@@ -234,6 +275,7 @@ class Parser():
             ),
             node=node,
             parent_node=parent_node,
+            tokens=tokens,
             start_pos=start_pos,
             pos=self.pos,
             failed=False
@@ -258,6 +300,7 @@ class Parser():
                     node=node,
                     parent_node=parent_node,
                     start_pos=start_pos,
+                    tokens=tokens,
                     pos=start_pos,
                     failed=False
                 )
@@ -269,8 +312,10 @@ class Parser():
                 ),
                 node=node,
                 parent_node=parent_node,
+                tokens=tokens,
                 start_pos=start_pos,
                 pos=self.pos,
+                expected=self.expected.return_copy(),
                 failed=True,
                 failure_cause=result
             )
@@ -281,6 +326,7 @@ class Parser():
                 (result.tree,),
             ),
             node=node,
+            tokens=tokens,
             parent_node=parent_node,
             start_pos=start_pos,
             pos=self.pos,
@@ -324,9 +370,11 @@ class Parser():
                         tuple(children),
                     ),
                     node=node,
+                    tokens=tokens,
                     parent_node=parent_node,
                     start_pos=start_pos,
                     pos=result.pos,
+                    expected=self.expected.return_copy(),
                     failed=True,
                     failure_cause=result
                 )
@@ -341,6 +389,7 @@ class Parser():
                 Repeat.__name__,
                 children=tuple(children)
             ),
+            tokens=tokens,
             node=node,
             parent_node=parent_node,
             start_pos=start_pos,
@@ -350,31 +399,44 @@ class Parser():
 
     def parse_non_terminal(self, node: NonTerminal, 
                                  tokens: TokenList, 
-                                 parent_node: GrammarNode | None=None):
+                                 parent_node: GrammarNode | None=None,
+                                 rule: Rule | None=None):
         start_pos = self.pos
-        rule = cast(Rule, node.rule)
+        rule = rule or cast(Rule, node.rule)
+
+        self.rule_stack.append(rule.name)
 
         result = self.parse_rule(rule, tokens)
+        self.rule_stack.pop()
 
         if result.failed:
             self.pos = start_pos
 
             return ParseResult(
-                tree=result.tree,
+                tree=ParsedNode(
+                    rule.name,
+                    children=(result.tree,)
+                ),
                 node=node,
                 parent_node=parent_node,
                 start_pos=start_pos,
                 pos=result.pos,
+                expected=self.expected.return_copy(),
                 failed=True,
+                tokens=tokens,
                 failure_cause=result
             )
 
         return ParseResult(
-            tree=result.tree,
+            tree=ParsedNode(
+                rule.name,
+                children=(result.tree,)
+            ),
             node=node,
             parent_node=parent_node,
             start_pos=start_pos,
             pos=self.pos,
+            tokens=tokens,
             failed=False
         )
 
@@ -382,8 +444,7 @@ class Parser():
                              tokens: TokenList, 
                              parent_node: GrammarNode | None=None):
         pos = self.pos
-        if pos < len(tokens) and node.child.name == tokens[pos].kind.name \
-            and (node.literal and node.literal == tokens[pos].literal or not node.literal):
+        if pos < len(tokens) and self.matches_terminal(tokens[pos], node):
             # debug_print(f"{print_token_safe(tokens, pos)}. Matched {value.name}")
             self.pos += 1
             return ParseResult(
@@ -392,8 +453,11 @@ class Parser():
                 parent_node=parent_node,
                 start_pos=pos,
                 pos=self.pos,
+                tokens=tokens,
                 failed=False
             )
+
+        self.expected.record(pos, node.child, tuple(self.rule_stack))
 
         return ParseResult(
             tree=ParsedNode(
@@ -404,6 +468,8 @@ class Parser():
             parent_node=parent_node,
             start_pos=pos,
             pos=pos,
+            tokens=tokens,
+            expected=self.expected.return_copy(),
             failed=True
         )
 
@@ -435,6 +501,10 @@ class Parser():
 
     def parse(self, tokens: TokenList) -> ParseResult:
         program_node = get_root_node(self.rules)
-        self.pos=0
-        return self.parse_rule(program_node, tokens)
+        self.pos = 0
+        self.rule_stack = []
+        result = self.parse_non_terminal(cast(NonTerminal, program_node.body), tokens, rule=program_node)
+        # result.expected = self.expected
+
+        return result
 

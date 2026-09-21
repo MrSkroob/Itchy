@@ -1,6 +1,6 @@
 from enum import StrEnum
 from typing import Any
-from itchy.parser import ExpectedState, ParseError
+from itchy.parserv2 import ExpectedState, ParseResult
 from itchy.tokenizer import Token, Definitions, GenericRules
 from itchy.shared_templates import ASTNode
 
@@ -196,11 +196,11 @@ def _choose_expected(
     return sorted(kinds, key=_expected_sort_key, reverse=False)
 
 
-def get_message(error: ParseError, expected: ExpectedState):
+def get_message(result: ParseResult, expected: ExpectedState):
     pos = expected.pos
     token = (
-        error.tokens[pos]
-        if 0 <= pos < len(error.tokens)
+        result.tokens[pos]
+        if 0 <= pos < len(result.tokens)
         else None
     )
 
@@ -230,15 +230,15 @@ def get_message(error: ParseError, expected: ExpectedState):
     return message
 
 def format_syntax_error(
-    error: ParseError,
+    result: ParseResult,
     expected: ExpectedState,
     source: str,
     filename: str,
 ) -> str:
     pos = expected.pos
     token = (
-        error.tokens[pos]
-        if 0 <= pos < len(error.tokens)
+        result.tokens[pos]
+        if 0 <= pos < len(result.tokens)
         else None
     )
 
@@ -250,7 +250,7 @@ def format_syntax_error(
         character = token.char
         underline_length = max(1, len(token.literal))
 
-    message = get_message(error, expected)
+    message = get_message(result, expected)
 
     source_lines = source.splitlines()
 
