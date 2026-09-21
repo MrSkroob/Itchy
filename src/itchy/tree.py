@@ -1,6 +1,5 @@
 from __future__ import annotations
 # special multi node tree for easier traversal
-from abc import abstractmethod
 from dataclasses import dataclass
 # from tokenizer import *
 from itchy.tokenizer import BNFRules, Definitions, GenericRules, Token, Tokenizer, compile_rules
@@ -30,10 +29,7 @@ class ParsedNode():
 
 
 class GrammarNode():
-    @abstractmethod
-    def lookahead(self) -> tuple[GrammarNode]:
-        raise NotImplementedError()
-
+    pass
 
 @dataclass(frozen=True)
 class Rule:
@@ -342,4 +338,3 @@ if __name__ == "__main__":
     rules = build_parse_tree()
     for rule in rules:
         print(rule.body)
-
