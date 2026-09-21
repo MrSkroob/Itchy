@@ -12,7 +12,7 @@ class GenericRules(StrEnum):
     EOF = "EOF"
 
 NEWLINE_PATTERN = re.compile(r"\r\n|\r|\n")
-TokenRule = TypeVar("TokenRule", bound=StrEnum)
+TokenRule = TypeVar("TokenRule", bound=StrEnum, covariant=True)
 
 def advance_position(
     literal: str,

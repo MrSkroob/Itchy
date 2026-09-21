@@ -1354,6 +1354,9 @@ class ASTBuilder:
     
                 case _:
                     pass
+
+        if not self.is_strict:
+            return BlockStmt((), dummy=True)
         
         raise ValueError(f"this is very bad: {node}")
     
