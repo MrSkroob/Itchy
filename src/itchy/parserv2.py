@@ -166,7 +166,7 @@ class Parser():
             if isinstance(current.node, NonTerminal):
                 rule = cast(Rule, current.node.rule)
 
-                if rule.name in self.recovery_rules and current.progress_made > 0:
+                if rule.name in self.recovery_rules and (current.progress_made > 0 or target is None):
                     target = current
 
             current = current.failure_cause
@@ -214,8 +214,9 @@ class Parser():
 
         # we reached EOF. this is truly a bruh moment.
         if self.pos >= len(tokens):
-            print("THERE'S NO MORE INFORMATION TO WORK WITH ASSHOLE!!!")
-            return None
+            # print("THERE'S NO MORE INFORMATION TO WORK WITH ASSHOLE!!!")
+            # return None
+            self.pos = len(tokens) - 1
 
         if tokens[self.pos].literal in recovery_chars:
             self.pos += 1
@@ -464,6 +465,23 @@ class Parser():
 
         if result.failed:
             self.pos = start_pos
+
+            # if self.allow_insertions:
+            #     if rule.name in self.recovery_nodes:
+            #         return ParseResult(
+            #             tree=ParsedNode(
+            #                 rule.name,
+            #                 children=self.recovery_nodes[rule.name]()
+            #             ),
+            #             node=node,
+            #             parent_node=parent_node,
+            #             start_pos=start_pos,
+            #             pos=self.pos,
+            #             expected=self.expected.return_copy(),
+            #             failed=True,
+            #             tokens=tokens,
+            #             failure_cause=result
+            #         )
 
             return ParseResult(
                 tree=ParsedNode(
