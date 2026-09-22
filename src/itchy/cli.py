@@ -2,7 +2,7 @@
 # This code was developed with assistance from OpenAI's ChatGPT.
 # AI-generated suggestions were reviewed, modified, and integrated by the author.
 
-from itchy.dummy_nodes import ANALYSIS_STRATEGIES
+from itchy.dummy_nodes import ANALYSIS_STRATEGIES, find_last_node
 from itchy.parserv2 import Parser, ParseResult
 from itchy.itch_ast import ASTBuilder, Program
 from itchy.errors import format_compiler_error, format_syntax_error
@@ -12,7 +12,6 @@ import argparse
 
 from pathlib import Path
 
-# from tools.ast_printer import print_ast
 import time
 
 from tools.ast_printer import print_ast
@@ -22,12 +21,12 @@ from tools.ast_printer import print_ast
 strict_parser = Parser()
 
 non_strict_parser = Parser(
-    allow_recovery=False,
+    allow_recovery=True,
     allow_insertions=True,
-    recovery_nodes=ANALYSIS_STRATEGIES
+    recovery_nodes=ANALYSIS_STRATEGIES,
 )
 
-DEBUG_MODE = True
+DEBUG_MODE = False
 
 if DEBUG_MODE:
     parser = non_strict_parser
@@ -62,7 +61,6 @@ def compile_targets(
         parsed: ParseResult = parser.read(source)
 
         if parsed.failed:
-            parsed = parsed.deepest
             print(
                 format_syntax_error(
                     parsed,
@@ -73,9 +71,10 @@ def compile_targets(
             )
             return None
 
-        print_ast(parsed.tree)
-
         tree = ast_builder.build(parsed.tree)
+
+        if DEBUG_MODE:
+            print_ast(tree)
 
         programs[file.stem] = tree
         metadata[file.stem] = (source, file)

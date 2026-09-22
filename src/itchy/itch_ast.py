@@ -559,6 +559,8 @@ class ASTBuilder:
                 self.emit_token(child, "operator")
     
         if not operands:
+            if not self.is_strict:
+                return Expr(dummy=True)
             raise ValueError(f"i wanted an operand. you gave me: <{node.name}>")
     
         expr = operand_builder(operands[0])
@@ -618,6 +620,9 @@ class ASTBuilder:
     
             if isinstance(child, ParsedNode) and child.name == "equation":
                 return self.build_equation(child)
+
+        if not self.is_strict:
+            return NumberExpr(0, dummy=True)
 
         raise ValueError(f"this ain't a primary g: {node!r}")
     
@@ -1066,9 +1071,9 @@ class ASTBuilder:
 
         default_stmt = ForRangeStmt(
             var_name,
-            start=NumberExpr(-1),
-            step=NumberExpr(1),
-            stop=NumberExpr(-1),
+            start=NumberExpr(-1, dummy=True),
+            step=NumberExpr(1, dummy=True),
+            stop=NumberExpr(-1, dummy=True),
             body=(),
             dummy=True
         )

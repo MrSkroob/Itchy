@@ -12,6 +12,7 @@ TokenList = list[Token[Definitions]]
 
 tokenizer = Tokenizer(Definitions, {"Comment", "Whitespace", "Newline", "BlockComment"})
 
+# TODO: i think partial trees are getting absorbed in parse_non_terminal...
 
 @dataclass(frozen=True)
 class ExpectedToken:
@@ -43,6 +44,14 @@ class ExpectedState:
 
 
 @dataclass(kw_only=True)
+class PartialParse():
+    rule: Rule
+    tree: ParsedNode | Token[Definitions]
+    start_pos: int
+    pos: int
+
+
+@dataclass(kw_only=True)
 class ParseResult():
     # used for AST
     tree: ParsedNode | Token[Definitions]
@@ -58,6 +67,47 @@ class ParseResult():
     failed: bool
     expected: ExpectedState=field(default_factory=ExpectedState)
     failure_cause: ParseResult | None=None
+    # incomplete_parse: PartialParse | None=None
+
+
+    def partial_tree_rule(self, rule: str) -> ParseResult | None:
+        if isinstance(self.node, NonTerminal):
+            return self
+
+        if self.failure_cause is None:
+            return
+
+        return self.failure_cause.partial_tree_rule(rule)
+
+    @property
+    def partial_tree(self) -> ParsedNode | Token[Definitions]:
+        """
+        Returns a partially-complete tree. You can use this alongside a non-strict AST-Builder to
+        get some useful information about what the developer was trying to write. 
+        """
+        if self.failure_cause is None:
+            return self.tree
+
+        if isinstance(self.tree, ParsedNode):
+            # if len(self.tree.children) == 1:
+            #     return ParsedNode(
+            #         self.tree.name,
+            #         (self.failure_cause.partial_tree,)
+            #     )
+            if isinstance(self.node, Sequence):
+                return ParsedNode(
+                    self.tree.name, 
+                    self.tree.children + (
+                        self.failure_cause.partial_tree,
+                    )
+                )
+            else:
+                return ParsedNode(
+                    self.tree.name,
+                    (self.failure_cause.partial_tree,)
+                )
+        else:
+            return self.tree
 
     @property
     def progress_made(self) -> int:
@@ -358,6 +408,8 @@ class Parser():
                         continue
 
                 self.pos = start_pos
+
+                children.append(result.tree)
 
                 return ParseResult(
                     tree=ParsedNode(
