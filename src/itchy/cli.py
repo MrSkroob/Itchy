@@ -98,7 +98,6 @@ def compile_targets(
     except CompilerError as e:
         if assembler.compiling is None:
             print(e.message)
-
         else:
             file_metadata = metadata[assembler.compiling]
 

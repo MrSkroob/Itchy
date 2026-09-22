@@ -19,6 +19,9 @@ class ExpectedToken:
     definition: Definitions | GenericRules
     path: tuple[str, ...]
 
+    def __repr__(self) -> str:
+        return str(self.definition)
+
 
 @dataclass()
 class ExpectedState:
@@ -38,7 +41,7 @@ class ExpectedState:
         return ExpectedState(self.pos, self.items.copy())
 
     def create_and_reset(self):
-        new_state = self.return_copy()
+        new_state = ExpectedState(self.pos, self.items)
         self.items = set()
         self.pos = -1
         return new_state
@@ -137,8 +140,9 @@ class Parser():
         self.allow_insertions = allow_insertions
         self.recovery_nodes = recovery_nodes or {}
         self.recovery_rules = recovery_rules or {
-            "stat": {";", "}"},
-            "chunk": {";", "}"},
+            "stat": {"}"},
+            "chunk": {"}"},
+            "vardefstat": {";"}
         }
         self.statement_separator = statement_separator
         self.rules=build_parse_tree()
@@ -180,18 +184,23 @@ class Parser():
             or node.literal == token.literal
         )
 
-    def _skip_statement(self, tokens: TokenList, recovery_chars: set[str]):
+    def in_first(self, token: Token[Definitions], rule: Rule):
+        for terminal in rule.first:
+            if self.matches_terminal(token, terminal):
+                return True
+        return False
+
+    def _skip_statement(self, tokens: TokenList, recovery_chars: set[str] | None=None):
         while self.pos < len(tokens):
             token = tokens[self.pos]
 
-            for terminal in self.stat_rule.first:
-                if self.matches_terminal(token, terminal):
-                    print("skipped to", token)
+            if not recovery_chars:
+                if self.in_first(token, self.stat_rule):
                     return
-
-            # if token.literal in recovery_chars:
-            #     print("skipped to", token.literal)
-            #     return
+            else:
+                if token.literal in recovery_chars:
+                    # print("skipped to", token.literal)
+                    return
 
             self.pos += 1
 
@@ -201,16 +210,35 @@ class Parser():
         target = self.get_recovery_target(result)
 
         if target is None:
-            print("I COULDN'T DO IT!!!")
+            # print("WHAT ARE WE TRYING TO RECOVER?!??!?!!?!?")
             return
 
+        # if target.failure_cause and isinstance(target.failure_cause.node, NonTerminal):
+        #     rule = cast(Rule, target.failure_cause.node.rule)
+        # else:
         rule = cast(Rule, cast(NonTerminal, target.node).rule)
         recovery_chars = self.recovery_rules[rule.name]
 
         self.pos = target.pos
 
         # advance to next statement
-        self._skip_statement(tokens, recovery_chars)
+        next_sequence: Sequence | None = None
+        sequence_target = target
+        while True:
+            if isinstance(sequence_target.node, Sequence):
+                next_sequence = sequence_target.node
+                break
+            if not sequence_target.failure_cause:
+                break
+
+            sequence_target = sequence_target.failure_cause
+
+        skip_entire_statement = False
+        if next_sequence and sequence_target.child_index:
+            skip_entire_statement = sequence_target.child_index < len(next_sequence.children) - 1
+
+        self._skip_statement(tokens, recovery_chars if skip_entire_statement else None)
+        
 
         # we reached EOF. this is truly a bruh moment.
         if self.pos >= len(tokens):
@@ -220,6 +248,11 @@ class Parser():
 
         if tokens[self.pos].literal in recovery_chars:
             self.pos += 1
+
+        if self.pos < len(tokens):
+            if not self.in_first(tokens[self.pos], self.stat_rule):
+                self._skip_statement(tokens, recovery_chars)
+                self.pos += 1
 
         return ParseResult(
             tree=ParsedNode(
@@ -295,10 +328,10 @@ class Parser():
                 if self.allow_insertions:
                     if isinstance(part, Terminal):
                         if part.child.name in self.recovery_nodes:
-                            result.expected = self.expected.create_and_reset()
+                            result.expected = self.expected.return_copy()
                             self.accumulated_errors.append(result)
                             children.extend(self.recovery_nodes[part.child.name]())
-                            continue
+                            continue                        
 
                 if not recovered:
                     self.pos = start_pos
@@ -320,6 +353,7 @@ class Parser():
 
             children.append(result.tree)
 
+        self.expected.create_and_reset()
         return ParseResult(
             tree=ParsedNode(
                 Sequence.__name__,
@@ -466,23 +500,6 @@ class Parser():
         if result.failed:
             self.pos = start_pos
 
-            # if self.allow_insertions:
-            #     if rule.name in self.recovery_nodes:
-            #         return ParseResult(
-            #             tree=ParsedNode(
-            #                 rule.name,
-            #                 children=self.recovery_nodes[rule.name]()
-            #             ),
-            #             node=node,
-            #             parent_node=parent_node,
-            #             start_pos=start_pos,
-            #             pos=self.pos,
-            #             expected=self.expected.return_copy(),
-            #             failed=True,
-            #             tokens=tokens,
-            #             failure_cause=result
-            #         )
-
             return ParseResult(
                 tree=ParsedNode(
                     rule.name,
@@ -577,6 +594,8 @@ class Parser():
         self.accumulated_errors = []
         result = self.parse_non_terminal(cast(NonTerminal, program_node.body), tokens, rule=program_node)
         # result.expected = self.expected
+        if result.failed:
+            self.accumulated_errors.append(result)
 
         return result
 

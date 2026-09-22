@@ -463,3 +463,4 @@ if __name__ == "__main__":
     rules = build_parse_tree()
     for rule in rules:
         print(rule.body)
+

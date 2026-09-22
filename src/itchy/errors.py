@@ -197,7 +197,7 @@ def _choose_expected(
 
 
 def get_message(result: ParseResult, expected: ExpectedState):
-    pos = expected.pos
+    pos = result.pos
     token = (
         result.tokens[pos]
         if 0 <= pos < len(result.tokens)
