@@ -289,6 +289,7 @@ class Parser():
                 if self.allow_insertions:
                     if isinstance(part, Terminal):
                         if part.child.name in self.recovery_nodes:
+                            result.expected = result.expected.create_and_reset()
                             self.accumulated_errors.append(result)
                             children.extend(self.recovery_nodes[part.child.name]())
                             continue
