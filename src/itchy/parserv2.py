@@ -40,6 +40,7 @@ class ExpectedState:
     def create_and_reset(self):
         new_state = self.return_copy()
         self.items = set()
+        self.pos = -1
         return new_state
 
 
