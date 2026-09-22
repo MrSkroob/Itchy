@@ -996,14 +996,18 @@ class ASTBuilder:
         # self.emit_token(event_token, "keyword")
         name = self.expect_token(children[1], Definitions.Symbol.name)
         self.emit_token(name, "event")
-        eventbody = self.expect_node(children[2], "args")
+
+        if len(children) < 3:
+            eventbody = None
+        else:
+            eventbody = self.expect_node(children[2], "args")
 
         # default_stmt = EventHandlerStmt(name.literal, (), (), dummy=True)
         # if not eventbody:
         #     return default_stmt
 
         if len(children) < 4:
-            wrap = ParsedNode("wrap", (), True)
+            wrap = None
         else:
             wrap = self.expect_node(children[3], "wrap")
 

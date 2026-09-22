@@ -2,7 +2,7 @@
 # This code was developed with assistance from OpenAI's ChatGPT.
 # AI-generated suggestions were reviewed, modified, and integrated by the author.
 
-from itchy.dummy_nodes import ANALYSIS_STRATEGIES# , find_last_node
+from itchy.dummy_nodes import ANALYSIS_STRATEGIES, find_last_node# , find_last_node
 from itchy.parserv2 import Parser, ParseResult
 from itchy.itch_ast import ASTBuilder, Program
 from itchy.errors import format_compiler_error, format_syntax_error
@@ -21,19 +21,20 @@ from tools.ast_printer import print_ast
 strict_parser = Parser()
 
 non_strict_parser = Parser(
-    allow_recovery=True,
+    # allow_recovery=True,
     allow_insertions=True,
     recovery_nodes=ANALYSIS_STRATEGIES,
 )
 
-DEBUG_MODE = False
+DEBUG_MODE = True
+STRICT_AST_BUILDER = False
 
 if DEBUG_MODE:
     parser = non_strict_parser
 else:
     parser = strict_parser
 
-ast_builder = ASTBuilder(is_strict=not DEBUG_MODE)
+ast_builder = ASTBuilder(is_strict=STRICT_AST_BUILDER)
 strict_assembler = Assembler("")
 non_strict_assembler = Assembler("", compile_with_warnings=True)
 
@@ -61,7 +62,6 @@ def compile_targets(
         parsed: ParseResult = parser.read(source)
 
         if parsed.failed:
-            # print_ast(ast_builder.build_eventstat(find_last_node(parsed.partial_tree, "eventstat")))
             print(
                 format_syntax_error(
                     parsed,
@@ -71,7 +71,6 @@ def compile_targets(
                 )
             )
             return None
-
         tree = ast_builder.build(parsed.tree)
 
         if DEBUG_MODE:
