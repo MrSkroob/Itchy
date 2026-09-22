@@ -26,8 +26,8 @@ non_strict_parser = Parser(
     recovery_nodes=ANALYSIS_STRATEGIES,
 )
 
-DEBUG_MODE = True
-STRICT_AST_BUILDER = False
+DEBUG_MODE = False
+STRICT_AST_BUILDER = True
 
 if DEBUG_MODE:
     parser = non_strict_parser
