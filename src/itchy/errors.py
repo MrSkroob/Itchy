@@ -270,7 +270,7 @@ def format_syntax_error(
     caret = " " * caret_padding + "^" * underline_length
 
     return (
-        f'  File "{filename}", line {source_index}, column {character}\n'
+        f'  File "{filename}", line {source_index + 1}, column {character + 1}\n'
         f"    {line_text}\n"
         f"    {caret}\n"
         f"SyntaxError: {message}"

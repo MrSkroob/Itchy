@@ -186,10 +186,12 @@ class Parser():
 
             for terminal in self.stat_rule.first:
                 if self.matches_terminal(token, terminal):
+                    print("skipped to", token)
                     return
 
-            if token.literal in recovery_chars:
-                return
+            # if token.literal in recovery_chars:
+            #     print("skipped to", token.literal)
+            #     return
 
             self.pos += 1
 
@@ -199,6 +201,7 @@ class Parser():
         target = self.get_recovery_target(result)
 
         if target is None:
+            print("I COULDN'T DO IT!!!")
             return
 
         rule = cast(Rule, cast(NonTerminal, target.node).rule)
@@ -211,6 +214,7 @@ class Parser():
 
         # we reached EOF. this is truly a bruh moment.
         if self.pos >= len(tokens):
+            print("THERE'S NO MORE INFORMATION TO WORK WITH ASSHOLE!!!")
             return None
 
         if tokens[self.pos].literal in recovery_chars:
@@ -290,6 +294,7 @@ class Parser():
                 if self.allow_insertions:
                     if isinstance(part, Terminal):
                         if part.child.name in self.recovery_nodes:
+                            result.expected = self.expected.create_and_reset()
                             self.accumulated_errors.append(result)
                             children.extend(self.recovery_nodes[part.child.name]())
                             continue
