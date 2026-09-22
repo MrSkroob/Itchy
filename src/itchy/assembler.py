@@ -638,7 +638,7 @@ class Assembler:
         uses .emit_statements() internally so statements do not connect to each other. 
         """
         # we want to allow the function definition statements to be first 
-        self.emit_statements(sorted(program.body, key=lambda key: isinstance(key, FunctionDefStmt), reverse=True))
+        self.emit_statements(sorted(program.body, key=lambda key: isinstance(key, (FunctionDefStmt, VarDefStmt)), reverse=True))
 
         for variables in self.non_referenced_variables.values():
             for variable in variables:

@@ -142,7 +142,7 @@ class Parser():
         self.recovery_rules = recovery_rules or {
             "stat": {"}"},
             "chunk": {"}"},
-            "vardefstat": {";"}
+            # "vardefstat": {";"}
         }
         self.statement_separator = statement_separator
         self.rules=build_parse_tree()
