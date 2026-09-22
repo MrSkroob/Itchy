@@ -1396,12 +1396,27 @@ class ASTBuilder:
             for child in children
             if isinstance(child, ParsedNode) and child.name == "vardefstat"
         )
-    
-        chunk = self.build_chunk(next(
-            child
-            for child in children
-            if isinstance(child, ParsedNode) and child.name == "chunk"
-        ))
+
+        try:
+            chunk = self.build_chunk(next(
+                child
+                for child in children
+                if isinstance(child, ParsedNode) and child.name == "chunk"
+            ))
+        except StopIteration:
+            if len(variable_definitions) > 0:
+                start = variable_definitions[0].span.start
+            else:
+                start = SourcePosition(0, 0)
+
+            if len(variable_definitions) > 0:
+                end = variable_definitions[-1].span.end
+            else:
+                end = start
+
+            if self.is_strict:
+                raise ValueError("There isn't a chunk block in here...")
+            return Program(variable_definitions, span=SourceSpan(start=start, end=end))
     
         if len(variable_definitions) > 0:
             start = variable_definitions[0].span.start

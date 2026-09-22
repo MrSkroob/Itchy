@@ -2,7 +2,7 @@
 # This code was developed with assistance from OpenAI's ChatGPT.
 # AI-generated suggestions were reviewed, modified, and integrated by the author.
 
-from itchy.dummy_nodes import ANALYSIS_STRATEGIES, find_last_node
+from itchy.dummy_nodes import ANALYSIS_STRATEGIES# , find_last_node
 from itchy.parserv2 import Parser, ParseResult
 from itchy.itch_ast import ASTBuilder, Program
 from itchy.errors import format_compiler_error, format_syntax_error
@@ -61,7 +61,7 @@ def compile_targets(
         parsed: ParseResult = parser.read(source)
 
         if parsed.failed:
-            print_ast(ast_builder.build_eventstat(find_last_node(parsed.partial_tree, "eventstat")))
+            # print_ast(ast_builder.build_eventstat(find_last_node(parsed.partial_tree, "eventstat")))
             print(
                 format_syntax_error(
                     parsed,
