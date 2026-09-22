@@ -550,6 +550,7 @@ class Parser():
         program_node = get_root_node(self.rules)
         self.pos = 0
         self.rule_stack = []
+        self.accumulated_errors = []
         result = self.parse_non_terminal(cast(NonTerminal, program_node.body), tokens, rule=program_node)
         # result.expected = self.expected
 

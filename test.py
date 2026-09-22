@@ -1,32 +1,22 @@
 import pytest
 
-from typing import TypeVar
-from itchy.parser import Parser, ParseError
 from itchy.parserv2 import Parser as Parser2
-from itchy.dummy_nodes import ANALYSIS_STRATEGIES, make_wrap
+from itchy.dummy_nodes import ANALYSIS_STRATEGIES
+from itchy.errors import get_message
 
 
-OLD_PARSER = "Parser"
+# OLD_PARSER = "Parser"
 NEW_PARSER = "Parser2"
 PARSER_OPTION = NEW_PARSER
 
 
-ParserTest = TypeVar("ParserTest", Parser, Parser2)
-
-
-def make_parser() -> Parser | Parser2:
+def make_parser() -> Parser2:
     # Replace these with the same strategies/options your compiler normally uses.
-    if PARSER_OPTION == NEW_PARSER:
-        return Parser2(
-            allow_recovery=True,
-            recovery_nodes=ANALYSIS_STRATEGIES
-        )
-    
-    return Parser(
-        skip_bad_tokens=True,
-        skip_rules_on_fail=ANALYSIS_STRATEGIES,
-        recoverable_rules={"wrap": make_wrap},
+    return Parser2(
+        allow_recovery=True,
+        recovery_nodes=ANALYSIS_STRATEGIES
     )
+
 
 
 def assert_valid(source: str):
@@ -40,20 +30,18 @@ def assert_valid(source: str):
 def assert_invalid(source: str, expected_errors: int | None=None):
     parser = make_parser()
 
-    try:
-        result = parser.read(source)
-        assert result is not None
-    except ParseError:
-        pass
+    parser.read(source)
 
     if expected_errors is None:
         assert parser.accumulated_errors
         return
 
     assert len(parser.accumulated_errors) == expected_errors, (
-        f"Expected {expected_errors} syntax error(s), "
-        f"got {len(parser.accumulated_errors)}:\n"
-        + "\n".join(repr(error) for error in parser.accumulated_errors)
+        f"Expected {expected_errors} error(s), got {len(parser.accumulated_errors)}:\n"
+        + "\n".join(
+            f"  {i + 1}. {get_message(error, error.expected)}"
+            for i, error in enumerate(parser.accumulated_errors)
+        )
     )
 
 # ---------------------------------------------------------------------------
