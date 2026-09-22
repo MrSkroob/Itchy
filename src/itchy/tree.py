@@ -1,7 +1,6 @@
 from __future__ import annotations
 # special multi node tree for easier traversal
-from abc import abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 # from tokenizer import *
 from itchy.tokenizer import BNFRules, Definitions, GenericRules, Token, Tokenizer, compile_rules
 from typing import Any, Iterable
@@ -30,15 +29,14 @@ class ParsedNode():
 
 
 class GrammarNode():
-    @abstractmethod
-    def lookahead(self) -> tuple[GrammarNode]:
-        raise NotImplementedError()
+    pass
 
-
-@dataclass(frozen=True)
+@dataclass()
 class Rule:
     name: str
     body: GrammarNode
+    first: set[Terminal]=field(default_factory=lambda: set()) # the set of terminals which can fulfill the first index of this rule
+    nullable: bool=False # determines whether we can skip over this rule while calculating first
 
 
 def print_array(array: Iterable[Any], brackets: tuple[str, str], glue: str):
@@ -321,12 +319,135 @@ def link_node(node: GrammarNode, rule_map: dict[str, Rule]) -> None:
             pass
 
 
+def node_nullable(node: GrammarNode) -> bool:
+    """
+    Returns whether `node` can match without consuming any tokens.
+    """
+    match node:
+        case Terminal():
+            return False
+
+        case NonTerminal():
+            if node.rule is None:
+                raise AssertionError(
+                    f"NonTerminal {node.name!r} has not been linked"
+                )
+
+            return node.rule.nullable
+
+        case Alternative():
+            return any(
+                node_nullable(option)
+                for option in node.options
+            )
+
+        case Sequence():
+            return all(
+                node_nullable(child)
+                for child in node.children
+            )
+
+        case OptionalNode() | Repeat():
+            return True
+
+        case _:
+            pass
+
+    raise TypeError(
+        f"Unknown grammar node: {type(node).__name__}"
+    )
+
+
+def calculate_nullable(rules: list[Rule]) -> None:
+    """
+    Calculates whether each rule can match without consuming a token.
+
+    This uses a fixed-point calculation so recursive rules are safe.
+    """
+    changed = True
+
+    while changed:
+        changed = False
+
+        for rule in rules:
+            if rule.nullable:
+                continue
+
+            if node_nullable(rule.body):
+                rule.nullable = True
+                changed = True
+
+
+def node_first(node: GrammarNode) -> set[Terminal]:
+    """Returns the currently known FIRST set for a node."""
+    match node:
+        case Terminal():
+            return {node}
+
+        case NonTerminal():
+            if not node.rule:
+                raise AssertionError("Rule not linked yet")
+            return set(node.rule.first)
+
+        case Sequence():
+            first: set[Terminal] = set()
+
+            for child in node.children:
+                first.update(
+                    node_first(child)
+                )
+
+                if not node_nullable(child):
+                    break
+
+            return first
+
+        case Alternative():
+            first: set[Terminal] = set()
+
+            for option in node.options:
+                first.update(
+                    node_first(option)
+                )
+
+            return first
+
+        case OptionalNode() | Repeat():
+            return node_first(node.child)
+
+        case GrammarNode():
+            raise TypeError("bad!! bare grammar node!!")
+            
+
+
+def generate_first(rules: list[Rule]) -> None:
+    """
+    Calculates FIRST sets for all grammar rules.
+    """
+    changed = True
+
+    while changed:
+        changed = False
+
+        for rule in rules:
+            before = len(rule.first)
+
+            rule.first.update(
+                node_first(rule.body)
+            )
+
+            if len(rule.first) != before:
+                changed = True
+
+
 def build_parse_tree():
     tokenizer = Tokenizer(BNFRules, {"Whitespace", "Comment"})
     with BNF_PATH.open("r") as f:
         token_stream = tokenizer.read(f.read())
         rules = BNFTreeBuilder(list(token_stream)).parse_rules()
         link_grammar(rules)
+        calculate_nullable(rules)
+        generate_first(rules)
     
     return rules
 

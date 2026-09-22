@@ -283,7 +283,9 @@ ANALYSIS_STRATEGIES: Strategy = {
     Definitions.CloseBracket.name: make_bracket_factory(")", Definitions.CloseBracket),
     Definitions.CloseCurlyBracket.name: make_bracket_factory("}", Definitions.CloseCurlyBracket),
     Definitions.CloseSquareBracket.name: make_bracket_factory("]", Definitions.CloseSquareBracket),
-    Definitions.StatementSeparator.name: make_bracket_factory(";", Definitions.StatementSeparator)
+    Definitions.StatementSeparator.name: make_bracket_factory(";", Definitions.StatementSeparator),
+    # Definitions.FieldSeperator.name: make_bracket_factory(",", Definitions.FieldSeperator),
+    # "literals": make_dummy_primary, 
     # "wrap": make_wrap,
     # "chunk": make_chunk,
     # Definitions.CloseCurlyBracket.name: dummy_token_factory(Definitions.CloseCurlyBracket, "}"),

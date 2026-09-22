@@ -559,6 +559,8 @@ class ASTBuilder:
                 self.emit_token(child, "operator")
     
         if not operands:
+            if not self.is_strict:
+                return Expr(dummy=True)
             raise ValueError(f"i wanted an operand. you gave me: <{node.name}>")
     
         expr = operand_builder(operands[0])
@@ -618,6 +620,9 @@ class ASTBuilder:
     
             if isinstance(child, ParsedNode) and child.name == "equation":
                 return self.build_equation(child)
+
+        if not self.is_strict:
+            return NumberExpr(0, dummy=True)
 
         raise ValueError(f"this ain't a primary g: {node!r}")
     
@@ -997,7 +1002,10 @@ class ASTBuilder:
         # if not eventbody:
         #     return default_stmt
 
-        wrap = self.expect_node(children[3], "wrap")
+        if len(children) < 4:
+            wrap = ParsedNode("wrap", (), True)
+        else:
+            wrap = self.expect_node(children[3], "wrap")
 
         if not wrap:
             wrap = ParsedNode("wrap", (), True)
@@ -1066,9 +1074,9 @@ class ASTBuilder:
 
         default_stmt = ForRangeStmt(
             var_name,
-            start=NumberExpr(-1),
-            step=NumberExpr(1),
-            stop=NumberExpr(-1),
+            start=NumberExpr(-1, dummy=True),
+            step=NumberExpr(1, dummy=True),
+            stop=NumberExpr(-1, dummy=True),
             body=(),
             dummy=True
         )
@@ -1257,6 +1265,9 @@ class ASTBuilder:
                 brackets.append(child)
         
         # chunks are allowed to be empty
+        if len(brackets) < 2:
+            return BlockStmt(chunk, dummy=True)
+
         return BlockStmt(chunk, span=SourceSpan(brackets[0].span.start, brackets[-1].span.end), dummy=node.dummy_node or brackets[-1].dummy_token)
     
     
@@ -1354,6 +1365,9 @@ class ASTBuilder:
     
                 case _:
                     pass
+
+        if not self.is_strict:
+            return BlockStmt((), dummy=True)
         
         raise ValueError(f"this is very bad: {node}")
     
@@ -1382,12 +1396,27 @@ class ASTBuilder:
             for child in children
             if isinstance(child, ParsedNode) and child.name == "vardefstat"
         )
-    
-        chunk = self.build_chunk(next(
-            child
-            for child in children
-            if isinstance(child, ParsedNode) and child.name == "chunk"
-        ))
+
+        try:
+            chunk = self.build_chunk(next(
+                child
+                for child in children
+                if isinstance(child, ParsedNode) and child.name == "chunk"
+            ))
+        except StopIteration:
+            if len(variable_definitions) > 0:
+                start = variable_definitions[0].span.start
+            else:
+                start = SourcePosition(0, 0)
+
+            if len(variable_definitions) > 0:
+                end = variable_definitions[-1].span.end
+            else:
+                end = start
+
+            if self.is_strict:
+                raise ValueError("There isn't a chunk block in here...")
+            return Program(variable_definitions, span=SourceSpan(start=start, end=end))
     
         if len(variable_definitions) > 0:
             start = variable_definitions[0].span.start

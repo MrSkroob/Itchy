@@ -1,16 +1,22 @@
 import pytest
 
-from itchy.parser import Parser, ParseError
-from itchy.dummy_nodes import ANALYSIS_STRATEGIES, make_wrap
+from itchy.parserv2 import Parser as Parser2
+from itchy.dummy_nodes import ANALYSIS_STRATEGIES
+from itchy.errors import get_message
 
 
-def make_parser() -> Parser:
+# OLD_PARSER = "Parser"
+NEW_PARSER = "Parser2"
+PARSER_OPTION = NEW_PARSER
+
+
+def make_parser() -> Parser2:
     # Replace these with the same strategies/options your compiler normally uses.
-    return Parser(
-        skip_bad_tokens=True,
-        skip_rules_on_fail=ANALYSIS_STRATEGIES,
-        recoverable_rules={"wrap": make_wrap},
+    return Parser2(
+        allow_recovery=True,
+        recovery_nodes=ANALYSIS_STRATEGIES
     )
+
 
 
 def assert_valid(source: str):
@@ -21,16 +27,22 @@ def assert_valid(source: str):
     assert parser.accumulated_errors == []
 
 
-def assert_invalid(source: str):
+def assert_invalid(source: str, expected_errors: int | None=None):
     parser = make_parser()
-    try:
-        result = parser.read(source)
-        assert result is not None
-    except ParseError:
-        pass
 
-    assert parser.accumulated_errors
+    parser.read(source)
 
+    if expected_errors is None:
+        assert parser.accumulated_errors
+        return
+
+    assert len(parser.accumulated_errors) == expected_errors, (
+        f"Expected {expected_errors} error(s), got {len(parser.accumulated_errors)}:\n"
+        + "\n".join(
+            f"  {i + 1}. {get_message(error, error.expected)}"
+            for i, error in enumerate(parser.accumulated_errors)
+        )
+    )
 
 # ---------------------------------------------------------------------------
 # Valid programs
@@ -218,4 +230,249 @@ def test_invalid_statement_without_semicolon_inside_while():
             }
         }
         """
+    )
+
+
+def test_repeat_allows_empty_function_body():
+    assert_valid(
+        """
+        define foo() {
+        }
+        """
+    )
+
+
+def test_repeat_allows_single_statement():
+    assert_valid(
+        """
+        define foo() {
+            motion_movesteps(10);
+        }
+        """
+    )
+
+
+def test_repeat_stops_at_closing_brace():
+    assert_valid(
+        """
+        define foo() {
+            motion_movesteps(10);
+        }
+
+        define bar() {
+            motion_movesteps(20);
+        }
+        """
+    )
+
+
+def test_nested_repeat_blocks():
+    assert_valid(
+        """
+        define foo() {
+            if true {
+                motion_movesteps(10);
+                motion_movesteps(20);
+            }
+
+            motion_movesteps(30);
+        }
+        """
+    )
+
+
+def test_repeat_rejects_partially_matched_statement():
+    assert_invalid(
+        """
+        define foo() {
+            motion_movesteps(
+        }
+        """
+    )
+
+
+def test_repeat_rejects_invalid_statement_between_valid_statements():
+    assert_invalid(
+        """
+        define foo() {
+            motion_movesteps(10);
+            @
+            motion_movesteps(20);
+        }
+        """
+    )
+
+# specific error count tests
+
+def test_single_syntax_error():
+    assert_invalid(
+        """
+        motion_movesteps(;
+        """,
+        1,
+    )
+
+
+def test_two_independent_syntax_errors():
+    assert_invalid(
+        """
+        motion_movesteps(;
+        motion_turnright(;
+        """,
+        2,
+    )
+
+
+def test_three_independent_syntax_errors():
+    assert_invalid(
+        """
+        motion_movesteps(;
+        motion_turnright(;
+        data_additemtolist(10,);
+        """,
+        3,
+    )
+
+
+def test_valid_statement_between_errors():
+    assert_invalid(
+        """
+        motion_movesteps(;
+        motion_turnright(15);
+        data_additemtolist(10,);
+        """,
+        2,
+    )
+
+
+def test_valid_statement_before_and_after_error():
+    assert_invalid(
+        """
+        motion_movesteps(10);
+        data_additemtolist(10,);
+        motion_turnright(15);
+        """,
+        1,
+    )
+
+
+def test_missing_closing_parenthesis():
+    assert_invalid(
+        """
+        motion_movesteps(10;
+        motion_turnright(15);
+        """,
+        1,
+    )
+
+
+def test_multiple_missing_closing_parentheses():
+    assert_invalid(
+        """
+        motion_movesteps(10;
+        motion_turnright(15;
+        motion_movesteps(20);
+        """,
+        2,
+    )
+
+
+def test_errors_inside_function():
+    assert_invalid(
+        """
+        define foo() {
+            motion_movesteps(;
+            motion_turnright(15);
+            data_additemtolist(10,);
+        }
+        """,
+        2,
+    )
+
+
+def test_errors_inside_and_outside_function():
+    assert_invalid(
+        """
+        define foo() {
+            motion_movesteps(;
+            motion_turnright(15);
+        }
+
+        data_additemtolist(10,);
+        """,
+        2,
+    )
+
+
+def test_error_between_two_functions():
+    assert_invalid(
+        """
+        define foo() {
+            motion_movesteps(10);
+        }
+
+        motion_movesteps(;
+
+        define bar() {
+            motion_turnright(15);
+        }
+        """,
+        1,
+    )
+
+
+def test_errors_in_separate_functions():
+    assert_invalid(
+        """
+        define foo() {
+            motion_movesteps(;
+        }
+
+        define bar() {
+            motion_turnright(;
+        }
+        """,
+        2,
+    )
+
+
+def test_nested_error_recovery():
+    assert_invalid(
+        """
+        define foo() {
+            if true {
+                motion_movesteps(;
+                motion_turnright(15);
+            }
+
+            data_additemtolist(10,);
+        }
+        """,
+        2,
+    )
+
+
+def test_multiple_nested_errors():
+    assert_invalid(
+        """
+        define foo() {
+            if true {
+                motion_movesteps(;
+                motion_turnright(;
+            }
+
+            data_additemtolist(10,);
+        }
+        """,
+        3,
+    )
+
+
+def test_error_at_end_of_file():
+    assert_invalid(
+        """
+        motion_movesteps(10);
+        motion_turnright(
+        """,
+        1,
     )
