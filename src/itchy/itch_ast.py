@@ -1002,7 +1002,10 @@ class ASTBuilder:
         # if not eventbody:
         #     return default_stmt
 
-        wrap = self.expect_node(children[3], "wrap")
+        if len(children) < 4:
+            wrap = ParsedNode("wrap", (), True)
+        else:
+            wrap = self.expect_node(children[3], "wrap")
 
         if not wrap:
             wrap = ParsedNode("wrap", (), True)
@@ -1262,6 +1265,9 @@ class ASTBuilder:
                 brackets.append(child)
         
         # chunks are allowed to be empty
+        if len(brackets) < 2:
+            return BlockStmt(chunk, dummy=True)
+
         return BlockStmt(chunk, span=SourceSpan(brackets[0].span.start, brackets[-1].span.end), dummy=node.dummy_node or brackets[-1].dummy_token)
     
     

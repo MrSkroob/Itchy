@@ -37,16 +37,24 @@ def assert_valid(source: str):
     assert parser.accumulated_errors == []
 
 
-def assert_invalid(source: str):
+def assert_invalid(source: str, expected_errors: int | None=None):
     parser = make_parser()
+
     try:
         result = parser.read(source)
         assert result is not None
     except ParseError:
         pass
 
-    assert parser.accumulated_errors
+    if expected_errors is None:
+        assert parser.accumulated_errors
+        return
 
+    assert len(parser.accumulated_errors) == expected_errors, (
+        f"Expected {expected_errors} syntax error(s), "
+        f"got {len(parser.accumulated_errors)}:\n"
+        + "\n".join(repr(error) for error in parser.accumulated_errors)
+    )
 
 # ---------------------------------------------------------------------------
 # Valid programs
@@ -306,3 +314,177 @@ def test_repeat_rejects_invalid_statement_between_valid_statements():
         """
     )
 
+# specific error count tests
+
+def test_single_syntax_error():
+    assert_invalid(
+        """
+        motion_movesteps(;
+        """,
+        1,
+    )
+
+
+def test_two_independent_syntax_errors():
+    assert_invalid(
+        """
+        motion_movesteps(;
+        motion_turnright(;
+        """,
+        2,
+    )
+
+
+def test_three_independent_syntax_errors():
+    assert_invalid(
+        """
+        motion_movesteps(;
+        motion_turnright(;
+        data_additemtolist(10,);
+        """,
+        3,
+    )
+
+
+def test_valid_statement_between_errors():
+    assert_invalid(
+        """
+        motion_movesteps(;
+        motion_turnright(15);
+        data_additemtolist(10,);
+        """,
+        2,
+    )
+
+
+def test_valid_statement_before_and_after_error():
+    assert_invalid(
+        """
+        motion_movesteps(10);
+        data_additemtolist(10,);
+        motion_turnright(15);
+        """,
+        1,
+    )
+
+
+def test_missing_closing_parenthesis():
+    assert_invalid(
+        """
+        motion_movesteps(10;
+        motion_turnright(15);
+        """,
+        1,
+    )
+
+
+def test_multiple_missing_closing_parentheses():
+    assert_invalid(
+        """
+        motion_movesteps(10;
+        motion_turnright(15;
+        motion_movesteps(20);
+        """,
+        2,
+    )
+
+
+def test_errors_inside_function():
+    assert_invalid(
+        """
+        define foo() {
+            motion_movesteps(;
+            motion_turnright(15);
+            data_additemtolist(10,);
+        }
+        """,
+        2,
+    )
+
+
+def test_errors_inside_and_outside_function():
+    assert_invalid(
+        """
+        define foo() {
+            motion_movesteps(;
+            motion_turnright(15);
+        }
+
+        data_additemtolist(10,);
+        """,
+        2,
+    )
+
+
+def test_error_between_two_functions():
+    assert_invalid(
+        """
+        define foo() {
+            motion_movesteps(10);
+        }
+
+        motion_movesteps(;
+
+        define bar() {
+            motion_turnright(15);
+        }
+        """,
+        1,
+    )
+
+
+def test_errors_in_separate_functions():
+    assert_invalid(
+        """
+        define foo() {
+            motion_movesteps(;
+        }
+
+        define bar() {
+            motion_turnright(;
+        }
+        """,
+        2,
+    )
+
+
+def test_nested_error_recovery():
+    assert_invalid(
+        """
+        define foo() {
+            if true {
+                motion_movesteps(;
+                motion_turnright(15);
+            }
+
+            data_additemtolist(10,);
+        }
+        """,
+        2,
+    )
+
+
+def test_multiple_nested_errors():
+    assert_invalid(
+        """
+        define foo() {
+            if true {
+                motion_movesteps(;
+                motion_turnright(;
+            }
+
+            data_additemtolist(10,);
+        }
+        """,
+        3,
+    )
+
+
+def test_error_at_end_of_file():
+    assert_invalid(
+        """
+        motion_movesteps(10);
+        motion_turnright(
+        """,
+        1,
+    )

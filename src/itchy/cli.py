@@ -61,6 +61,7 @@ def compile_targets(
         parsed: ParseResult = parser.read(source)
 
         if parsed.failed:
+            print_ast(ast_builder.build_eventstat(find_last_node(parsed.partial_tree, "eventstat")))
             print(
                 format_syntax_error(
                     parsed,
