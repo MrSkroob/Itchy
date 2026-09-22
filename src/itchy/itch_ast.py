@@ -330,8 +330,8 @@ class ASTBuilder:
         literal: str | None = None
     ) -> Token[Definitions]:
         if not self.is_token(token, name, literal):
-            if not self.is_strict:
-                return Token(Definitions(name), "", line=-1, char=-1, dummy_token=True)
+            if not self.is_strict and name:
+                return Token(Definitions[name], "", line=-1, char=-1, dummy_token=True)
             raise ValueError(
                 f"Expected token with name {name}, literal {literal}, got {token}"
             )
