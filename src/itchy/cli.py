@@ -2,7 +2,7 @@
 # This code was developed with assistance from OpenAI's ChatGPT.
 # AI-generated suggestions were reviewed, modified, and integrated by the author.
 
-from itchy.dummy_nodes import ANALYSIS_STRATEGIES, find_last_node# , find_last_node
+from itchy.dummy_nodes import ANALYSIS_STRATEGIES
 from itchy.parserv2 import Parser, ParseResult
 from itchy.itch_ast import ASTBuilder, Program
 from itchy.errors import format_compiler_error, format_syntax_error
@@ -13,8 +13,6 @@ import argparse
 from pathlib import Path
 
 import time
-
-from tools.ast_printer import print_ast
 
 
 # Replace RULES with whatever list of grammar rules your parser uses.
