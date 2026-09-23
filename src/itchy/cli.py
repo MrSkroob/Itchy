@@ -2,7 +2,7 @@
 # This code was developed with assistance from OpenAI's ChatGPT.
 # AI-generated suggestions were reviewed, modified, and integrated by the author.
 
-from itchy.dummy_nodes import ANALYSIS_STRATEGIES# , find_last_node
+from itchy.dummy_nodes import ANALYSIS_STRATEGIES
 from itchy.parserv2 import Parser, ParseResult
 from itchy.itch_ast import ASTBuilder, Program
 from itchy.errors import format_compiler_error, format_syntax_error
@@ -14,26 +14,25 @@ from pathlib import Path
 
 import time
 
-from tools.ast_printer import print_ast
-
 
 # Replace RULES with whatever list of grammar rules your parser uses.
 strict_parser = Parser()
 
 non_strict_parser = Parser(
-    allow_recovery=True,
+    # allow_recovery=True,
     allow_insertions=True,
     recovery_nodes=ANALYSIS_STRATEGIES,
 )
 
-DEBUG_MODE = False
+STRICT_PARSER = True
+STRICT_AST_BUILDER = True
 
-if DEBUG_MODE:
-    parser = non_strict_parser
-else:
+if STRICT_PARSER:
     parser = strict_parser
+else:
+    parser = non_strict_parser
 
-ast_builder = ASTBuilder(is_strict=not DEBUG_MODE)
+ast_builder = ASTBuilder(is_strict=STRICT_AST_BUILDER)
 strict_assembler = Assembler("")
 non_strict_assembler = Assembler("", compile_with_warnings=True)
 
@@ -61,7 +60,6 @@ def compile_targets(
         parsed: ParseResult = parser.read(source)
 
         if parsed.failed:
-            # print_ast(ast_builder.build_eventstat(find_last_node(parsed.partial_tree, "eventstat")))
             print(
                 format_syntax_error(
                     parsed,
@@ -71,11 +69,7 @@ def compile_targets(
                 )
             )
             return None
-
         tree = ast_builder.build(parsed.tree)
-
-        if DEBUG_MODE:
-            print_ast(tree)
 
         programs[file.stem] = tree
         metadata[file.stem] = (source, file)

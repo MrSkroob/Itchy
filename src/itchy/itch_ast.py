@@ -330,8 +330,8 @@ class ASTBuilder:
         literal: str | None = None
     ) -> Token[Definitions]:
         if not self.is_token(token, name, literal):
-            if not self.is_strict:
-                return Token(Definitions(name), "", line=-1, char=-1, dummy_token=True)
+            if not self.is_strict and name:
+                return Token(Definitions[name], "", line=-1, char=-1, dummy_token=True)
             raise ValueError(
                 f"Expected token with name {name}, literal {literal}, got {token}"
             )
@@ -996,14 +996,18 @@ class ASTBuilder:
         # self.emit_token(event_token, "keyword")
         name = self.expect_token(children[1], Definitions.Symbol.name)
         self.emit_token(name, "event")
-        eventbody = self.expect_node(children[2], "args")
+
+        if len(children) < 3:
+            eventbody = None
+        else:
+            eventbody = self.expect_node(children[2], "args")
 
         # default_stmt = EventHandlerStmt(name.literal, (), (), dummy=True)
         # if not eventbody:
         #     return default_stmt
 
         if len(children) < 4:
-            wrap = ParsedNode("wrap", (), True)
+            wrap = None
         else:
             wrap = self.expect_node(children[3], "wrap")
 
@@ -1134,7 +1138,7 @@ class ASTBuilder:
         assert isinstance(if_token, Token) and if_token.kind.name == Definitions.If.name
         # self.emit_token(if_token, "keyword")
 
-        if len(children) < 3:
+        if len(children) < 2:
             children.append(ParsedNode("equation", (), dummy_node=True))
 
         equation_node = self.expect_node(children[1], "equation")
