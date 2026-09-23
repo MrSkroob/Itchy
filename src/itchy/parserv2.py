@@ -70,6 +70,7 @@ class ParseResult():
     pos: int
     failed: bool
     expected: ExpectedState=field(default_factory=ExpectedState)
+    committed: bool=False # used to 'lock in' to a rule. even if we fail, we should not consider other options.
     failure_cause: ParseResult | None=None
     # incomplete_parse: PartialParse | None=None
 
@@ -326,11 +327,11 @@ class Parser():
             if result.failed:
                 recovered = False
                 if self.allow_insertions:
-                    if isinstance(part, Terminal):
-                        if part.child.name in self.recovery_nodes:
+                    if isinstance(result.node, Terminal):
+                        if result.node.child.name in self.recovery_nodes:
                             result.expected = self.expected.return_copy()
                             self.accumulated_errors.append(result)
-                            children.extend(self.recovery_nodes[part.child.name]())
+                            children.extend(self.recovery_nodes[result.node.child.name]())
                             continue                        
 
                 if not recovered:
@@ -436,7 +437,6 @@ class Parser():
 
                 # we matched into something then failed. 
                 # not good!
-
                 if self.allow_recovery:
                     recovered = self.recover(result, tokens)
 
@@ -450,7 +450,7 @@ class Parser():
 
                 self.pos = start_pos
 
-                children.append(result.tree)
+                # children.append(result.tree)
 
                 return ParseResult(
                     tree=ParsedNode(

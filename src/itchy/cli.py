@@ -26,13 +26,13 @@ non_strict_parser = Parser(
     recovery_nodes=ANALYSIS_STRATEGIES,
 )
 
-DEBUG_MODE = False
-STRICT_AST_BUILDER = True
+STRICT_PARSER = False
+STRICT_AST_BUILDER = False
 
-if DEBUG_MODE:
-    parser = non_strict_parser
-else:
+if STRICT_PARSER:
     parser = strict_parser
+else:
+    parser = non_strict_parser
 
 ast_builder = ASTBuilder(is_strict=STRICT_AST_BUILDER)
 strict_assembler = Assembler("")
@@ -72,9 +72,6 @@ def compile_targets(
             )
             return None
         tree = ast_builder.build(parsed.tree)
-
-        if DEBUG_MODE:
-            print_ast(tree)
 
         programs[file.stem] = tree
         metadata[file.stem] = (source, file)
