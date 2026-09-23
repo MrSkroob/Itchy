@@ -968,11 +968,27 @@ class Assembler:
                 if len(arg_expr.args) == 0:
                     # this shouldn't happen, but i don't want the assertion to trigger just in case.
                     return PLACE_HOLDER_0.value
-                assert isinstance(arg_expr.args[0], StringExpr)
-                broadcast_id = self.define_broadcast(arg_expr.args[0].value)
+                # assert isinstance(arg_expr.args[0], StringExpr)
+                value = None
+                expr = arg_expr.args[0]
+                while True:
+                    if isinstance(expr, StringExpr):
+                        value = expr.value
+                        break
+                    elif isinstance(expr, AssetExpr):
+                        value = expr.args[0]
+                    else:
+                        return self.raise_or_return(
+                            error=InvalidTypeError(
+                                message=f"{callee}: argument {index} must be a string literal",
+                                error_node=arg_expr,
+                            ),
+                            return_value=PLACE_HOLDER_0,
+                        ).value
+                broadcast_id = self.define_broadcast(value)
                 return (
                     InputType.SHADOW_ONLY,
-                    (DataType.BROADCAST, arg_expr.args[0].value, broadcast_id)
+                    (DataType.BROADCAST, value, broadcast_id)
                 )
 
             return self.emit_expr(

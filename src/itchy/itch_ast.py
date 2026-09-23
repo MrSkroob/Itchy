@@ -1138,7 +1138,7 @@ class ASTBuilder:
         assert isinstance(if_token, Token) and if_token.kind.name == Definitions.If.name
         # self.emit_token(if_token, "keyword")
 
-        if len(children) < 3:
+        if len(children) < 2:
             children.append(ParsedNode("equation", (), dummy_node=True))
 
         equation_node = self.expect_node(children[1], "equation")

@@ -491,11 +491,7 @@ class Parser():
                                  rule: Rule | None=None):
         start_pos = self.pos
         rule = rule or cast(Rule, node.rule)
-
-        self.rule_stack.append(rule.name)
-
         result = self.parse_rule(rule, tokens)
-        self.rule_stack.pop()
 
         if result.failed:
             self.pos = start_pos
@@ -582,7 +578,10 @@ class Parser():
 
 
     def parse_rule(self, rule: Rule, tokens: TokenList) -> ParseResult:
-        return self.parse_node(rule.body, tokens)
+        self.rule_stack.append(rule.name)
+        result = self.parse_node(rule.body, tokens)
+        self.rule_stack.pop()
+        return result
 
     def read(self, text: str) -> ParseResult:
         return self.parse(list(tokenizer.read(text)))
