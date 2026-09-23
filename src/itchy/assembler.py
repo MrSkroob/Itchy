@@ -888,6 +888,8 @@ class Assembler:
                 )
 
             proc_data.unfulfilled_types.difference_update(return_type)
+            if VariableTypes.VAR in return_type:
+                proc_data.unfulfilled_types.clear()
         else:
             proc_data.return_nothings += 1
 
