@@ -157,7 +157,7 @@ STAGE_BLOCKS: dict[str, Block | Reporter | Event] = {
     # --- control ----------------------------------------------------
     # note: control_wait_until takes a CONDITION input like control_repeat_until
     # does elsewhere in the assembler -- it's still just a plain command block.
-    "control_wait": Block((ReturnType("DURATION", DataType.POSITIVE_NUMBER),)),
+    "control_wait": Block((ReturnType("DURATION", DataType.NUMBER),)),
     "control_wait_until": Block((ReturnType("CONDITION"),)),
     "control_stop": Block(fields=(Field("STOP_OPTION", ("this script", "all", "other scripts in sprite")),)), # this is basically the return block. though we'll need to figure out how to return variables.
     "control_create_clone_of": Block((Menu("control_create_clone_of_menu", "CLONE_OPTION", expected=("_myself_",)),)),
