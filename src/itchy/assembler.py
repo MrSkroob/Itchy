@@ -13,7 +13,7 @@ import shutil
 
 from typing import TypeVar, Iterable
 from dataclasses import dataclass, field, replace
-from enum import Enum, StrEnum
+from enum import Enum, StrEnum, auto
 
 from copy import deepcopy
 from pathlib import Path
@@ -68,6 +68,12 @@ JSONValue = int | str | float | bool | None | list["JSONValue"] | dict[str, "JSO
 
 # stuff to be serialised
 Serialisable = Enum | tuple["Serialisable", ...] | list["Serialisable"] | dict[str, "Serialisable"] | JSONValue
+
+
+class TypeErrorSeverity(Enum):
+    OK = auto() # no type error occured
+    DISCRETION = auto() # type error occured. up to rest of the code to decide whether should error or be a warning 
+    ERROR = auto() # definitely should be a warning, even if considered otherwise.
 
 
 class InputType(Enum):
@@ -642,19 +648,29 @@ class Assembler:
 
         for variables in self.non_referenced_variables.values():
             for variable in variables:
+                if "compiler:" in variable.name:
+                    continue
+                error = NotReferenced(
+                    f"'{variable.name}' is not referenced",
+                    error_node=variable
+                )
+                if not self.compile_with_warnings:
+                    raise error
                 self.errors.append(
-                    NotReferenced(
-                        f"'{variable.name}' is not referenced",
-                        error_node=variable
-                    )
+                    error
                 )
 
         for function in self.non_referenced_functions.values():
+            if "compiler:" in function.name:
+                continue
+            error = NotReferenced(
+                f"'{function.name}' is not referenced",
+                error_node=function
+            )
+            if not self.compile_with_warnings:
+                raise error
             self.errors.append(
-                NotReferenced(
-                    f"'{function.name}' is not referenced",
-                    error_node=function
-                )
+                error
             )
 
     def emit_sequence(
@@ -726,9 +742,6 @@ class Assembler:
                 # all 'wrap' things are consumed. there aren't really any individual {} statements.
                 return self.emit_sequence(body, parent, context)
             case VarDefStmt(shared=shared, type_name=type_name, name=name):
-                # if type_name not in {VariableTypes.VAR.value, VariableTypes.LIST.value, VariableTypes.BOOL.value}:
-                #     return self.raise_or_return(InvalidTypeError(f"Invalid variable type: '{type_name}'.\
-                #                                                  Scratch only permits var, list and bool.", stmt))
                 self.register_symbol(SymbolOccurence(
                     span=stmt.span,
                     definition_location=stmt.span,
@@ -808,12 +821,38 @@ class Assembler:
             return True
 
 
-    def type_check(self, a: VariableTypes, b: set[VariableTypes], node: ASTNode | None):
+    def type_check(self, a: VariableTypes, b: set[VariableTypes], node: ASTNode | None) -> TypeErrorSeverity:
         if VariableTypes.LIST in b:
             if node:
                 self.raise_or_return(TypeMismatch("Lists will be converted into a space separated string. Are you sure this is what you want?", node))
+
+            # if not a in b:
+            #     # bad hack so variables do not compile as a list.
+            #     print("oh")
+            #     self.compile_with_warnings = False
+
+        if a == VariableTypes.LIST and a not in b:
+            # FIXME
+            # this is a really bad, no good, terrible hack.
+            """
+            situations where we have
+
+            ```
+            list numbers;
+            numbers = 0;
+            ```
+            
+            would typically raise a TypeMismatch *warning*. 
+            However, the Scratch editor literally crashes if we try and compile
+            with this mismatch warning. 
+
+            So, we set return with TypeErrorSeverity.ERROR to flag that this is a bad, no good type error.
+            
+            """
+            return TypeErrorSeverity.ERROR
+        
         return_bool = self.static_type_check(a, b)
-        return return_bool
+        return TypeErrorSeverity.OK if return_bool else TypeErrorSeverity.DISCRETION
 
 
     def emit_return(self, stmt: ReturnStmt, parent: StrOptional, context: Context) -> BlockRange:
@@ -2095,11 +2134,15 @@ class Assembler:
             expr = self.emit_expr(
                 value, context, block_range, block_id
             )
+            error_severity = self.type_check(self.variables[var_id].var_type, expr.return_type, value)
 
-            if not self.type_check(self.variables[var_id].var_type, expr.return_type, value):
+            if error_severity == TypeErrorSeverity.DISCRETION:
                 error = TypeMismatch(
                     f"'{target.root}': not one of ({", ".join(i.value for i in expr.return_type)}) matches {self.variables[var_id].var_type}", 
                     value)
+                self.raise_or_return(error)
+            elif error_severity == TypeErrorSeverity.ERROR:
+                error = type_error_factory(target.root, 0, expected=self.variables[var_id].var_type, actual=expr.return_type, stmt=value)
                 self.raise_or_return(error)
 
             inputs["VALUE"] = expr.value
