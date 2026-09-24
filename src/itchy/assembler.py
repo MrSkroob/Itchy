@@ -889,7 +889,7 @@ class Assembler:
 
             proc_data.unfulfilled_types.difference_update(return_type)
             if VariableTypes.VAR in return_type:
-                proc_data.unfulfilled_types.union({VariableTypes.NOTHING})
+                proc_data.unfulfilled_types.difference_update({VariableTypes.NOTHING})
         else:
             proc_data.return_nothings += 1
 
