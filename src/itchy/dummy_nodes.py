@@ -284,7 +284,9 @@ ANALYSIS_STRATEGIES: Strategy = {
     Definitions.CloseCurlyBracket.name: make_bracket_factory("}", Definitions.CloseCurlyBracket),
     Definitions.CloseSquareBracket.name: make_bracket_factory("]", Definitions.CloseSquareBracket),
     Definitions.StatementSeparator.name: make_bracket_factory(";", Definitions.StatementSeparator),
-    "literals": make_dummy_primary,
+    # "equation": make_dummy_primary,
+    # Definitions.Number.name: make_bracket_factory("0", Definitions.Number),
+    # Definitions.Symbol.name: make_bracket_factory("0", Definitions.Symbol)
     # Definitions.FieldSeperator.name: make_bracket_factory(",", Definitions.FieldSeperator),
     # "literals": make_dummy_primary, 
     # "wrap": make_wrap,

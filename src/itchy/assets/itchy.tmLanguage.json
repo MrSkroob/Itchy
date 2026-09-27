@@ -33,7 +33,7 @@
     },
     {
       "name": "keyword.control.loop.itchy",
-      "match": "\\b(while)\\b"
+      "match": "\\b(while|and|or|not)\\b"
     },
     {
       "name": "keyword.control.loop.itchy",

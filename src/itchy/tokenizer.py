@@ -101,7 +101,7 @@ class Definitions(StrEnum):
     Pipe = r"\|"
     Forever = r"\b(forever)\b"
     Number = r"[0-9][_0-9]*(\.[0-9][_0-9]*)?"
-    Type = fr"\b(?:{"|".join([i.value for i in VariableTypes])})\b"
+    # Type = fr"\b(?:{"|".join([i.value for i in VariableTypes])})\b"
     AssetType = fr"@(?:{"|".join([i.value for i in AssetTypes])})"
     Bool = r"\b(?:true|false)\b"
     Assign = r"\*=|\+=|-=|/=|=(?!=)"

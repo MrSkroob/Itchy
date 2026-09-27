@@ -2,7 +2,7 @@
 <chunk> ::= {<stat> {<StatementSeparator>}}
 <stat> ::= <whilestat> | <ifstat> | <forstat> | <functionstat> | <eventstat> | <varassignstat> <StatementSeparator> | <functioncall> <StatementSeparator> | <foreverstat> | <laststat> <StatementSeparator>
 
-<vardefstat> ::= [<Shared>] <Type> <Symbol> <StatementSeparator>
+<vardefstat> ::= [<Shared>] <Symbol> <Symbol> <StatementSeparator>
 <foreverstat> ::= <Forever> <wrap>
 <whilestat> ::= <While> <equation> <wrap>
 <ifstat> ::= <If> <equation> <wrap> {<ElseIf> <equation> <wrap>} [<Else> <wrap>]
@@ -36,9 +36,9 @@
 // <explist1> ::= <equation> {<FieldSeperator> <explist1>}
 <varlist1> ::= <equation> {<FieldSeperator> <equation>} [<FieldSeperator>]
 <args> ::= "(" [<varlist1>] ")"
-<argtype> ::= <Symbol> <Colon> <Type>
+<argtype> ::= <Symbol> ":" <Symbol>
 <paramlist> ::= <argtype> {<FieldSeperator> <argtype>} [<FieldSeperator>]
-<typelist> ::= <Type> {"|" <Type>}
+<typelist> ::= <Symbol> {"|" <Symbol>}
 
 // note that rules are evaluated left to right
 // for performance, it's better to have non-terminators at the end. 

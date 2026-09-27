@@ -327,12 +327,17 @@ class Parser():
             if result.failed:
                 recovered = False
                 if self.allow_insertions:
+                    node_name = None
                     if isinstance(result.node, Terminal):
-                        if result.node.child.name in self.recovery_nodes:
-                            result.expected = self.expected.return_copy()
-                            self.accumulated_errors.append(result)
-                            children.extend(self.recovery_nodes[result.node.child.name]())
-                            continue                        
+                        node_name = result.node.child.name
+                    # elif isinstance(result.node, NonTerminal):
+                    #     node_name = cast(Rule, result.node.rule).name
+                    
+                    if node_name in self.recovery_nodes:
+                        result.expected = self.expected.return_copy()
+                        self.accumulated_errors.append(result)
+                        children.extend(self.recovery_nodes[node_name]())
+                        continue                        
 
                 if not recovered:
                     self.pos = start_pos
@@ -448,7 +453,7 @@ class Parser():
 
                         continue
 
-                self.pos = start_pos
+                # self.pos = start_pos
 
                 # children.append(result.tree)
 
@@ -463,7 +468,7 @@ class Parser():
                     start_pos=start_pos,
                     pos=result.pos,
                     expected=self.expected.return_copy(),
-                    failed=True,
+                    failed=False,
                     failure_cause=result
                 )
 

@@ -867,12 +867,32 @@ class ASTBuilder:
             )
     
     def build_vardefstat(self, node: ParsedNode) -> VarDefStmt:
+        children = self.flat_children(node)
+        index = 0
+
         shared = self.has_token(node, "Shared")
+
+        if shared:
+            index += 1
+
+        if len(children) < index + 1:
+            return VarDefStmt("var", "", dummy=True, shared=shared)
     
-        type_token = self.find_first_token(node, "Type")
+        type_token = children[index]
+        index += 1
+        if not isinstance(type_token, Token):
+            return VarDefStmt("var", "", dummy=True, shared=shared)
+
         self.emit_token(type_token, "type")
 
-        symbol_token = self.find_first_token(node, "Symbol")
+        if len(children) < index + 1:
+            return VarDefStmt(type_token.literal, "", dummy=True, shared=shared)
+
+        symbol_token = children[index]
+        index += 1
+
+        if not isinstance(symbol_token, Token):
+            return VarDefStmt(type_token.literal, "", dummy=True, shared=shared)
     
         self.emit_token(symbol_token, "variable", ("declaration",))
     
@@ -893,7 +913,7 @@ class ASTBuilder:
         for child in self.flat_children(node):
             if not isinstance(child, Token):
                 continue
-            if child.kind != Definitions.Type:
+            if child.kind != Definitions.Symbol:
                 continue
             types.append(child.literal)
             self.emit_token(child, "type")
@@ -915,7 +935,7 @@ class ASTBuilder:
         name = self.expect_token(children[0], name="Symbol")
         self.emit_token(name, "parameter", ("declaration", "readonly"))
         
-        type_name = self.expect_token(children[2], name="Type")
+        type_name = self.expect_token(children[2], name="Symbol")
         self.emit_token(type_name, "type")
     
         return Param(name.literal, type_name.literal, span=name.span, dummy=node.dummy_node)

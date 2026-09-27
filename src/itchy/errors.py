@@ -123,7 +123,7 @@ TOKEN_NAMES: dict[str, str] = {
     Definitions.String.name: "a string",
     Definitions.Symbol.name: "an identifier",
     Definitions.Bool.name: "'true' or 'false'",
-    Definitions.Type.name: "'var', 'bool', or 'list'",
+    # Definitions.Type.name: "'var', 'bool', or 'list'",
 
     # Operators
     Definitions.Assign.name: "an assignment operator",

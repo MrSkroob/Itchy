@@ -1,7 +1,7 @@
 import pytest
 
 from itchy.parserv2 import Parser as Parser2
-from itchy.dummy_nodes import ANALYSIS_STRATEGIES
+# from itchy.dummy_nodes import ANALYSIS_STRATEGIES
 from itchy.errors import get_message
 
 
@@ -13,8 +13,8 @@ PARSER_OPTION = NEW_PARSER
 def make_parser() -> Parser2:
     # Replace these with the same strategies/options your compiler normally uses.
     return Parser2(
-        allow_recovery=True,
-        recovery_nodes=ANALYSIS_STRATEGIES
+        # allow_recovery=True,
+        # recovery_nodes=ANALYSIS_STRATEGIES
     )
 
 
@@ -299,5 +299,53 @@ def test_repeat_rejects_invalid_statement_between_valid_statements():
             @
             motion_movesteps(20);
         }
+        """
+    )
+
+
+# arbitrary type values
+def test_arbitrary_type_name_parses():
+    assert_valid(
+        """
+        error bar;
+        """
+    )
+
+
+def test_multiple_arbitrary_type_names_parse():
+    assert_valid(
+        """
+        error bar;
+        banana fruit;
+        completelyMadeUp value;
+        """
+    )
+
+
+def test_unknown_type_with_assignment_afterwards():
+    assert_valid(
+        """
+        nonsense foo;
+        foo = 10;
+        """
+    )
+
+
+def test_shared_unknown_type():
+    assert_valid(
+        """
+        shared nonsense foo;
+        """
+    )
+
+
+def test_real_and_arbitrary_types_can_coexist():
+    assert_valid(
+        """
+        number foo;
+        bool bar;
+        list baz;
+        error qux;
+        whatever thing;
         """
     )

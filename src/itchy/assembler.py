@@ -159,7 +159,11 @@ class ProcedureInfo:
     return_types: set[VariableTypes]=field(default_factory=lambda: {VariableTypes.NOTHING})
 
 
-def type_error_factory(name: str, index: int, expected: VariableTypes, actual: set[VariableTypes], stmt: ASTNode):
+def type_param_error_factory(stmt: ASTNode, stmt_name: str):
+    return InvalidTypeError(f"{stmt_name} types must be one of: ({', '.join(i.value for i in VariableTypes)})", stmt)
+
+
+def type_error_factory(name: str, index: int | None, expected: VariableTypes, actual: set[VariableTypes], stmt: ASTNode):
     if len(actual) == 1:
         return InvalidTypeError(f"'{name}': expected '{expected.value}' not '{list(actual)[0].value}'", stmt)
     else:
@@ -619,6 +623,9 @@ class Assembler:
 
             # this has an added benefit of making sure that stage variables are actually global
 
+            if stmt.type_name not in VariableTypes:
+                continue
+
             global_vars[stmt.name] = VariableData(
                 uri=owner,
                 name=stmt.name,
@@ -750,11 +757,14 @@ class Assembler:
                     name=name
                 ), stmt)
 
+                if type_name not in VariableTypes:
+                    error = type_param_error_factory(stmt, "Variable")
+                    return self.raise_or_return(error)
+
                 if name not in self.overridable and (name, None) in self.variable_map:
                     error = Shadow(f"Variable '{stmt.name}' is shadowed by variable of same name", stmt)
                     # if not self.compile_with_warnings:
-                    self.raise_or_return(error)
-                    return BlockRange(None, None)
+                    return self.raise_or_return(error)
 
                 # allow variable to override existing one in project at least once. 
                 # any subsequent definitions will be counted as duplicates.
@@ -1601,6 +1611,9 @@ class Assembler:
         for param in params:
             arg_id = self.new_id()
 
+            if param.type_name not in VariableTypes:
+                return self.raise_or_return(type_param_error_factory(param, "Parameter"))
+            
             var_type = VariableTypes(param.type_name)
             # if var_type == VariableTypes.LIST:
             #     self.raise_or_return(TypeMismatch("Lists will be converted into a space separated string. Are you sure this is what you want?", param))
@@ -1649,6 +1662,13 @@ class Assembler:
         argument_types_tuple = tuple(argument_types)
         proccode = " ".join(proccode_parts)
 
+        unfulfilled_types: set[VariableTypes] = set()
+
+        for i in stmt.type_annotation:
+            if i not in VariableTypes:
+                return self.raise_or_return(type_param_error_factory(stmt, "Type annotation"))
+            unfulfilled_types.add(VariableTypes(i))
+
         proc_info = ProcedureInfo(
             name=stmt.name,
             prototype_id=prototype_id,
@@ -1657,7 +1677,7 @@ class Assembler:
             argument_names=argument_names_tuple,
             argument_defaults=argument_defaults_tuple,
             argument_types=argument_types_tuple,
-            unfulfilled_types=set(VariableTypes(i) for i in stmt.type_annotation),
+            unfulfilled_types=unfulfilled_types,
             definition_location=stmt.span,
         )
 
