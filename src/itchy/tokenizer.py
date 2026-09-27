@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Generic, Iterator, TypeVar
 from enum import StrEnum
-from itchy.shared_templates import SourceSpan, SourcePosition, VariableTypes, AssetTypes
+from itchy.shared_templates import SourceSpan, SourcePosition, AssetTypes
 import re
 
 # these tend to be treated specially other than the other rules below:
