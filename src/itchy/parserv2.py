@@ -71,11 +71,11 @@ class ParseResult():
     failed: bool
     expected: ExpectedState=field(default_factory=ExpectedState)
     committed: bool=False # used to 'lock in' to a rule. even if we fail, we should not consider other options.
-    failure_cause: ParseResult | None=None
+    failure_cause: "ParseResult | None"=None
     # incomplete_parse: PartialParse | None=None
 
 
-    def partial_tree_rule(self, rule: str) -> ParseResult | None:
+    def partial_tree_rule(self, rule: str) -> "ParseResult | None":
         if isinstance(self.node, NonTerminal):
             return self
 
@@ -453,9 +453,7 @@ class Parser():
 
                         continue
 
-                # self.pos = start_pos
-
-                # children.append(result.tree)
+                # on second thought, it's a little overzealous to assume we failed. it's entirely possible valid code continues.
 
                 return ParseResult(
                     tree=ParsedNode(
@@ -466,7 +464,7 @@ class Parser():
                     tokens=tokens,
                     parent_node=parent_node,
                     start_pos=start_pos,
-                    pos=result.pos,
+                    pos=self.pos + 1,
                     expected=self.expected.return_copy(),
                     failed=False,
                     failure_cause=result

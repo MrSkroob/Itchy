@@ -1,7 +1,8 @@
-<program> ::= {<vardefstat>} <chunk> <EOF> 
+<program> ::= {<importstat>} {<vardefstat>} <chunk> <EOF> 
 <chunk> ::= {<stat> {<StatementSeparator>}}
 <stat> ::= <whilestat> | <ifstat> | <forstat> | <functionstat> | <eventstat> | <varassignstat> <StatementSeparator> | <functioncall> <StatementSeparator> | <foreverstat> | <laststat> <StatementSeparator>
 
+<importstat> ::= "import" <Symbol> {"." <Symbol>}
 <vardefstat> ::= [<Shared>] <Symbol> <Symbol> <StatementSeparator>
 <foreverstat> ::= <Forever> <wrap>
 <whilestat> ::= <While> <equation> <wrap>

@@ -171,6 +171,11 @@ def type_error_factory(name: str, index: int | None, expected: VariableTypes, ac
                                                         matches argument {index} of type {expected.value}", stmt)
 
 
+class Importer:
+    def __init__(self, is_strict: bool=True, compiler_with_warnings: bool=False) -> None:
+        pass
+
+
 class Assembler:
     def __init__(self, uri: str, is_strict: bool=True, compile_with_warnings: bool=False) -> None:
         """
