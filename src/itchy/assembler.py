@@ -167,7 +167,7 @@ def type_error_factory(name: str, index: int | None, expected: VariableTypes, ac
     if len(actual) == 1:
         return InvalidTypeError(f"'{name}': expected '{expected.value}' not '{list(actual)[0].value}'", stmt)
     else:
-        return InvalidTypeError(f"'{name}': not one of ({", ".join(i.value for i in actual)}) \
+        return InvalidTypeError(f"'{name}': not one of ({', '.join(i.value for i in actual)}) \
                                                         matches argument {index} of type {expected.value}", stmt)
 
 
@@ -1702,7 +1702,7 @@ class Assembler:
 
         if len(proc_info.unfulfilled_types) != 0 and not (len(proc_info.unfulfilled_types) == 1 and VariableTypes.NOTHING in proc_info.unfulfilled_types):
             self.raise_or_return(TypeMismatch(
-                f"'{stmt.name}': Not all codepaths end in specified types. Missing: ({", ".join(i for i in proc_info.unfulfilled_types)})",
+                f"'{stmt.name}': Not all codepaths end in specified types. Missing: ({', '.join(i for i in proc_info.unfulfilled_types)})",
                 stmt
                 ))
 
@@ -2165,7 +2165,7 @@ class Assembler:
 
             if error_severity == TypeErrorSeverity.DISCRETION:
                 error = TypeMismatch(
-                    f"'{target.root}': not one of ({", ".join(i.value for i in expr.return_type)}) matches {self.variables[var_id].var_type}", 
+                    f"'{target.root}': not one of ({', '.join(i.value for i in expr.return_type)}) matches {self.variables[var_id].var_type}", 
                     value)
                 self.raise_or_return(error)
             elif error_severity == TypeErrorSeverity.ERROR:
