@@ -91,7 +91,8 @@ event event_whenflagclicked() {
 
 # Trying it out:
 The LSP is here (use at your own risk): https://github.com/MrSkroob/Itchy-LSP<br />
-I've avoided using anything that isn't part of the standard library, so no need to install anything other than python :].
+I've avoided using anything that isn't part of the standard library, so no need to install anything other than python :]. 
+Python 3.11+ is required for both this compiler and the LSP.
 
 Your workspace should be something like this:
 ```
