@@ -1,0 +1,2923 @@
+{
+    "STAGE_BLOCKS": {
+        "looks_switchbackdropto": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "menu",
+                    "opcode": "looks_backdrops",
+                    "name": "BACKDROP",
+                    "field_name": null,
+                    "expected": [
+                        "next backdrop",
+                        "previous backdrop",
+                        "random backdrop"
+                    ]
+                }
+            ],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "looks_nextbackdrop": {
+            "kind": "block",
+            "inputs": [],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "looks_changeeffectby": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "CHANGE",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "EFFECT",
+                    "expected": [
+                        "color",
+                        "fisheye",
+                        "whirl",
+                        "pixelate",
+                        "mosaic",
+                        "brightness",
+                        "ghost"
+                    ],
+                    "is_variable": false
+                }
+            ],
+            "broadcasts": [],
+            "variables": []
+        },
+        "looks_seteffectto": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "VALUE",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "EFFECT",
+                    "expected": [
+                        "color",
+                        "fisheye",
+                        "whirl",
+                        "pixelate",
+                        "mosaic",
+                        "brightness",
+                        "ghost"
+                    ],
+                    "is_variable": false
+                }
+            ],
+            "broadcasts": [],
+            "variables": []
+        },
+        "looks_cleargraphiceffects": {
+            "kind": "block",
+            "inputs": [],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "looks_backdropnumbername": {
+            "kind": "reporter",
+            "inputs": [],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "NUMBER_NAME",
+                    "expected": [
+                        "name",
+                        "number"
+                    ],
+                    "is_variable": false
+                }
+            ],
+            "return_type": [
+                "NUMBER",
+                "STRING"
+            ],
+            "variables": []
+        },
+        "sound_playuntildone": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "menu",
+                    "opcode": "sound_sounds_menu",
+                    "name": "SOUND_MENU",
+                    "field_name": null,
+                    "expected": []
+                }
+            ],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "sound_play": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "menu",
+                    "opcode": "sound_sounds_menu",
+                    "name": "SOUND_MENU",
+                    "field_name": null,
+                    "expected": []
+                }
+            ],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "sound_stopallsounds": {
+            "kind": "block",
+            "inputs": [],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "sound_changeeffectby": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "CHANGE",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "EFFECT",
+                    "expected": [
+                        "PITCH",
+                        "PAN LEFT/RIGHT"
+                    ],
+                    "is_variable": false
+                }
+            ],
+            "broadcasts": [],
+            "variables": []
+        },
+        "sound_seteffectto": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "VALUE",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "EFFECT",
+                    "expected": [
+                        "PITCH",
+                        "PAN LEFT/RIGHT"
+                    ],
+                    "is_variable": false
+                }
+            ],
+            "broadcasts": [],
+            "variables": []
+        },
+        "sound_cleareffects": {
+            "kind": "block",
+            "inputs": [],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "sound_changevolumeby": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "VOLUME",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "sound_setvolumeto": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "VOLUME",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "sound_volume": {
+            "kind": "reporter",
+            "inputs": [],
+            "fields": [],
+            "return_type": [
+                "NUMBER"
+            ],
+            "variables": []
+        },
+        "operator_mod": {
+            "kind": "reporter",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "NUM1",
+                    "return_type": "NUMBER"
+                },
+                {
+                    "kind": "input",
+                    "name": "NUM2",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [],
+            "return_type": [
+                "NUMBER"
+            ],
+            "variables": []
+        },
+        "operator_round": {
+            "kind": "reporter",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "NUM",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [],
+            "return_type": [
+                "NUMBER"
+            ],
+            "variables": []
+        },
+        "operator_random": {
+            "kind": "reporter",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "FROM",
+                    "return_type": "NUMBER"
+                },
+                {
+                    "kind": "input",
+                    "name": "TO",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [],
+            "return_type": [
+                "NUMBER"
+            ],
+            "variables": []
+        },
+        "operator_join": {
+            "kind": "reporter",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "STRING1",
+                    "return_type": "STRING"
+                },
+                {
+                    "kind": "input",
+                    "name": "STRING2",
+                    "return_type": "STRING"
+                }
+            ],
+            "fields": [],
+            "return_type": [
+                "STRING"
+            ],
+            "variables": []
+        },
+        "operator_letter_of": {
+            "kind": "reporter",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "LETTER",
+                    "return_type": "NUMBER"
+                },
+                {
+                    "kind": "input",
+                    "name": "STRING",
+                    "return_type": "STRING"
+                }
+            ],
+            "fields": [],
+            "return_type": [
+                "STRING"
+            ],
+            "variables": []
+        },
+        "operator_length": {
+            "kind": "reporter",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "STRING",
+                    "return_type": "STRING"
+                }
+            ],
+            "fields": [],
+            "return_type": [
+                "NUMBER"
+            ],
+            "variables": []
+        },
+        "operator_contains": {
+            "kind": "reporter",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "STRING1",
+                    "return_type": "STRING"
+                },
+                {
+                    "kind": "input",
+                    "name": "STRING2",
+                    "return_type": "STRING"
+                }
+            ],
+            "fields": [],
+            "return_type": [
+                "BOOL"
+            ],
+            "variables": []
+        },
+        "operator_mathop": {
+            "kind": "reporter",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "NUM",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "OPERATOR",
+                    "expected": [
+                        "abs",
+                        "floor",
+                        "ceiling",
+                        "sqrt",
+                        "sin",
+                        "cos",
+                        "tan",
+                        "asin",
+                        "acos",
+                        "atan",
+                        "ln",
+                        "log",
+                        "e ^",
+                        "10 ^"
+                    ],
+                    "is_variable": false
+                }
+            ],
+            "return_type": [
+                "NUMBER"
+            ],
+            "variables": []
+        },
+        "event_whenflagclicked": {
+            "kind": "event",
+            "inputs": [],
+            "fields": [],
+            "broadcasts": []
+        },
+        "event_whenkeypressed": {
+            "kind": "event",
+            "inputs": [],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "KEY_OPTION",
+                    "expected": [
+                        "a",
+                        "b",
+                        "c",
+                        "d",
+                        "e",
+                        "f",
+                        "g",
+                        "h",
+                        "i",
+                        "j",
+                        "k",
+                        "l",
+                        "m",
+                        "n",
+                        "o",
+                        "p",
+                        "q",
+                        "r",
+                        "s",
+                        "t",
+                        "u",
+                        "v",
+                        "w",
+                        "x",
+                        "y",
+                        "z",
+                        "space",
+                        "up arrow",
+                        "down arrow",
+                        "right arrow",
+                        "left arrow",
+                        "any"
+                    ],
+                    "is_variable": false
+                }
+            ],
+            "broadcasts": []
+        },
+        "event_whenbackdropswitchesto": {
+            "kind": "event",
+            "inputs": [],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "BACKDROP",
+                    "expected": [],
+                    "is_variable": true
+                }
+            ],
+            "broadcasts": []
+        },
+        "event_whengreaterthan": {
+            "kind": "event",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "VALUE",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "WHENGREATERTHANMENU",
+                    "expected": [
+                        "LOUDNESS",
+                        "TIMER"
+                    ],
+                    "is_variable": false
+                }
+            ],
+            "broadcasts": []
+        },
+        "event_whenbroadcastreceived": {
+            "kind": "event",
+            "inputs": [],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "BROADCAST_OPTION",
+                    "expected": [],
+                    "is_variable": true
+                }
+            ],
+            "broadcasts": [
+                "BROADCAST_OPTION"
+            ]
+        },
+        "event_broadcast": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "BROADCAST_INPUT",
+                    "return_type": "STRING"
+                }
+            ],
+            "fields": [],
+            "broadcasts": [
+                "BROADCAST_INPUT"
+            ],
+            "variables": []
+        },
+        "event_broadcastandwait": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "BROADCAST_INPUT",
+                    "return_type": "STRING"
+                }
+            ],
+            "fields": [],
+            "broadcasts": [
+                "BROADCAST_INPUT"
+            ],
+            "variables": []
+        },
+        "control_wait": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "DURATION",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "control_wait_until": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "CONDITION",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "control_stop": {
+            "kind": "block",
+            "inputs": [],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "STOP_OPTION",
+                    "expected": [
+                        "this script",
+                        "all",
+                        "other scripts in sprite"
+                    ],
+                    "is_variable": false
+                }
+            ],
+            "broadcasts": [],
+            "variables": []
+        },
+        "control_create_clone_of": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "menu",
+                    "opcode": "control_create_clone_of_menu",
+                    "name": "CLONE_OPTION",
+                    "field_name": null,
+                    "expected": [
+                        "_myself_"
+                    ]
+                }
+            ],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "sensing_askandwait": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "QUESTION",
+                    "return_type": "STRING"
+                }
+            ],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "sensing_answer": {
+            "kind": "reporter",
+            "inputs": [],
+            "fields": [],
+            "return_type": [
+                "STRING"
+            ],
+            "variables": []
+        },
+        "sensing_keypressed": {
+            "kind": "reporter",
+            "inputs": [
+                {
+                    "kind": "menu",
+                    "opcode": "sensing_keyoptions",
+                    "name": "KEY_OPTION",
+                    "field_name": null,
+                    "expected": [
+                        "a",
+                        "b",
+                        "c",
+                        "d",
+                        "e",
+                        "f",
+                        "g",
+                        "h",
+                        "i",
+                        "j",
+                        "k",
+                        "l",
+                        "m",
+                        "n",
+                        "o",
+                        "p",
+                        "q",
+                        "r",
+                        "s",
+                        "t",
+                        "u",
+                        "v",
+                        "w",
+                        "x",
+                        "y",
+                        "z",
+                        "space",
+                        "up arrow",
+                        "down arrow",
+                        "right arrow",
+                        "left arrow",
+                        "any"
+                    ]
+                }
+            ],
+            "fields": [],
+            "return_type": [
+                "BOOL"
+            ],
+            "variables": []
+        },
+        "sensing_mousedown": {
+            "kind": "reporter",
+            "inputs": [],
+            "fields": [],
+            "return_type": [
+                "BOOL"
+            ],
+            "variables": []
+        },
+        "sensing_mousex": {
+            "kind": "reporter",
+            "inputs": [],
+            "fields": [],
+            "return_type": [
+                "NUMBER"
+            ],
+            "variables": []
+        },
+        "sensing_mousey": {
+            "kind": "reporter",
+            "inputs": [],
+            "fields": [],
+            "return_type": [
+                "NUMBER"
+            ],
+            "variables": []
+        },
+        "sensing_loudness": {
+            "kind": "reporter",
+            "inputs": [],
+            "fields": [],
+            "return_type": [
+                "NUMBER"
+            ],
+            "variables": []
+        },
+        "sensing_timer": {
+            "kind": "reporter",
+            "inputs": [],
+            "fields": [],
+            "return_type": [
+                "NUMBER"
+            ],
+            "variables": []
+        },
+        "sensing_resettimer": {
+            "kind": "block",
+            "inputs": [],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "sensing_of": {
+            "kind": "reporter",
+            "inputs": [
+                {
+                    "kind": "menu",
+                    "opcode": "sensing_of_object_menu",
+                    "name": "OBJECT",
+                    "field_name": null,
+                    "expected": [
+                        "_stage_"
+                    ]
+                }
+            ],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "PROPERTY",
+                    "expected": [],
+                    "is_variable": true
+                }
+            ],
+            "return_type": [
+                "NUMBER",
+                "VAR",
+                "STRING"
+            ],
+            "variables": []
+        },
+        "sensing_current": {
+            "kind": "reporter",
+            "inputs": [],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "CURRENTMENU",
+                    "expected": [
+                        "year",
+                        "month",
+                        "date",
+                        "dayofweek",
+                        "hour",
+                        "minute",
+                        "second"
+                    ],
+                    "is_variable": false
+                }
+            ],
+            "return_type": [
+                "NUMBER"
+            ],
+            "variables": []
+        },
+        "sensing_dayssince2000": {
+            "kind": "reporter",
+            "inputs": [],
+            "fields": [],
+            "return_type": [
+                "NUMBER"
+            ],
+            "variables": []
+        },
+        "sensing_username": {
+            "kind": "reporter",
+            "inputs": [],
+            "fields": [],
+            "return_type": [
+                "STRING"
+            ],
+            "variables": []
+        },
+        "sensing_online": {
+            "kind": "reporter",
+            "inputs": [],
+            "fields": [],
+            "return_type": [
+                "BOOL"
+            ],
+            "variables": []
+        },
+        "data_addtolist": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "ITEM",
+                    "return_type": "STRING"
+                }
+            ],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "LIST",
+                    "expected": [],
+                    "is_variable": true
+                }
+            ],
+            "broadcasts": [],
+            "variables": [
+                "LIST"
+            ]
+        },
+        "data_deleteoflist": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "INDEX",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "LIST",
+                    "expected": [],
+                    "is_variable": true
+                }
+            ],
+            "broadcasts": [],
+            "variables": [
+                "LIST"
+            ]
+        },
+        "data_deletealloflist": {
+            "kind": "block",
+            "inputs": [],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "LIST",
+                    "expected": [],
+                    "is_variable": true
+                }
+            ],
+            "broadcasts": [],
+            "variables": [
+                "LIST"
+            ]
+        },
+        "data_insertatlist": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "ITEM",
+                    "return_type": "STRING"
+                },
+                {
+                    "kind": "input",
+                    "name": "INDEX",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "LIST",
+                    "expected": [],
+                    "is_variable": true
+                }
+            ],
+            "broadcasts": [],
+            "variables": [
+                "LIST"
+            ]
+        },
+        "data_replaceitemoflist": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "INDEX",
+                    "return_type": "NUMBER"
+                },
+                {
+                    "kind": "input",
+                    "name": "ITEM",
+                    "return_type": "STRING"
+                }
+            ],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "LIST",
+                    "expected": [],
+                    "is_variable": true
+                }
+            ],
+            "broadcasts": [],
+            "variables": [
+                "LIST"
+            ]
+        },
+        "data_itemoflist": {
+            "kind": "reporter",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "INDEX",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "LIST",
+                    "expected": [],
+                    "is_variable": true
+                }
+            ],
+            "return_type": [
+                "VAR"
+            ],
+            "variables": [
+                "LIST"
+            ]
+        },
+        "data_itemnumoflist": {
+            "kind": "reporter",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "ITEM",
+                    "return_type": "STRING"
+                }
+            ],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "LIST",
+                    "expected": [],
+                    "is_variable": true
+                }
+            ],
+            "return_type": [
+                "NUMBER"
+            ],
+            "variables": [
+                "LIST"
+            ]
+        },
+        "data_lengthoflist": {
+            "kind": "reporter",
+            "inputs": [],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "LIST",
+                    "expected": [],
+                    "is_variable": true
+                }
+            ],
+            "return_type": [
+                "NUMBER"
+            ],
+            "variables": [
+                "LIST"
+            ]
+        },
+        "data_listcontainsitem": {
+            "kind": "reporter",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "ITEM",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "LIST",
+                    "expected": [],
+                    "is_variable": true
+                }
+            ],
+            "return_type": [
+                "BOOL"
+            ],
+            "variables": [
+                "LIST"
+            ]
+        },
+        "data_showlist": {
+            "kind": "block",
+            "inputs": [],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "LIST",
+                    "expected": [],
+                    "is_variable": true
+                }
+            ],
+            "broadcasts": [],
+            "variables": [
+                "LIST"
+            ]
+        },
+        "data_hidelist": {
+            "kind": "block",
+            "inputs": [],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "LIST",
+                    "expected": [],
+                    "is_variable": true
+                }
+            ],
+            "broadcasts": [],
+            "variables": [
+                "LIST"
+            ]
+        },
+        "data_showvariable": {
+            "kind": "block",
+            "inputs": [],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "VARIABLE",
+                    "expected": [],
+                    "is_variable": true
+                }
+            ],
+            "broadcasts": [],
+            "variables": [
+                "VARIABLE"
+            ]
+        },
+        "data_hidevariable": {
+            "kind": "block",
+            "inputs": [],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "VARIABLE",
+                    "expected": [],
+                    "is_variable": true
+                }
+            ],
+            "broadcasts": [],
+            "variables": [
+                "VARIABLE"
+            ]
+        },
+        "pen_clear": {
+            "kind": "block",
+            "inputs": [],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "pen_stamp": {
+            "kind": "block",
+            "inputs": [],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "pen_penDown": {
+            "kind": "block",
+            "inputs": [],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "pen_penUp": {
+            "kind": "block",
+            "inputs": [],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "pen_setPenColorToColor": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "COLOR",
+                    "return_type": "COLOR"
+                }
+            ],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "pen_changePenColorParamBy": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "menu",
+                    "opcode": "COLOR_PARAM",
+                    "name": "pen_menu_colorParam",
+                    "field_name": "colorParam",
+                    "expected": [
+                        "color",
+                        "saturation",
+                        "brightness",
+                        "transparency"
+                    ]
+                },
+                {
+                    "kind": "input",
+                    "name": "VALUE",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "pen_setPenColorParamTo": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "menu",
+                    "opcode": "COLOR_PARAM",
+                    "name": "pen_menu_colorParam",
+                    "field_name": "colorParam",
+                    "expected": [
+                        "color",
+                        "saturation",
+                        "brightness",
+                        "transparency"
+                    ]
+                },
+                {
+                    "kind": "input",
+                    "name": "VALUE",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "pen_changePenSizeBy": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "SIZE",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "pen_setPenSizeTo": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "SIZE",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        }
+    },
+    "SCRATCH_BLOCKS": {
+        "looks_switchbackdropto": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "menu",
+                    "opcode": "looks_backdrops",
+                    "name": "BACKDROP",
+                    "field_name": null,
+                    "expected": [
+                        "next backdrop",
+                        "previous backdrop",
+                        "random backdrop"
+                    ]
+                }
+            ],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "looks_nextbackdrop": {
+            "kind": "block",
+            "inputs": [],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "looks_changeeffectby": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "CHANGE",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "EFFECT",
+                    "expected": [
+                        "color",
+                        "fisheye",
+                        "whirl",
+                        "pixelate",
+                        "mosaic",
+                        "brightness",
+                        "ghost"
+                    ],
+                    "is_variable": false
+                }
+            ],
+            "broadcasts": [],
+            "variables": []
+        },
+        "looks_seteffectto": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "VALUE",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "EFFECT",
+                    "expected": [
+                        "color",
+                        "fisheye",
+                        "whirl",
+                        "pixelate",
+                        "mosaic",
+                        "brightness",
+                        "ghost"
+                    ],
+                    "is_variable": false
+                }
+            ],
+            "broadcasts": [],
+            "variables": []
+        },
+        "looks_cleargraphiceffects": {
+            "kind": "block",
+            "inputs": [],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "looks_backdropnumbername": {
+            "kind": "reporter",
+            "inputs": [],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "NUMBER_NAME",
+                    "expected": [
+                        "name",
+                        "number"
+                    ],
+                    "is_variable": false
+                }
+            ],
+            "return_type": [
+                "NUMBER",
+                "STRING"
+            ],
+            "variables": []
+        },
+        "sound_playuntildone": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "menu",
+                    "opcode": "sound_sounds_menu",
+                    "name": "SOUND_MENU",
+                    "field_name": null,
+                    "expected": []
+                }
+            ],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "sound_play": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "menu",
+                    "opcode": "sound_sounds_menu",
+                    "name": "SOUND_MENU",
+                    "field_name": null,
+                    "expected": []
+                }
+            ],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "sound_stopallsounds": {
+            "kind": "block",
+            "inputs": [],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "sound_changeeffectby": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "CHANGE",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "EFFECT",
+                    "expected": [
+                        "PITCH",
+                        "PAN LEFT/RIGHT"
+                    ],
+                    "is_variable": false
+                }
+            ],
+            "broadcasts": [],
+            "variables": []
+        },
+        "sound_seteffectto": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "VALUE",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "EFFECT",
+                    "expected": [
+                        "PITCH",
+                        "PAN LEFT/RIGHT"
+                    ],
+                    "is_variable": false
+                }
+            ],
+            "broadcasts": [],
+            "variables": []
+        },
+        "sound_cleareffects": {
+            "kind": "block",
+            "inputs": [],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "sound_changevolumeby": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "VOLUME",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "sound_setvolumeto": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "VOLUME",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "sound_volume": {
+            "kind": "reporter",
+            "inputs": [],
+            "fields": [],
+            "return_type": [
+                "NUMBER"
+            ],
+            "variables": []
+        },
+        "operator_mod": {
+            "kind": "reporter",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "NUM1",
+                    "return_type": "NUMBER"
+                },
+                {
+                    "kind": "input",
+                    "name": "NUM2",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [],
+            "return_type": [
+                "NUMBER"
+            ],
+            "variables": []
+        },
+        "operator_round": {
+            "kind": "reporter",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "NUM",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [],
+            "return_type": [
+                "NUMBER"
+            ],
+            "variables": []
+        },
+        "operator_random": {
+            "kind": "reporter",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "FROM",
+                    "return_type": "NUMBER"
+                },
+                {
+                    "kind": "input",
+                    "name": "TO",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [],
+            "return_type": [
+                "NUMBER"
+            ],
+            "variables": []
+        },
+        "operator_join": {
+            "kind": "reporter",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "STRING1",
+                    "return_type": "STRING"
+                },
+                {
+                    "kind": "input",
+                    "name": "STRING2",
+                    "return_type": "STRING"
+                }
+            ],
+            "fields": [],
+            "return_type": [
+                "STRING"
+            ],
+            "variables": []
+        },
+        "operator_letter_of": {
+            "kind": "reporter",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "LETTER",
+                    "return_type": "NUMBER"
+                },
+                {
+                    "kind": "input",
+                    "name": "STRING",
+                    "return_type": "STRING"
+                }
+            ],
+            "fields": [],
+            "return_type": [
+                "STRING"
+            ],
+            "variables": []
+        },
+        "operator_length": {
+            "kind": "reporter",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "STRING",
+                    "return_type": "STRING"
+                }
+            ],
+            "fields": [],
+            "return_type": [
+                "NUMBER"
+            ],
+            "variables": []
+        },
+        "operator_contains": {
+            "kind": "reporter",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "STRING1",
+                    "return_type": "STRING"
+                },
+                {
+                    "kind": "input",
+                    "name": "STRING2",
+                    "return_type": "STRING"
+                }
+            ],
+            "fields": [],
+            "return_type": [
+                "BOOL"
+            ],
+            "variables": []
+        },
+        "operator_mathop": {
+            "kind": "reporter",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "NUM",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "OPERATOR",
+                    "expected": [
+                        "abs",
+                        "floor",
+                        "ceiling",
+                        "sqrt",
+                        "sin",
+                        "cos",
+                        "tan",
+                        "asin",
+                        "acos",
+                        "atan",
+                        "ln",
+                        "log",
+                        "e ^",
+                        "10 ^"
+                    ],
+                    "is_variable": false
+                }
+            ],
+            "return_type": [
+                "NUMBER"
+            ],
+            "variables": []
+        },
+        "event_whenflagclicked": {
+            "kind": "event",
+            "inputs": [],
+            "fields": [],
+            "broadcasts": []
+        },
+        "event_whenkeypressed": {
+            "kind": "event",
+            "inputs": [],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "KEY_OPTION",
+                    "expected": [
+                        "a",
+                        "b",
+                        "c",
+                        "d",
+                        "e",
+                        "f",
+                        "g",
+                        "h",
+                        "i",
+                        "j",
+                        "k",
+                        "l",
+                        "m",
+                        "n",
+                        "o",
+                        "p",
+                        "q",
+                        "r",
+                        "s",
+                        "t",
+                        "u",
+                        "v",
+                        "w",
+                        "x",
+                        "y",
+                        "z",
+                        "space",
+                        "up arrow",
+                        "down arrow",
+                        "right arrow",
+                        "left arrow",
+                        "any"
+                    ],
+                    "is_variable": false
+                }
+            ],
+            "broadcasts": []
+        },
+        "event_whenbackdropswitchesto": {
+            "kind": "event",
+            "inputs": [],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "BACKDROP",
+                    "expected": [],
+                    "is_variable": true
+                }
+            ],
+            "broadcasts": []
+        },
+        "event_whengreaterthan": {
+            "kind": "event",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "VALUE",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "WHENGREATERTHANMENU",
+                    "expected": [
+                        "LOUDNESS",
+                        "TIMER"
+                    ],
+                    "is_variable": false
+                }
+            ],
+            "broadcasts": []
+        },
+        "event_whenbroadcastreceived": {
+            "kind": "event",
+            "inputs": [],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "BROADCAST_OPTION",
+                    "expected": [],
+                    "is_variable": true
+                }
+            ],
+            "broadcasts": [
+                "BROADCAST_OPTION"
+            ]
+        },
+        "event_broadcast": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "BROADCAST_INPUT",
+                    "return_type": "STRING"
+                }
+            ],
+            "fields": [],
+            "broadcasts": [
+                "BROADCAST_INPUT"
+            ],
+            "variables": []
+        },
+        "event_broadcastandwait": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "BROADCAST_INPUT",
+                    "return_type": "STRING"
+                }
+            ],
+            "fields": [],
+            "broadcasts": [
+                "BROADCAST_INPUT"
+            ],
+            "variables": []
+        },
+        "control_wait": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "DURATION",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "control_wait_until": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "CONDITION",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "control_stop": {
+            "kind": "block",
+            "inputs": [],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "STOP_OPTION",
+                    "expected": [
+                        "this script",
+                        "all",
+                        "other scripts in sprite"
+                    ],
+                    "is_variable": false
+                }
+            ],
+            "broadcasts": [],
+            "variables": []
+        },
+        "control_create_clone_of": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "menu",
+                    "opcode": "control_create_clone_of_menu",
+                    "name": "CLONE_OPTION",
+                    "field_name": null,
+                    "expected": [
+                        "_myself_"
+                    ]
+                }
+            ],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "sensing_askandwait": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "QUESTION",
+                    "return_type": "STRING"
+                }
+            ],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "sensing_answer": {
+            "kind": "reporter",
+            "inputs": [],
+            "fields": [],
+            "return_type": [
+                "STRING"
+            ],
+            "variables": []
+        },
+        "sensing_keypressed": {
+            "kind": "reporter",
+            "inputs": [
+                {
+                    "kind": "menu",
+                    "opcode": "sensing_keyoptions",
+                    "name": "KEY_OPTION",
+                    "field_name": null,
+                    "expected": [
+                        "a",
+                        "b",
+                        "c",
+                        "d",
+                        "e",
+                        "f",
+                        "g",
+                        "h",
+                        "i",
+                        "j",
+                        "k",
+                        "l",
+                        "m",
+                        "n",
+                        "o",
+                        "p",
+                        "q",
+                        "r",
+                        "s",
+                        "t",
+                        "u",
+                        "v",
+                        "w",
+                        "x",
+                        "y",
+                        "z",
+                        "space",
+                        "up arrow",
+                        "down arrow",
+                        "right arrow",
+                        "left arrow",
+                        "any"
+                    ]
+                }
+            ],
+            "fields": [],
+            "return_type": [
+                "BOOL"
+            ],
+            "variables": []
+        },
+        "sensing_mousedown": {
+            "kind": "reporter",
+            "inputs": [],
+            "fields": [],
+            "return_type": [
+                "BOOL"
+            ],
+            "variables": []
+        },
+        "sensing_mousex": {
+            "kind": "reporter",
+            "inputs": [],
+            "fields": [],
+            "return_type": [
+                "NUMBER"
+            ],
+            "variables": []
+        },
+        "sensing_mousey": {
+            "kind": "reporter",
+            "inputs": [],
+            "fields": [],
+            "return_type": [
+                "NUMBER"
+            ],
+            "variables": []
+        },
+        "sensing_loudness": {
+            "kind": "reporter",
+            "inputs": [],
+            "fields": [],
+            "return_type": [
+                "NUMBER"
+            ],
+            "variables": []
+        },
+        "sensing_timer": {
+            "kind": "reporter",
+            "inputs": [],
+            "fields": [],
+            "return_type": [
+                "NUMBER"
+            ],
+            "variables": []
+        },
+        "sensing_resettimer": {
+            "kind": "block",
+            "inputs": [],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "sensing_of": {
+            "kind": "reporter",
+            "inputs": [
+                {
+                    "kind": "menu",
+                    "opcode": "sensing_of_object_menu",
+                    "name": "OBJECT",
+                    "field_name": null,
+                    "expected": [
+                        "_stage_"
+                    ]
+                }
+            ],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "PROPERTY",
+                    "expected": [],
+                    "is_variable": true
+                }
+            ],
+            "return_type": [
+                "NUMBER",
+                "VAR",
+                "STRING"
+            ],
+            "variables": []
+        },
+        "sensing_current": {
+            "kind": "reporter",
+            "inputs": [],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "CURRENTMENU",
+                    "expected": [
+                        "year",
+                        "month",
+                        "date",
+                        "dayofweek",
+                        "hour",
+                        "minute",
+                        "second"
+                    ],
+                    "is_variable": false
+                }
+            ],
+            "return_type": [
+                "NUMBER"
+            ],
+            "variables": []
+        },
+        "sensing_dayssince2000": {
+            "kind": "reporter",
+            "inputs": [],
+            "fields": [],
+            "return_type": [
+                "NUMBER"
+            ],
+            "variables": []
+        },
+        "sensing_username": {
+            "kind": "reporter",
+            "inputs": [],
+            "fields": [],
+            "return_type": [
+                "STRING"
+            ],
+            "variables": []
+        },
+        "sensing_online": {
+            "kind": "reporter",
+            "inputs": [],
+            "fields": [],
+            "return_type": [
+                "BOOL"
+            ],
+            "variables": []
+        },
+        "data_addtolist": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "ITEM",
+                    "return_type": "STRING"
+                }
+            ],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "LIST",
+                    "expected": [],
+                    "is_variable": true
+                }
+            ],
+            "broadcasts": [],
+            "variables": [
+                "LIST"
+            ]
+        },
+        "data_deleteoflist": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "INDEX",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "LIST",
+                    "expected": [],
+                    "is_variable": true
+                }
+            ],
+            "broadcasts": [],
+            "variables": [
+                "LIST"
+            ]
+        },
+        "data_deletealloflist": {
+            "kind": "block",
+            "inputs": [],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "LIST",
+                    "expected": [],
+                    "is_variable": true
+                }
+            ],
+            "broadcasts": [],
+            "variables": [
+                "LIST"
+            ]
+        },
+        "data_insertatlist": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "ITEM",
+                    "return_type": "STRING"
+                },
+                {
+                    "kind": "input",
+                    "name": "INDEX",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "LIST",
+                    "expected": [],
+                    "is_variable": true
+                }
+            ],
+            "broadcasts": [],
+            "variables": [
+                "LIST"
+            ]
+        },
+        "data_replaceitemoflist": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "INDEX",
+                    "return_type": "NUMBER"
+                },
+                {
+                    "kind": "input",
+                    "name": "ITEM",
+                    "return_type": "STRING"
+                }
+            ],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "LIST",
+                    "expected": [],
+                    "is_variable": true
+                }
+            ],
+            "broadcasts": [],
+            "variables": [
+                "LIST"
+            ]
+        },
+        "data_itemoflist": {
+            "kind": "reporter",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "INDEX",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "LIST",
+                    "expected": [],
+                    "is_variable": true
+                }
+            ],
+            "return_type": [
+                "VAR"
+            ],
+            "variables": [
+                "LIST"
+            ]
+        },
+        "data_itemnumoflist": {
+            "kind": "reporter",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "ITEM",
+                    "return_type": "STRING"
+                }
+            ],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "LIST",
+                    "expected": [],
+                    "is_variable": true
+                }
+            ],
+            "return_type": [
+                "NUMBER"
+            ],
+            "variables": [
+                "LIST"
+            ]
+        },
+        "data_lengthoflist": {
+            "kind": "reporter",
+            "inputs": [],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "LIST",
+                    "expected": [],
+                    "is_variable": true
+                }
+            ],
+            "return_type": [
+                "NUMBER"
+            ],
+            "variables": [
+                "LIST"
+            ]
+        },
+        "data_listcontainsitem": {
+            "kind": "reporter",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "ITEM",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "LIST",
+                    "expected": [],
+                    "is_variable": true
+                }
+            ],
+            "return_type": [
+                "BOOL"
+            ],
+            "variables": [
+                "LIST"
+            ]
+        },
+        "data_showlist": {
+            "kind": "block",
+            "inputs": [],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "LIST",
+                    "expected": [],
+                    "is_variable": true
+                }
+            ],
+            "broadcasts": [],
+            "variables": [
+                "LIST"
+            ]
+        },
+        "data_hidelist": {
+            "kind": "block",
+            "inputs": [],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "LIST",
+                    "expected": [],
+                    "is_variable": true
+                }
+            ],
+            "broadcasts": [],
+            "variables": [
+                "LIST"
+            ]
+        },
+        "data_showvariable": {
+            "kind": "block",
+            "inputs": [],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "VARIABLE",
+                    "expected": [],
+                    "is_variable": true
+                }
+            ],
+            "broadcasts": [],
+            "variables": [
+                "VARIABLE"
+            ]
+        },
+        "data_hidevariable": {
+            "kind": "block",
+            "inputs": [],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "VARIABLE",
+                    "expected": [],
+                    "is_variable": true
+                }
+            ],
+            "broadcasts": [],
+            "variables": [
+                "VARIABLE"
+            ]
+        },
+        "pen_clear": {
+            "kind": "block",
+            "inputs": [],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "pen_stamp": {
+            "kind": "block",
+            "inputs": [],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "pen_penDown": {
+            "kind": "block",
+            "inputs": [],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "pen_penUp": {
+            "kind": "block",
+            "inputs": [],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "pen_setPenColorToColor": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "COLOR",
+                    "return_type": "COLOR"
+                }
+            ],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "pen_changePenColorParamBy": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "menu",
+                    "opcode": "COLOR_PARAM",
+                    "name": "pen_menu_colorParam",
+                    "field_name": "colorParam",
+                    "expected": [
+                        "color",
+                        "saturation",
+                        "brightness",
+                        "transparency"
+                    ]
+                },
+                {
+                    "kind": "input",
+                    "name": "VALUE",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "pen_setPenColorParamTo": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "menu",
+                    "opcode": "COLOR_PARAM",
+                    "name": "pen_menu_colorParam",
+                    "field_name": "colorParam",
+                    "expected": [
+                        "color",
+                        "saturation",
+                        "brightness",
+                        "transparency"
+                    ]
+                },
+                {
+                    "kind": "input",
+                    "name": "VALUE",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "pen_changePenSizeBy": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "SIZE",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "pen_setPenSizeTo": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "SIZE",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "motion_movesteps": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "STEPS",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "motion_turnright": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "DEGREES",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "motion_turnleft": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "DEGREES",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "motion_goto": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "menu",
+                    "opcode": "motion_goto_menu",
+                    "name": "TO",
+                    "field_name": null,
+                    "expected": [
+                        "_mouse_",
+                        "_random_"
+                    ]
+                }
+            ],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "motion_glideto": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "SECS",
+                    "return_type": "NUMBER"
+                },
+                {
+                    "kind": "menu",
+                    "opcode": "motion_glideto_menu",
+                    "name": "TO",
+                    "field_name": null,
+                    "expected": [
+                        "_mouse_",
+                        "_random_"
+                    ]
+                }
+            ],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "motion_gotoxy": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "X",
+                    "return_type": "NUMBER"
+                },
+                {
+                    "kind": "input",
+                    "name": "Y",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "motion_glidesecstoxy": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "SECS",
+                    "return_type": "NUMBER"
+                },
+                {
+                    "kind": "input",
+                    "name": "X",
+                    "return_type": "NUMBER"
+                },
+                {
+                    "kind": "input",
+                    "name": "Y",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "motion_pointindirection": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "DIRECTION",
+                    "return_type": "ANGLE"
+                }
+            ],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "motion_pointtowards": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "menu",
+                    "opcode": "motion_pointtowards_menu",
+                    "name": "TOWARDS",
+                    "field_name": null,
+                    "expected": [
+                        "_mouse_"
+                    ]
+                }
+            ],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "motion_changexby": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "DX",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "motion_setx": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "X",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "motion_changeyby": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "DY",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "motion_sety": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "Y",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "motion_ifonedgebounce": {
+            "kind": "block",
+            "inputs": [],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "motion_setrotationstyle": {
+            "kind": "block",
+            "inputs": [],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "STYLE",
+                    "expected": [
+                        "left-right",
+                        "don't rotate",
+                        "all around"
+                    ],
+                    "is_variable": false
+                }
+            ],
+            "broadcasts": [],
+            "variables": []
+        },
+        "motion_xposition": {
+            "kind": "reporter",
+            "inputs": [],
+            "fields": [],
+            "return_type": [
+                "NUMBER"
+            ],
+            "variables": []
+        },
+        "motion_yposition": {
+            "kind": "reporter",
+            "inputs": [],
+            "fields": [],
+            "return_type": [
+                "NUMBER"
+            ],
+            "variables": []
+        },
+        "motion_direction": {
+            "kind": "reporter",
+            "inputs": [],
+            "fields": [],
+            "return_type": [
+                "NUMBER"
+            ],
+            "variables": []
+        },
+        "looks_sayforsecs": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "MESSAGE",
+                    "return_type": "STRING"
+                },
+                {
+                    "kind": "input",
+                    "name": "SECS",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "looks_say": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "MESSAGE",
+                    "return_type": "STRING"
+                }
+            ],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "looks_thinkforsecs": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "MESSAGE",
+                    "return_type": "STRING"
+                },
+                {
+                    "kind": "input",
+                    "name": "SECS",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "looks_think": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "MESSAGE",
+                    "return_type": "STRING"
+                }
+            ],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "looks_switchcostumeto": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "menu",
+                    "opcode": "looks_costume",
+                    "name": "COSTUME",
+                    "field_name": null,
+                    "expected": []
+                }
+            ],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "looks_nextcostume": {
+            "kind": "block",
+            "inputs": [],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "looks_show": {
+            "kind": "block",
+            "inputs": [],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "looks_hide": {
+            "kind": "block",
+            "inputs": [],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "looks_changesizeby": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "CHANGE",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "looks_setsizeto": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "SIZE",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "looks_gotofrontback": {
+            "kind": "block",
+            "inputs": [],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "FRONT_BACK",
+                    "expected": [
+                        "front",
+                        "back"
+                    ],
+                    "is_variable": false
+                }
+            ],
+            "broadcasts": [],
+            "variables": []
+        },
+        "looks_goforwardbackwardlayers": {
+            "kind": "block",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "NUM",
+                    "return_type": "NUMBER"
+                }
+            ],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "FORWARD_BACKWARD",
+                    "expected": [
+                        "forward",
+                        "backward"
+                    ],
+                    "is_variable": false
+                }
+            ],
+            "broadcasts": [],
+            "variables": []
+        },
+        "looks_size": {
+            "kind": "reporter",
+            "inputs": [],
+            "fields": [],
+            "return_type": [
+                "NUMBER"
+            ],
+            "variables": []
+        },
+        "looks_costumenumbername": {
+            "kind": "reporter",
+            "inputs": [],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "NUMBER_NAME",
+                    "expected": [
+                        "name",
+                        "number"
+                    ],
+                    "is_variable": false
+                }
+            ],
+            "return_type": [
+                "NUMBER",
+                "STRING"
+            ],
+            "variables": []
+        },
+        "event_whenthisspriteclicked": {
+            "kind": "event",
+            "inputs": [],
+            "fields": [],
+            "broadcasts": []
+        },
+        "control_start_as_clone": {
+            "kind": "event",
+            "inputs": [],
+            "fields": [],
+            "broadcasts": []
+        },
+        "control_delete_this_clone": {
+            "kind": "block",
+            "inputs": [],
+            "fields": [],
+            "broadcasts": [],
+            "variables": []
+        },
+        "sensing_touchingobject": {
+            "kind": "reporter",
+            "inputs": [
+                {
+                    "kind": "menu",
+                    "opcode": "sensing_touchingobjectmenu",
+                    "name": "TOUCHINGOBJECTMENU",
+                    "field_name": null,
+                    "expected": []
+                }
+            ],
+            "fields": [],
+            "return_type": [
+                "BOOL"
+            ],
+            "variables": []
+        },
+        "sensing_touchingcolor": {
+            "kind": "reporter",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "COLOR",
+                    "return_type": "COLOR"
+                }
+            ],
+            "fields": [],
+            "return_type": [
+                "BOOL"
+            ],
+            "variables": []
+        },
+        "sensing_coloristouchingcolor": {
+            "kind": "reporter",
+            "inputs": [
+                {
+                    "kind": "input",
+                    "name": "COLOR",
+                    "return_type": "COLOR"
+                },
+                {
+                    "kind": "input",
+                    "name": "COLOR2",
+                    "return_type": "COLOR"
+                }
+            ],
+            "fields": [],
+            "return_type": [
+                "BOOL"
+            ],
+            "variables": []
+        },
+        "sensing_distanceto": {
+            "kind": "reporter",
+            "inputs": [
+                {
+                    "kind": "menu",
+                    "opcode": "sensing_distancetomenu",
+                    "name": "DISTANCETOMENU",
+                    "field_name": null,
+                    "expected": []
+                }
+            ],
+            "fields": [],
+            "return_type": [
+                "NUMBER"
+            ],
+            "variables": []
+        },
+        "sensing_setdragmode": {
+            "kind": "block",
+            "inputs": [],
+            "fields": [
+                {
+                    "kind": "field",
+                    "name": "DRAG_MODE",
+                    "expected": [
+                        "draggable",
+                        "not draggable"
+                    ],
+                    "is_variable": false
+                }
+            ],
+            "broadcasts": [],
+            "variables": []
+        }
+    }
+}

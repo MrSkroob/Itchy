@@ -6,7 +6,7 @@ from itchy.dummy_nodes import ANALYSIS_STRATEGIES
 from itchy.parserv2 import Parser, ParseResult
 from itchy.itch_ast import ASTBuilder, Program
 from itchy.errors import format_compiler_error, format_syntax_error
-from itchy.assembler import Assembler, CompilerError
+from itchy.compilers.assembler import Assembler, CompilerError
 
 # from tools.ast_printer import print_ast
 # from itchy.dummy_nodes import find_last_node
@@ -27,7 +27,7 @@ non_strict_parser = Parser(
     recovery_nodes=ANALYSIS_STRATEGIES,
 )
 
-STRICT_PARSER = False
+STRICT_PARSER = True
 STRICT_AST_BUILDER = True
 
 if STRICT_PARSER:

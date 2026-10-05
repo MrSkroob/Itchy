@@ -30,6 +30,8 @@ from itchy.itch_ast import \
     ForeverStmt, IfBranch, Expr, NumberExpr, BoolExpr, StringExpr, VarExpr, UnaryOpExpr, BinaryOpExpr, TableExpr, FunctionCallExpr, AssetExpr, Program
 from itchy.mp3_parser import mp3_metadata
 
+from basecompiler import BaseAssembler
+
 
 T = TypeVar("T")
 ScratchBlock = dict[str, Any]
@@ -176,7 +178,7 @@ class Importer:
         pass
 
 
-class Assembler:
+class Assembler(BaseAssembler):
     def __init__(self, uri: str, is_strict: bool=True, compile_with_warnings: bool=False) -> None:
         """
         is_strict: whether the compiler should halt on error. Enabling this option will also disable any write to the .sb3 file.
