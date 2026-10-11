@@ -8,7 +8,7 @@ from itchy.itch_ast import (
     EventHandlerStmt, Expr, ForInStmt, ForRangeStmt, ForeverStmt,
     FunctionCallExpr, FunctionCallStmt, FunctionDefStmt, IfStmt,
     NumberExpr, Program, ReturnStmt, Stmt, StringExpr, TableExpr,
-    UnaryOpExpr, VarDefStmt, VarExpr, WhileStmt,
+    UnaryOpExpr, VarDefStmt, VarExpr, VarRef, WhileStmt,
 )
 from itchy.errors import CompilerError
 from itchy.compilers.sharedmethods import SharedMethods
@@ -95,11 +95,11 @@ class JavascriptAssembler(SharedMethods):
                 return self.emit_expr(expr.args[0], context)
             case BoolExpr():
                 return "true" if expr.value else "false"
-            case VarExpr():
-                name = expr.ref.root
-                if name in context.locals:
-                    return name
-                return f"{self.variable_map(name, context)}.get({self.js_string(name)})"
+            # case VarExpr():
+            #     name = expr.ref.root
+            #     if name in context.locals:
+            #         return name
+            #     return f"{self.variable_map(name, context)}.get({self.js_string(name)})"
             case UnaryOpExpr():
                 operator = OP_TO_JAVA_OP_MAP.get(expr.op, expr.op)
                 return f"({operator}{self.emit_expr(expr.value, context)})"
@@ -111,8 +111,18 @@ class JavascriptAssembler(SharedMethods):
                 return self.emit_function_call(expr, context)
             case TableExpr():
                 return f"[{', '.join(self.emit_expr(v, context) for v in expr.values)}]"
+            case VarExpr():
+                return self.emit_var_ref(expr.ref, context)
             case _:
                 raise NotImplementedError(f"Expression not supported: {type(expr).__name__}")
+
+    def emit_var_ref(self, expr: VarRef, context: Context):
+        name = expr.root
+        if name in context.locals:
+            return name
+        if expr.slice_expr:
+            return f"{self.variable_map(name, context)}.get({self.js_string(name)})[{self.emit_expr(expr.slice_expr, context)}]"
+        return f"{self.variable_map(name, context)}.get({self.js_string(name)})"
 
     def emit_function_call(self, expr: FunctionCallExpr | FunctionCallStmt, context: Context):
         is_scratch_block = expr.callee in SCRATCH_BLOCKS
@@ -120,9 +130,9 @@ class JavascriptAssembler(SharedMethods):
         comma = ", " if args else ""
 
         if is_scratch_block:
-            return f"(yield* ScratchBlock.{expr.callee}(context{comma}{args}))"
+            return f"ScratchBlock.{expr.callee}(context{comma}{args})"
         else:
-            return f"(yield* {expr.callee}(context{comma}{args}))"
+            return f"{expr.callee}(context{comma}{args})"
 
     def emit_statements(self, statements: Iterable[Stmt], context: Context) -> None:
         self.indent += 1
@@ -224,7 +234,7 @@ class JavascriptAssembler(SharedMethods):
                 self.add_code("}")
 
             case FunctionCallStmt():
-                self.add_code(f"{self.emit_function_call(stmt, context)};")
+                self.add_code(f"yield* {self.emit_function_call(stmt, context)};")
 
             case BreakStmt():
                 raise NotImplementedError("Sorry, not implemented.")
