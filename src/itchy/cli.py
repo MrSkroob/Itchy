@@ -7,6 +7,7 @@ from itchy.parserv2 import Parser, ParseResult
 from itchy.itch_ast import ASTBuilder, Program
 from itchy.errors import format_compiler_error, format_syntax_error
 from itchy.compilers.assembler import Assembler, CompilerError
+from itchy.compilers.javascriptassembler import JavascriptAssembler
 
 # from tools.ast_printer import print_ast
 # from itchy.dummy_nodes import find_last_node
@@ -45,6 +46,7 @@ def compile_targets(
     project: Path,
     output: Path | None,
     allow_warnings: bool = False,
+    vm_path: Path | None = None
 ) -> Path | None:
     programs: dict[str, Program] = {}
     metadata: dict[str, tuple[str, Path]] = {}
@@ -86,25 +88,27 @@ def compile_targets(
         assembler = strict_assembler
 
     try:
-        return assembler.assemble(
-            programs,
-            project,
-            output,
-        )
+        output_path = assembler.assemble(programs, project, output)
+        if vm_path:
+            assembler = JavascriptAssembler(vm_path.as_posix())
+        return output_path
 
     except CompilerError as e:
-        if assembler.compiling is None:
+        if isinstance(assembler, JavascriptAssembler):
             print(e.message)
         else:
-            file_metadata = metadata[assembler.compiling]
+            if assembler.compiling is None:
+                print(e.message)
+            else:
+                file_metadata = metadata[assembler.compiling]
 
-            print(
-                format_compiler_error(
-                    e,
-                    file_metadata[0],
-                    str(file_metadata[1]),
+                print(
+                    format_compiler_error(
+                        e,
+                        file_metadata[0],
+                        str(file_metadata[1]),
+                    )
                 )
-            )
 
         return None
 
@@ -114,6 +118,7 @@ def compile_project(
     output: Path | None,
     exact_target: str | None = None,
     allow_warnings: bool = False,
+    vm_path: Path | None= None
 ) -> bool:
     """
     Compiles an Itchy project directory into an .sb3.
@@ -182,6 +187,7 @@ def compile_project(
         project,
         output,
         allow_warnings,
+        vm_path=vm_path
     )
 
     if output_path is None:
@@ -216,9 +222,18 @@ def main() -> int:
         default="",
     )
 
+    cli_parser.add_argument(
+        "lib",
+        nargs="?",
+        default="",
+        help="If included, output will use JS.",
+        type=str
+    )
+
     args = cli_parser.parse_args()
 
     project_path = Path(args.source)
+    vm_path = Path(args.lib) if args.lib else None
     output_path = Path(args.output) if args.output else None
 
     compile_file = not project_path.is_dir()
@@ -240,6 +255,7 @@ def main() -> int:
             output_path,
             project_path.stem,
             args.allow_warnings,
+            vm_path=vm_path
         ):
             return 1
 
@@ -248,6 +264,7 @@ def main() -> int:
             project_path,
             output_path,
             allow_warnings=args.allow_warnings,
+            vm_path=vm_path
         ):
             return 1
 
