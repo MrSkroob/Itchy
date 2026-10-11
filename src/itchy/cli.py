@@ -47,7 +47,7 @@ def compile_targets(
     output: Path | None,
     allow_warnings: bool = False,
     vm_path: Path | None = None
-) -> Path | None:
+) -> tuple[Path, Path | None] | None:
     programs: dict[str, Program] = {}
     metadata: dict[str, tuple[str, Path]] = {}
 
@@ -89,9 +89,12 @@ def compile_targets(
 
     try:
         output_path = assembler.assemble(programs, project, output)
+        js_output = None
         if vm_path:
-            assembler = JavascriptAssembler(vm_path.as_posix())
-        return output_path
+            js_output = JavascriptAssembler(vm_path.as_posix()).assemble(programs, project, output);
+        else:
+            print("Compiling without Javascript output")
+        return (output_path, js_output)
 
     except CompilerError as e:
         if isinstance(assembler, JavascriptAssembler):
@@ -193,7 +196,10 @@ def compile_project(
     if output_path is None:
         return False
 
-    print(f"Done. Output: {str(output_path)}")
+    print(f"Done. Output: {str(output_path[0])}")
+
+    if output_path[1] is not None:
+        print(f"Javascript output: {str(output_path[1])}")
     return True
 
 
