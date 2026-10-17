@@ -1,4 +1,4 @@
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, replace, is_dataclass, fields
 import json
 from pathlib import Path
 from typing import Iterable, Mapping
@@ -13,7 +13,7 @@ from itchy.itch_ast import (
 from itchy.errors import CompilerError
 from itchy.compilers.sharedmethods import SharedMethods
 
-from itchy.scratch_blocks import SCRATCH_BLOCKS
+from itchy.scratch_blocks import SCRATCH_BLOCKS, YIELDABLES
 
 
 TABS = "    "
@@ -36,9 +36,14 @@ EVENT_NAMES = {
 }
 
 
-@dataclass(frozen=True)
+@dataclass()
 class ProcedureInfo:
     warp: bool
+    # name: str
+    # params_list: str
+    # definition_indent: int
+    # definition_line: int | None
+    yieldable: bool=False
 
 
 @dataclass(frozen=True)
@@ -82,6 +87,19 @@ class JavascriptAssembler(SharedMethods):
         if context.sprite_name.name.lower() == "stage" or name in self.global_variables:
             return "context.backdrop.variables"
         return "context.sprite.variables"
+
+    # def make_proc_yieldable(self, proc_info: ProcedureInfo):
+    #     if proc_info.yieldable:
+    #         return
+
+    #     proc_info.yieldable = True
+
+    #     if proc_info.definition_line is None:
+    #         return
+
+    #     self.code[proc_info.definition_line] = \
+    #         f"{proc_info.definition_indent * TABS}function* {proc_info.name}(context{proc_info.params_list}) {{"
+    #     proc_info.definition_line = None
 
     def emit_expr(self, expr: Expr, context: Context) -> str:
         expr = self.fold_expr(expr)
@@ -130,9 +148,16 @@ class JavascriptAssembler(SharedMethods):
         comma = ", " if args else ""
 
         if is_scratch_block:
-            return f"ScratchBlock.{expr.callee}(context{comma}{args})"
+            command = f"ScratchBlock.{expr.callee}(context{comma}{args})"
+            yieldable = expr.callee in YIELDABLES
         else:
-            return f"{expr.callee}(context{comma}{args})"
+            command = f"{expr.callee}(context{comma}{args})"
+            yieldable = self.procedures[expr.callee].yieldable
+
+        if yieldable:
+            return f"(yield* {command})"
+
+        return command
 
     def emit_statements(self, statements: Iterable[Stmt], context: Context) -> None:
         self.indent += 1
@@ -210,7 +235,7 @@ class JavascriptAssembler(SharedMethods):
 
             case ForInStmt():
                 variable = stmt.variable
-                iterable = stmt.iterable.root
+                iterable = self.emit_var_ref(stmt.iterable, context)
                 self.add_code(f"for (let {variable} of {iterable}) {{")
                 loop_context = replace(context, locals=context.locals | {variable})
                 self.emit_statements(stmt.body, loop_context)
@@ -224,17 +249,24 @@ class JavascriptAssembler(SharedMethods):
                 name = stmt.name
                 params = [p.name for p in stmt.params]
                 params_list = (", " + ", ".join(params)) if params else ""
-                self.add_code(f"function* {name}(context{params_list}) {{")
+
+                proc_info = self.procedures[name]
+
+                keyword = "function*" if proc_info.yieldable else "function"
+
+                self.add_code(f"{keyword} {name}(context{params_list}) {{")
+
                 function_context = replace(
                     context,
-                    proc_info=ProcedureInfo(warp=stmt.warp),
+                    proc_info=proc_info,
                     locals=frozenset(params),
                 )
+
                 self.emit_statements(stmt.body, function_context)
                 self.add_code("}")
 
             case FunctionCallStmt():
-                self.add_code(f"yield* {self.emit_function_call(stmt, context)};")
+                self.add_code(f"{self.emit_function_call(stmt, context)};")
 
             case BreakStmt():
                 raise NotImplementedError("Sorry, not implemented.")
@@ -259,6 +291,7 @@ class JavascriptAssembler(SharedMethods):
             self.indent += 1
             self.add_code("yield { type: 'waitOneFrame' };")
             self.indent -= 1
+            # self.make_proc_yieldable(context.proc_info)
 
     def emit_event_stmt(self, stmt: EventHandlerStmt, context: Context) -> None:
         event_name = EVENT_NAMES.get(stmt.name)
@@ -266,8 +299,6 @@ class JavascriptAssembler(SharedMethods):
             raise NotImplementedError(f"Unknown event: {stmt.name}")
 
         params = ", ".join(self.emit_expr(param, context) for param in stmt.params)
-        script_context = replace(context, proc_info=ProcedureInfo(warp=False), locals=frozenset())
-
         self.add_code("vm.registerEvent(")
         self.indent += 1
         self.add_code(f"EventType.{event_name},")
@@ -276,6 +307,15 @@ class JavascriptAssembler(SharedMethods):
         self.indent += 1
         self.add_code("context,")
         self.add_code("script: function* (context) {")
+
+        script_context = replace(context, proc_info=ProcedureInfo(warp=False, 
+                                                                #  name=stmt.name,
+                                                                #  params_list="",
+                                                                #  definition_indent=self.indent, 
+                                                                #  definition_line=None
+                                                                 ),
+                                                                 locals=frozenset()
+                                )
         self.emit_statements(stmt.body, script_context)
         self.add_code("}")
         self.indent -= 1
@@ -283,8 +323,92 @@ class JavascriptAssembler(SharedMethods):
         self.indent -= 1
         self.add_code(");")
 
-    def emit_program(self, program: Program, context: Context) -> None:
-        self.emit_statements(program.body, context)
+    # def emit_program(self, program: Program, context: Context) -> None:
+        
+
+    def collect_procedures(self, program: Program) -> None:
+        self.procedures.clear()
+
+        for stmt in program.body:
+            if isinstance(stmt, FunctionDefStmt):
+                self.procedures[stmt.name] = ProcedureInfo(
+                    warp=stmt.warp
+                )
+
+    def analyse_yieldability(self, program: Program) -> None:
+        dependencies: dict[str, set[str]] = {
+            name: set()
+            for name in self.procedures
+        }
+
+        def inspect(node: tuple[Stmt, ...] | Stmt, owner: str) -> bool:
+            # Nested definitions are separate execution contexts.
+            if isinstance(node, (FunctionDefStmt, EventHandlerStmt)):
+                return False
+
+            directly_yields = False
+
+            # Non-warp loops yield once per iteration.
+            if isinstance(node, (
+                WhileStmt,
+                ForeverStmt,
+                ForRangeStmt,
+                ForInStmt,
+            )):
+                directly_yields = not self.procedures[owner].warp
+
+            # Function calls
+            if isinstance(node, (FunctionCallExpr, FunctionCallStmt)):
+                callee = node.callee
+
+                if callee in SCRATCH_BLOCKS:
+                    if callee in YIELDABLES:
+                        directly_yields = True
+
+                elif callee in self.procedures:
+                    dependencies[owner].add(callee)
+
+            # Recursively inspect children.
+            if isinstance(node, tuple):
+                for child in node:
+                    if inspect(child, owner):
+                        directly_yields = True
+
+            elif is_dataclass(node) and not isinstance(node, type):
+                for field in fields(node):
+                    child = getattr(node, field.name)
+
+                    if inspect(child, owner):
+                        directly_yields = True
+
+            return directly_yields
+
+        # First pass: find direct yields and function dependencies.
+        for stmt in program.body:
+            if not isinstance(stmt, FunctionDefStmt):
+                continue
+
+            self.procedures[stmt.name].yieldable = inspect(
+                stmt.body,
+                stmt.name
+            )
+
+        # Second pass: propagate yieldability through dependencies.
+        changed = True
+
+        while changed:
+            changed = False
+
+            for name, proc_info in self.procedures.items():
+                if proc_info.yieldable:
+                    continue
+
+                if any(
+                    self.procedures[callee].yieldable
+                    for callee in dependencies[name]
+                ):
+                    proc_info.yieldable = True
+                    changed = True
 
     def assemble(
         self,
@@ -311,7 +435,15 @@ class JavascriptAssembler(SharedMethods):
         self.add_code("export function registerProject(vm, contexts, EventType) {")
 
         for sprite_name, program in programs.items():
-            context = Context(SpriteData(sprite_name), ProcedureInfo(warp=False))
+            # self.procedures = {}
+            self.collect_procedures(program)
+            self.analyse_yieldability(program)
+            context = Context(SpriteData(sprite_name), ProcedureInfo(warp=False, 
+                                                                    #  name=sprite_name,
+                                                                    #  params_list="",
+                                                                    #  definition_indent=self.indent, 
+                                                                    #  definition_line=None
+                                                                     ))
             self.indent += 1
             self.add_code("{")
             self.indent += 1
@@ -320,7 +452,8 @@ class JavascriptAssembler(SharedMethods):
                 f"if (!context) throw new Error({self.js_string('Missing execution context for ' + sprite_name)});"
             )
             self.indent -= 1
-            self.emit_program(program, context)
+            self.emit_statements(program.body, context)
+            # self.emit_program(program, context)
             self.add_code("}")
             self.indent -= 1
 

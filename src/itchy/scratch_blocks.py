@@ -282,3 +282,16 @@ SCRATCH_BLOCKS: dict[str, Block | Reporter | Event] = {
 
     "sensing_setdragmode": Block(fields=(Field("DRAG_MODE", ("draggable", "not draggable")),)),
 }
+
+
+YIELDABLES: set[str] = {
+    "sound_playuntildone",
+    "event_broadcastandwait",
+    "control_wait",
+    "control_wait_until",
+    "sensing_askandwait",
+    "motion_glideto",
+    "motion_glidesecstoxy",
+    "looks_sayforsecs",
+    "looks_thinkforsecs"
+}
