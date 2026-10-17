@@ -46,7 +46,6 @@ def compile_targets(
     project: Path,
     output: Path | None,
     allow_warnings: bool = False,
-    vm_path: Path | None = None
 ) -> tuple[Path, Path | None] | None:
     programs: dict[str, Program] = {}
     metadata: dict[str, tuple[str, Path]] = {}
@@ -89,11 +88,7 @@ def compile_targets(
 
     try:
         output_path = assembler.assemble(programs, project, output)
-        js_output = None
-        if vm_path:
-            js_output = JavascriptAssembler(vm_path.as_posix()).assemble(programs, project, output);
-        else:
-            print("Compiling without Javascript output")
+        js_output = js_output = JavascriptAssembler().assemble(programs, project, output);
         return (output_path, js_output)
 
     except CompilerError as e:
@@ -121,7 +116,6 @@ def compile_project(
     output: Path | None,
     exact_target: str | None = None,
     allow_warnings: bool = False,
-    vm_path: Path | None= None
 ) -> bool:
     """
     Compiles an Itchy project directory into an .sb3.
@@ -190,7 +184,6 @@ def compile_project(
         project,
         output,
         allow_warnings,
-        vm_path=vm_path
     )
 
     if output_path is None:
@@ -228,18 +221,9 @@ def main() -> int:
         default="",
     )
 
-    cli_parser.add_argument(
-        "lib",
-        nargs="?",
-        default="",
-        help="If included, output will use JS.",
-        type=str
-    )
-
     args = cli_parser.parse_args()
 
     project_path = Path(args.source)
-    vm_path = Path(args.lib) if args.lib else None
     output_path = Path(args.output) if args.output else None
 
     compile_file = not project_path.is_dir()
@@ -261,7 +245,6 @@ def main() -> int:
             output_path,
             project_path.stem,
             args.allow_warnings,
-            vm_path=vm_path
         ):
             return 1
 
@@ -270,7 +253,6 @@ def main() -> int:
             project_path,
             output_path,
             allow_warnings=args.allow_warnings,
-            vm_path=vm_path
         ):
             return 1
 

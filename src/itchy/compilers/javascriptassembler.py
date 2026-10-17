@@ -65,9 +65,8 @@ class JavascriptAssembler(SharedMethods):
     contexts is a mapping of sprite names to ExecutionContext objects.
     """
 
-    def __init__(self, lib_path: str) -> None:
+    def __init__(self) -> None:
         # Kept for compatibility; this module is wired to the VM by its caller.
-        self.lib_path = lib_path
         self.prepare()
 
     def prepare(self) -> None:
@@ -431,7 +430,7 @@ class JavascriptAssembler(SharedMethods):
                 ):
                     self.global_variables.add(stmt.name)
 
-        self.add_code(f"import * as ScratchBlock from '{self.lib_path}'")
+        self.add_code(f"import * as ScratchBlock from '__ITCHY_PREVIEWER_SCRATCH_BLOCKS__'")
         self.add_code("export function registerProject(vm, contexts, EventType) {")
 
         for sprite_name, program in programs.items():
