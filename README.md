@@ -1,5 +1,7 @@
 A toy programming language called 'Itchy' (because a *Scratch* is caused by an *Itch*).
 
+*"Anything could itch if you put your mind to it"*
+
 Created using the knowledge of how programming languages work, Python and compilers since I first created this repo in my first attempt (you can find the archive in [itchy-rewrite](https://github.com/MrSkroob/itchy-rewrite)). 
 
 Repo features:
