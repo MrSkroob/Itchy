@@ -846,6 +846,9 @@ class Assembler(SharedMethods):
             #     # bad hack so variables do not compile as a list.
             #     print("oh")
             #     self.compile_with_warnings = False
+        
+        return_bool = self.static_type_check(a, b)
+        error_severity = TypeErrorSeverity.OK if return_bool else TypeErrorSeverity.DISCRETION
 
         if a == VariableTypes.LIST and a not in b:
             # FIXME
@@ -865,10 +868,15 @@ class Assembler(SharedMethods):
             So, we set return with TypeErrorSeverity.ERROR to flag that this is a bad, no good type error.
             
             """
-            return TypeErrorSeverity.ERROR
+            error_severity = TypeErrorSeverity.ERROR
         
-        return_bool = self.static_type_check(a, b)
-        return TypeErrorSeverity.OK if return_bool else TypeErrorSeverity.DISCRETION
+        # if node: 
+        #     if error_severity == TypeErrorSeverity.DISCRETION:
+        #         self.raise_or_return(TypeMismatch(f"not one of ({', '.join(i.value for i in b)}) matches {a.value}", node))
+        #     elif error_severity == TypeErrorSeverity.ERROR:
+        #         self.raise_or_return(InvalidTypeError(f"not one of ({', '.join(i.value for i in b)}) matches {a.value}", node))
+
+        return error_severity
 
 
     def emit_return(self, stmt: ReturnStmt, parent: StrOptional, context: Context) -> BlockRange:
@@ -1113,11 +1121,11 @@ class Assembler(SharedMethods):
                 block_id,
             )
 
-            if not self.type_check(
+            if self.type_check(
                 VariableTypes.STRING,
                 emitted.return_type,
                 arg_expr,
-            ):
+            ) != TypeErrorSeverity.OK:
                 return self.raise_or_return(
                     type_error_factory(
                         callee,
@@ -1138,11 +1146,11 @@ class Assembler(SharedMethods):
         if isinstance(arg_expr, StringExpr):
             actual_type = {VariableTypes.STRING}
 
-            if not self.type_check(
+            if self.type_check(
                 expected_type,
                 actual_type,
                 arg_expr,
-            ):
+            ) != TypeErrorSeverity.OK:
                 return self.raise_or_return(
                     type_error_factory(
                         callee,
@@ -1166,11 +1174,11 @@ class Assembler(SharedMethods):
             block_id,
         )
 
-        if not self.type_check(
+        if self.type_check(
             expected_type,
             emitted.return_type,
             arg_expr,
-        ):
+        ) != TypeErrorSeverity.OK:
             return self.raise_or_return(
                 type_error_factory(
                     callee,
@@ -1428,7 +1436,7 @@ class Assembler(SharedMethods):
             if isinstance(arg_expr, VarRef) and not arg_expr.dummy:
                 self.get_variable(arg_expr, context)
 
-            if not self.type_check(arg_type, user_arg_type, arg_expr):
+            if self.type_check(arg_type, user_arg_type, arg_expr) != TypeErrorSeverity.OK:
                 failure = type_error_factory(stmt.callee, index, arg_type, user_arg_type, arg_expr)
                 self.errors.append(failure)
             
@@ -2603,7 +2611,7 @@ class Assembler(SharedMethods):
         block_id = self.new_id()
         if op == "not":
             emitted_return = self.emit_expr(value, context, block_parent, block_id)
-            if not self.type_check(VariableTypes.BOOL, emitted_return.return_type, value):
+            if self.type_check(VariableTypes.BOOL, emitted_return.return_type, value) != TypeErrorSeverity.OK:
                 return self.raise_or_return(
                     type_error_factory("not", 0, VariableTypes.BOOL, emitted_return.return_type, value),
                     PLACE_HOLDER_0,
@@ -2621,7 +2629,7 @@ class Assembler(SharedMethods):
 
         if op == "-":
             emitted_return = self.emit_expr(value, context, block_parent, block_id)
-            if not self.type_check(VariableTypes.NUMBER, emitted_return.return_type, value):
+            if self.type_check(VariableTypes.NUMBER, emitted_return.return_type, value) != TypeErrorSeverity.OK:
                 self.raise_or_return(
                     type_error_factory("-", 0, VariableTypes.NUMBER, emitted_return.return_type, value)
                 )
@@ -2704,12 +2712,12 @@ class Assembler(SharedMethods):
             left_type_check = VariableTypes.VAR
             right_type_check = VariableTypes.VAR
 
-        if not self.type_check(left_type_check, left_expr.return_type, left):
+        if self.type_check(left_type_check, left_expr.return_type, left) != TypeErrorSeverity.OK:
             self.raise_or_return(
                 type_error_factory(opcode, 0, left_type_check, left_expr.return_type, left),
             )
 
-        if not self.type_check(right_type_check, right_expr.return_type, right):
+        if self.type_check(right_type_check, right_expr.return_type, right) != TypeErrorSeverity.OK:
             self.raise_or_return(
                 type_error_factory(opcode, 1, right_type_check, right_expr.return_type, right),
             )
