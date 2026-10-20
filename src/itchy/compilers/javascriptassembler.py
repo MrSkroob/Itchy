@@ -122,6 +122,11 @@ class JavascriptAssembler(SharedMethods):
                 return f"({operator}{self.emit_expr(expr.value, context)})"
             case BinaryOpExpr():
                 operator = OP_TO_JAVA_OP_MAP.get(expr.op, expr.op)
+
+                if expr.op == "in":
+                    return (f"({self.emit_expr(expr.left, context)}.includes("
+                        f"{self.emit_expr(expr.right, context)}))")
+
                 return (f"({self.emit_expr(expr.left, context)} {operator} "
                         f"{self.emit_expr(expr.right, context)})")
             case FunctionCallExpr():
