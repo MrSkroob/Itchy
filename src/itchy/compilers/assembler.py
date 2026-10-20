@@ -2710,6 +2710,9 @@ class Assembler(SharedMethods):
         elif op in {"and", "or"}:
             left_type_check = VariableTypes.BOOL
             right_type_check = VariableTypes.BOOL
+        elif op in {"=="}:
+            left_type_check = VariableTypes.VAR
+            right_type_check = VariableTypes.VAR
         else:
             left_type_check = VariableTypes.NUMBER
             right_type_check = VariableTypes.NUMBER
