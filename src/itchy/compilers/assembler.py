@@ -836,6 +836,8 @@ class Assembler(SharedMethods):
         if VariableTypes.VAR in b:
             return True
 
+        return False
+
 
     def type_check(self, a: VariableTypes, b: set[VariableTypes], node: ASTNode | None) -> TypeErrorSeverity:
         if VariableTypes.LIST in b:
@@ -2698,10 +2700,10 @@ class Assembler(SharedMethods):
         if op in {"==", ">", "<", "and", "or"}:
             return_type = VariableTypes.BOOL
         else:
-            return_type = VariableTypes.VAR
+            return_type = VariableTypes.NUMBER
 
-        left_type_check: VariableTypes = VariableTypes.VAR
-        right_type_check: VariableTypes = VariableTypes.VAR
+        left_type_check: VariableTypes = VariableTypes.NUMBER
+        right_type_check: VariableTypes = VariableTypes.NUMBER
 
         if op == "in":
             right_type_check = VariableTypes.STRING
@@ -2709,8 +2711,8 @@ class Assembler(SharedMethods):
             left_type_check = VariableTypes.BOOL
             right_type_check = VariableTypes.BOOL
         else:
-            left_type_check = VariableTypes.VAR
-            right_type_check = VariableTypes.VAR
+            left_type_check = VariableTypes.NUMBER
+            right_type_check = VariableTypes.NUMBER
 
         if self.type_check(left_type_check, left_expr.return_type, left) != TypeErrorSeverity.OK:
             self.raise_or_return(

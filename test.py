@@ -1,4 +1,13 @@
 import pytest
+import sys
+
+from pathlib import Path
+
+BUNDLED_LIBS = Path(__file__).resolve().parent / "src"
+
+if str(BUNDLED_LIBS) not in sys.path:
+    sys.path.insert(0, str(BUNDLED_LIBS))
+
 
 from itchy.parserv2 import Parser as Parser2
 # from itchy.dummy_nodes import ANALYSIS_STRATEGIES
