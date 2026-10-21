@@ -1732,7 +1732,7 @@ class Assembler(SharedMethods):
         except NameError:
             return self.raise_or_return(CompilerError(f"Cannot override read only argument '{stmt.variable}'", stmt.start))
 
-        var_id = self.define_variable(False, "var", stmt.variable, context, stmt.span)
+        var_id = self.define_variable(False, VariableTypes.NUMBER.value, stmt.variable, context, stmt.span)
         set_id = self.new_id()
 
         set_inputs: dict[str, ScratchInputRaw] = {}
@@ -1990,7 +1990,7 @@ class Assembler(SharedMethods):
         end
         """
         not_condition = UnaryOpExpr("not", stmt.condition)
-        not_condition = self.fold_expr(not_condition)
+        not_condition = self.fold_expr(not_condition)            
 
         block_id = self.new_id()
         inputs: dict[str, ScratchInputRaw] = {}
@@ -2001,10 +2001,12 @@ class Assembler(SharedMethods):
             inputs=inputs
         )
         block_range = BlockRange(block_id, block_id)
-        inputs["CONDITION"] = self.emit_expr(
-            not_condition, context, block_range, block_id
-        ).value
 
+        not_condition = self.emit_expr(
+            not_condition, context, block_range, block_id
+        )
+
+        inputs["CONDITION"] = not_condition.value 
         body = self.emit_sequence(stmt.body, block_id, context)
 
         if body.first is not None:
@@ -2038,6 +2040,7 @@ class Assembler(SharedMethods):
             inputs=inputs
         )
         block_range = BlockRange(block_id, block_id)
+
         inputs["CONDITION"] = self.emit_expr(
             branch.condition, context, block_range, block_id
         ).value

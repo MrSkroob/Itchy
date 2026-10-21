@@ -604,11 +604,13 @@ class ASTBuilder:
     
         self.emit_token(op, "operator")
     
-        return UnaryOpExpr(op.literal, expr, 
-                           span=SourceSpan(
-                               start=op.span.start,
-                               end=expr.span.end
-                           ), dummy=node.dummy_node)
+        return UnaryOpExpr(
+            op=op.literal, 
+            value=expr, 
+            span=SourceSpan(
+                start=op.span.start,
+                end=expr.span.end
+            ), dummy=node.dummy_node)
     
     
     def build_primary(self, node: ParsedNode) -> Expr:
@@ -856,10 +858,12 @@ class ASTBuilder:
     
             return AssignStmt(
                 target,
-                BinaryOpExpr(VarExpr(dummy_ref, span=target.span, dummy=True), 
-                            OPERATION_TO_BINOP[operation.literal], action, 
-                            span=SourceSpan(target.span.start, SourcePosition(target.span.end.line, target.span.end.character + 2)), 
-                            dummy=node.dummy_node),
+                BinaryOpExpr(
+                    left=VarExpr(dummy_ref, span=target.span, dummy=True), 
+                    op=OPERATION_TO_BINOP[operation.literal], 
+                    right=action, 
+                    span=SourceSpan(target.span.start, SourcePosition(target.span.end.line, target.span.end.character + 2)), 
+                    dummy=node.dummy_node),
                 span=SourceSpan(
                     target.span.start,
                     action.span.end
