@@ -509,8 +509,42 @@ class ASTBuilder:
     def build_and(self, node: ParsedNode) -> Expr:
         return self.build_left_associative(
             node=node,
-            operand_rule="comparison",
-            operand_builder=self.build_comparison,
+            operand_rule="negation",
+            operand_builder=self.build_negation,
+        )
+
+    def build_negation(self, node: ParsedNode) -> Expr:
+        children = self.flat_children(node)
+
+        op: Token[Definitions] | None = None
+        operand: ParsedNode | None = None
+
+        for child in children:
+            if isinstance(child, Token) and child.literal == "not":
+                op = child
+            elif isinstance(child, ParsedNode) and child.name in {"negation", "comparison"}:
+                operand = child
+
+        if operand is None:
+            if not self.is_strict:
+                return Expr(dummy=True)
+            raise ValueError(f"Expected negation or comparison: {node!r}")
+
+        if op is None:
+            return self.build_comparison(operand)
+
+        expr = self.build_negation(operand)
+
+        self.emit_token(op, "operator")
+
+        return UnaryOpExpr(
+            op=op.literal,
+            value=expr,
+            span=SourceSpan(
+                start=op.span.start,
+                end=expr.span.end
+            ),
+            dummy=node.dummy_node
         )
     
     
@@ -589,7 +623,7 @@ class ASTBuilder:
         primary: ParsedNode | None = None
     
         for child in children:
-            if isinstance(child, Token) and child.literal in {"-", "not"}:
+            if isinstance(child, Token) and child.literal in {"-"}:
                 op = child
             elif isinstance(child, ParsedNode) and child.name == "primary":
                 primary = child

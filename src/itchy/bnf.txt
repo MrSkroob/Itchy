@@ -24,15 +24,16 @@
 <function> ::= <Symbol> <funcbody>
 <funcbody> ::= "(" [<paramlist>] ")" ["->" <typelist>] <wrap>
 <slice> ::= "[" <equation> "]"
-<equation> ::= "(" <or> ")" | <or>
+<equation> ::= <or>
+<var> ::= <Symbol> [<slice>]
 <or> ::= <and> { "or" <and> }
-<and> ::= <comparison> { "and" <comparison> }
+<and> ::= <negation> { "and" <negation> }
+<negation> ::= "not" <negation> | <comparison>
 <comparison> ::= <addition> { ( ">" | "<" | ">=" | "<=" | "!=" | "==" | <In> ) <addition> }
 <addition> ::= <multiplication> { ("+" | "-") <multiplication> }
 <multiplication> ::= <unary> { ("*" | "/") <unary> }
-<unary> ::= ["-" | "not"] <primary>
-<primary> ::= <equation> | <literals>
-<var> ::= <Symbol> [<slice>]
+<unary> ::= ["-"] <primary>
+<primary> ::= "(" <equation> ")" | <literals>
 <literals> ::= <functioncall> | <tableconstructor> | <var> | <Bool> | <Number> | <String> | <asset>
 // <explist1> ::= <equation> {<FieldSeperator> <explist1>}
 <varlist1> ::= <equation> {<FieldSeperator> <equation>} [<FieldSeperator>]

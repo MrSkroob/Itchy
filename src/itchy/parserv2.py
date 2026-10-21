@@ -147,7 +147,6 @@ class Parser():
         }
         self.statement_separator = statement_separator
         self.rules=build_parse_tree()
-        self.seen: set[str] = set()
 
         for rule in self.rules:
             if rule.name == stat_rule:
@@ -278,15 +277,7 @@ class Parser():
         furthest_result = None
         for option in node.options:
             self.pos = start_pos
-
-            if isinstance(option, NonTerminal):
-                rule = cast(Rule, option.rule)
-                if rule.name in self.seen:
-                    self.seen = set()
-                    continue
                 
-                self.seen.add(rule.name)
-
             result = self.parse_node(option, tokens, node)
 
             if furthest_result is None or result.pos > furthest_progress:
@@ -544,7 +535,6 @@ class Parser():
         if pos < len(tokens) and self.matches_terminal(tokens[pos], node):
             # debug_print(f"{print_token_safe(tokens, pos)}. Matched {value.name}")
             self.pos += 1
-            self.seen = set()
             return ParseResult(
                 tree=tokens[pos],
                 node=node,
