@@ -2961,7 +2961,7 @@ class Assembler(SharedMethods):
         raise CompilerError(f"No stage target in project file.", None)
 
     def prepare(self, target: str | None=None, global_messages: dict[str, MessageData]={}, global_variables: dict[str, VariableData]={}, 
-                uri_override: str | None=None) -> None:
+                uri_override: str | None=None, clear_messages: bool=True) -> None:
         """
         Prepares the assembler to assemble the next file. It does the following:
         1. Clears blocks, variables, lists, etc. that are local to the sprite
@@ -2969,7 +2969,9 @@ class Assembler(SharedMethods):
         """
         self.emitted_return = False
         self.thread_number = 0
-        self.messages = {}
+
+        if clear_messages:
+            self.messages = {}
         self.variable_map = {}
         self.variables = {}
         self.overridable = set()
@@ -3018,11 +3020,10 @@ class Assembler(SharedMethods):
                 None # we recreate a duplicate because we need to have the span set to None.
             )
 
-        for message, message_data in global_messages.items():
+        for _, message_data in global_messages.items():
             if message_data.uri == self.uri:
                 continue
-
-            self.messages[message] = message_data
+            self.messages[message_data.id] = message_data
 
         self.non_referenced_variables = {}
         self.non_referenced_functions = {}
@@ -3198,9 +3199,9 @@ class Assembler(SharedMethods):
                 #
                 # On the very first target there may not be a project yet.
                 if project_file.exists():
-                    self.prepare(str(project_file), global_variables=global_variables, uri_override=target)
+                    self.prepare(str(project_file), global_variables=global_variables, uri_override=target, clear_messages=False)
                 else:
-                    self.prepare(global_variables=global_variables, uri_override=target)
+                    self.prepare(global_variables=global_variables, uri_override=target, clear_messages=False)
 
                 self._assemble_target(
                     program=program,
