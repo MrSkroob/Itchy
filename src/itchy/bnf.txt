@@ -27,7 +27,7 @@
 <equation> ::= "(" <or> ")" | <or>
 <or> ::= <and> { "or" <and> }
 <and> ::= <comparison> { "and" <comparison> }
-<comparison> ::= <addition> { ( ">" | "<" | "==" | <In> ) <addition> }
+<comparison> ::= <addition> { ( ">" | "<" | ">=" | "<=" | "!=" | "==" | <In> ) <addition> }
 <addition> ::= <multiplication> { ("+" | "-") <multiplication> }
 <multiplication> ::= <unary> { ("*" | "/") <unary> }
 <unary> ::= ["-" | "not"] <primary>

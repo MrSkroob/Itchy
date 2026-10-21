@@ -35,6 +35,31 @@ class SharedMethods:
                 left = self.fold_expr(left)
                 right = self.fold_expr(right)
 
+                # reduce operators
+                match op:
+                    case "!=":
+                        return self.fold_expr(
+                            UnaryOpExpr("not", BinaryOpExpr(left, "==", right))
+                        )
+                    case ">=":
+                        return self.fold_expr(
+                            BinaryOpExpr(
+                                BinaryOpExpr(left, ">", right),
+                                "or",
+                                BinaryOpExpr(left, "==", right)
+                            )
+                        )
+                    case "<=":
+                        return self.fold_expr(
+                            BinaryOpExpr(
+                                BinaryOpExpr(left, "<", right),
+                                "or",
+                                BinaryOpExpr(left, "==", right)
+                            )
+                        )
+                    case _:
+                        pass
+
                 # Numeric constant folding
                 if isinstance(left, NumberExpr) and isinstance(right, NumberExpr):
                     match op:

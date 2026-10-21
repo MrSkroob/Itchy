@@ -5,3 +5,4 @@ __pycache__
 *.pyc
 test_workspace
 test-workspace
+project-variables.json
