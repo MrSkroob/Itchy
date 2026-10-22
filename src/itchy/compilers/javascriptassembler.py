@@ -186,7 +186,11 @@ class JavascriptAssembler(SharedMethods):
                     target = "context.backdrop.variables"
                 else:
                     target = "context.sprite.variables"
-                self.add_code(f"{target}.set({self.js_string(name)}, {value});")
+
+                if (stmt.type_name.lower() == "list"):
+                    self.add_code(f"{target}.addList({self.js_string(name)})")
+                else:
+                    self.add_code(f"{target}.addVariable({self.js_string(name)});")
 
             case AssignStmt():
                 name = stmt.target.root
@@ -195,7 +199,8 @@ class JavascriptAssembler(SharedMethods):
                     self.add_code(f"{name} = {value};")
                 else:
                     target = self.variable_map(name, context)
-                    self.add_code(f"{target}.set({self.js_string(name)}, {value});")
+                    self.add_code(f"ScratchBlock.data_setvariableto(context, {name}, {value})")
+                    # self.add_code(f"{target}.set({self.js_string(name)}, {value});")
 
             case ForeverStmt():
                 self.add_code("while (true) {")
