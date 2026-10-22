@@ -435,8 +435,7 @@ class JavascriptAssembler(SharedMethods):
                 ):
                     self.global_variables.add(stmt.name)
 
-        self.add_code(f"import * as ScratchBlock from '__ITCHY_PREVIEWER_SCRATCH_BLOCKS__'")
-        self.add_code("export function registerProject(vm, contexts, EventType) {")
+        self.add_code("export function registerProject(vm, contexts, EventType, ScratchBlock) {")
 
         for sprite_name, program in programs.items():
             # self.procedures = {}
