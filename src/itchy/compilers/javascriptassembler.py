@@ -143,8 +143,8 @@ class JavascriptAssembler(SharedMethods):
         if name in context.locals:
             return name
         if expr.slice_expr:
-            return f"{self.variable_map(name, context)}.getVariable({self.js_string(name)})[{self.emit_expr(expr.slice_expr, context)}]"
-        return f"{self.variable_map(name, context)}.getVariable({self.js_string(name)})"
+            return f"{self.variable_map(name, context)}.getVariable({self.js_string(name)}).getValue()[{self.emit_expr(expr.slice_expr, context)}]"
+        return f"{self.variable_map(name, context)}.getVariable({self.js_string(name)}).getValue()"
 
     def emit_function_call(self, expr: FunctionCallExpr | FunctionCallStmt, context: Context):
         is_scratch_block = expr.callee in SCRATCH_BLOCKS
