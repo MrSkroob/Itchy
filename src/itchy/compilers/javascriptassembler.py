@@ -84,8 +84,8 @@ class JavascriptAssembler(SharedMethods):
 
     def variable_map(self, name: str, context: Context) -> str:
         if context.sprite_name.name.lower() == "stage" or name in self.global_variables:
-            return "context.backdrop.variables"
-        return "context.sprite.variables"
+            return "context.backdrop"
+        return "context.sprite"
 
     # def make_proc_yieldable(self, proc_info: ProcedureInfo):
     #     if proc_info.yieldable:
@@ -143,8 +143,8 @@ class JavascriptAssembler(SharedMethods):
         if name in context.locals:
             return name
         if expr.slice_expr:
-            return f"{self.variable_map(name, context)}.get({self.js_string(name)})[{self.emit_expr(expr.slice_expr, context)}]"
-        return f"{self.variable_map(name, context)}.get({self.js_string(name)})"
+            return f"{self.variable_map(name, context)}.getVariable({self.js_string(name)})[{self.emit_expr(expr.slice_expr, context)}]"
+        return f"{self.variable_map(name, context)}.getVariable({self.js_string(name)})"
 
     def emit_function_call(self, expr: FunctionCallExpr | FunctionCallStmt, context: Context):
         is_scratch_block = expr.callee in SCRATCH_BLOCKS
@@ -198,8 +198,7 @@ class JavascriptAssembler(SharedMethods):
                 if name in context.locals:
                     self.add_code(f"{name} = {value};")
                 else:
-                    target = self.variable_map(name, context)
-                    self.add_code(f"ScratchBlock.data_setvariableto(context, {name}, {value})")
+                    self.add_code(f"ScratchBlock.data_setvariableto(context, {self.js_string(name)}, {value})")
                     # self.add_code(f"{target}.set({self.js_string(name)}, {value});")
 
             case ForeverStmt():
