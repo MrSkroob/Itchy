@@ -183,9 +183,9 @@ class JavascriptAssembler(SharedMethods):
                 defaults = {"list": "[]", "bool": "false", "string": '""'}
                 value = defaults.get(stmt.type_name.lower(), "0")
                 if stmt.shared or context.sprite_name.name.lower() == "stage":
-                    target = "context.backdrop.variables"
+                    target = "context.backdrop"
                 else:
-                    target = "context.sprite.variables"
+                    target = "context.sprite"
 
                 if (stmt.type_name.lower() == "list"):
                     self.add_code(f"{target}.addList({self.js_string(name)})")
