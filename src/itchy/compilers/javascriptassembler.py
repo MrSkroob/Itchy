@@ -439,9 +439,10 @@ class JavascriptAssembler(SharedMethods):
 
         for sprite_name, program in programs.items():
             # self.procedures = {}
+            sprite_name = sprite_name.lower()
             self.collect_procedures(program)
             self.analyse_yieldability(program)
-            context = Context(SpriteData(sprite_name.lower()), ProcedureInfo(warp=False, 
+            context = Context(SpriteData(sprite_name), ProcedureInfo(warp=False, 
                                                                     #  name=sprite_name,
                                                                     #  params_list="",
                                                                     #  definition_indent=self.indent, 
