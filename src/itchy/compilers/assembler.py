@@ -184,6 +184,9 @@ class Assembler(SharedMethods):
         self.variables: dict[str, VariableData] = {} # includes lists.
         self.blocks: dict[str, ScratchBlock] = {}
         self.procedures: dict[str, ProcedureInfo] = {}
+        # Keep the original declaration nodes to distinguish duplicate definitions.
+        self._function_declarations: dict[str, FunctionDefStmt] = {}
+        self._emitted_function_bodies: set[str] = set()
 
         self.block_pool = SCRATCH_BLOCKS
         self.compiling = None
@@ -609,6 +612,10 @@ class Assembler(SharedMethods):
 
         pre_defines = (push_return_frame, find_frame, set_return_value, pop_return_frame)
 
+        # The compiler-generated helpers also reference one another, so they
+        # use the same declaration/emission split as user functions.
+        for stmt in pre_defines:
+            self.declare_function_def(stmt, None)
         self.emit_statements(pre_defines)
 
 
@@ -655,8 +662,20 @@ class Assembler(SharedMethods):
         Takes a program object only and emits each sequence within said program.
         uses .emit_statements() internally so statements do not connect to each other. 
         """
-        # we want to allow the function definition statements to be first 
-        self.emit_statements(sorted(program.body, key=lambda key: isinstance(key, (FunctionDefStmt, VarDefStmt)), reverse=True))
+        # Variables are still available throughout the file, irrespective of
+        # where their definitions occur among top-level statements.
+        self.emit_statements(stmt for stmt in program.body if isinstance(stmt, VarDefStmt))
+
+        # Pass 1: register *all* user procedures and Scratch prototypes before
+        # emitting any function bodies or event handlers.
+        for stmt in program.body:
+            if isinstance(stmt, FunctionDefStmt):
+                self.declare_function_def(stmt, None)
+
+        # Pass 2: emit bodies/events in source order. Function definitions now
+        # resolve to prototypes created in the first pass, even when called
+        # before their declaration (including mutual recursion).
+        self.emit_statements(stmt for stmt in program.body if not isinstance(stmt, VarDefStmt))
 
         for variables in self.non_referenced_variables.values():
             for variable in variables:
@@ -821,12 +840,16 @@ class Assembler(SharedMethods):
             if isinstance(block_data, Reporter):
                 return set(block_data.return_type)
 
+        # User-defined calls already have their return types in the AST.
+        # Prefer these over ProcedureInfo: the callee body may not have been
+        # emitted yet, particularly for forward calls and mutual recursion.
+        if expr.return_types:
+            return set(expr.return_types)
+
+        if isinstance(expr, FunctionCallExpr):
             proc_info = self.procedures.get(expr.callee)
             if proc_info is not None:
                 return set(proc_info.return_types)
-
-        if expr.return_types:
-            return set(expr.return_types)
 
         # Fallback for expressions built by the assembler itself (e.g. its
         # return-stack helper statements), which never visit ASTBuilder.
@@ -1618,7 +1641,12 @@ class Assembler(SharedMethods):
 
         return True
             
-    def emit_function_def(self, stmt: FunctionDefStmt, parent: StrOptional) -> BlockRange:
+    def declare_function_def(self, stmt: FunctionDefStmt, parent: StrOptional) -> BlockRange:
+        """Register a procedure signature and create its Scratch prototype.
+
+        Does not emit its body. This must finish for every user function before
+        any function or event code is emitted.
+        """
         self.register_symbol(
             SymbolOccurence(
                 span=stmt.span,
@@ -1736,12 +1764,36 @@ class Assembler(SharedMethods):
             argument_defaults=argument_defaults_tuple,
             argument_types=argument_types_tuple,
             unfulfilled_types=unfulfilled_types,
+            # An annotation is available immediately, even for forward calls.
+            return_types=set(unfulfilled_types) if stmt.type_annotation else {VariableTypes.NOTHING},
             definition_location=stmt.span,
         )
 
         self.procedures[stmt.name] = proc_info
-
+        self._function_declarations[stmt.name] = stmt
         self.flag_non_referenced_function(stmt)
+
+        return BlockRange(definition_id, definition_id)
+
+    def emit_function_body(self, stmt: FunctionDefStmt) -> BlockRange:
+        """Fill in a procedure whose signature/prototype was predeclared."""
+        if self._function_declarations.get(stmt.name) is not stmt:
+            # A duplicate was already diagnosed in the declaration pass.
+            return BlockRange(None, None, True)
+
+        if stmt.name in self._emitted_function_bodies:
+            return BlockRange(None, None, True)
+
+        proc_info = self.procedures[stmt.name]
+        definition_id = self.blocks[proc_info.prototype_id]["parent"]
+        assert definition_id is not None
+
+        context = Context(
+            function_context=stmt.name,
+            thread_id=DEFAULT_THREAD,
+            layer=DEFAULT_LAYER,
+        )
+        self._emitted_function_bodies.add(stmt.name)
 
         # for concise' sake, append a return statement always
         body_range = self.emit_sequence(stmt.body, definition_id, context)
@@ -1767,6 +1819,27 @@ class Assembler(SharedMethods):
             last=body_range.last or definition_id,
         )
     
+    def emit_function_def(self, stmt: FunctionDefStmt, parent: StrOptional) -> BlockRange:
+        """Emit a declared function, or declare it first for standalone use.
+
+        Compiler-generated return-stack helpers use the standalone path.
+        """
+        if parent is not None:
+            return self.raise_or_return(SyntaxError(
+                "Cannot define function inside of another", stmt, CompilerErrorCodes.REMOVE_RETURN
+            ))
+
+        declared = self._function_declarations.get(stmt.name)
+        if declared is None:
+            declaration = self.declare_function_def(stmt, parent)
+            if declaration.first is None:
+                return declaration
+        elif declared is not stmt:
+            # Already reported by declare_function_def() during the first pass.
+            return BlockRange(None, None, True)
+
+        return self.emit_function_body(stmt)
+
     def emit_for_range(self, stmt: ForRangeStmt, parent: StrOptional, context: Context):
         # iterable variable
         try:
@@ -2562,7 +2635,9 @@ class Assembler(SharedMethods):
             expr,
         )
 
-        if VariableTypes.NOTHING in proc_info.return_types:
+        # Use the call expression's inferred types, not the currently emitted
+        # procedure body's accumulated return types (which may be incomplete).
+        if VariableTypes.NOTHING in self.expression_return_types(expr, context):
             return self.raise_or_return(
                 ReturnNothing(
                     f"{expr.callee}: some codepaths might return nothing. If they do, your code will not work.",
@@ -3064,6 +3139,8 @@ class Assembler(SharedMethods):
         self.errors = []
         self.blocks = {}
         self.procedures = {}
+        self._function_declarations = {}
+        self._emitted_function_bodies = set()
         self.symbols = []
         self.current_token = None
 

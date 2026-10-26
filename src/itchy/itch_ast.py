@@ -16,7 +16,7 @@ DUMMY_SPAN = SourceSpan(
 )
 
 
-@dataclass(frozen=True)
+@dataclass()
 class SemanticToken:
     line: int
     character: int
@@ -47,17 +47,17 @@ class Program(ASTNode):
     body: tuple[Stmt, ...]
 
 
-@dataclass(frozen=True)
+@dataclass()
 class BlockStmt(Stmt):
     body: tuple[Stmt, ...]
 
 
-@dataclass(frozen=True)
+@dataclass()
 class ForeverStmt(Stmt):
     body: tuple[Stmt, ...]
 
 
-@dataclass(frozen=True)
+@dataclass()
 class WhileStmt(Stmt):
     condition: Expr
     body: tuple[Stmt, ...]
@@ -69,13 +69,13 @@ class IfBranch(ASTNode):
     body: tuple[Stmt, ...]
 
 
-@dataclass(frozen=True)
+@dataclass()
 class IfStmt(Stmt):
     branches: tuple[IfBranch, ...]
     else_body: tuple[Stmt, ...]
 
 
-@dataclass(frozen=True)
+@dataclass()
 class ForRangeStmt(Stmt):
     variable: str
     start: Expr
@@ -84,21 +84,21 @@ class ForRangeStmt(Stmt):
     body: tuple[Stmt, ...]
 
 
-@dataclass(frozen=True)
+@dataclass()
 class ForInStmt(Stmt):
     variable: str
     iterable: "VarRef"
     body: tuple[Stmt, ...]
 
 
-@dataclass(frozen=True)
+@dataclass()
 class EventHandlerStmt(Stmt):
     name: str
     params: tuple[Expr, ...]
     body: tuple[Stmt, ...]
 
 
-@dataclass(frozen=True)
+@dataclass()
 class FunctionDefStmt(Stmt):
     name: str
     params: tuple["Param", ...]
@@ -107,7 +107,7 @@ class FunctionDefStmt(Stmt):
     warp: bool = False
 
 
-@dataclass(frozen=True)
+@dataclass()
 class VarDefStmt(Stmt):
     type_name: str
     name: str
@@ -120,24 +120,24 @@ class VarRef(ASTNode):
     slice_expr: Expr | None = None
 
 
-@dataclass(frozen=True)
+@dataclass()
 class AssignStmt(Stmt):
     target: VarRef
     value: Expr
 
 
-@dataclass(frozen=True)
+@dataclass()
 class FunctionCallStmt(Stmt):
     callee: str
     args: tuple[Expr, ...]
 
 
-@dataclass(frozen=True)
+@dataclass()
 class BreakStmt(Stmt):
     pass
 
 
-@dataclass(frozen=True)
+@dataclass()
 class ReturnStmt(Stmt):
     values: tuple[Expr, ...]
 
@@ -197,7 +197,7 @@ class BinaryOpExpr(Expr):
     right: Expr
 
 
-@dataclass(frozen=True)
+@dataclass()
 class ForRangeBody:
     start: Expr
     stop: Expr
@@ -205,20 +205,20 @@ class ForRangeBody:
     span: SourceSpan
 
 
-@dataclass(frozen=True)
+@dataclass()
 class ForInBody:
     iterable: VarRef
     span: SourceSpan
 
 
-@dataclass(frozen=True)
+@dataclass()
 class EventParts:
     name: str
     params: tuple[Expr, ...]
     body: tuple[Stmt, ...]
 
 
-@dataclass(frozen=True)
+@dataclass()
 class FunctionParts:
     name: str
     params: tuple[Param, ...]
@@ -227,12 +227,12 @@ class FunctionParts:
     span: SourceSpan
 
 
-@dataclass(frozen=True)
+@dataclass()
 class AssignAction:
     value: Expr
     
 
-@dataclass(frozen=True)
+@dataclass()
 class CallAction:
     arg_groups: tuple[Expr, ...]
 
@@ -257,17 +257,10 @@ class ASTBuilder:
         """
         self.is_strict = is_strict
         self.semantic_tokens: dict[SourceSpan, SemanticToken] = {}
-        self.argument_index: int = 0
-        self.function_definitions: dict[FunctionDefStmt, SourceSpan] = {}
-        self.var_definitions: dict[VarDefStmt, SourceSpan] = {}
         self.function_scope: str | None = None
-        self.warnings = {}
 
     def reset(self) -> None:
-        self.argument_index = 0
         self.semantic_tokens = {}
-        self.function_definitions = {}
-        self.var_definitions = {}
 
 
     @staticmethod
@@ -837,12 +830,10 @@ class ASTBuilder:
         for child in children:
             if isinstance(child, ParsedNode) and child.name == "equation":
                 index += 1
-                self.argument_index = index
                 values.append(self.build_equation(child))
             elif isinstance(child, ParsedNode) and child.name == "varlist1":
                 values.extend(self.build_varlist1(child))
 
-        self.argument_index = index
         
         return tuple(values)
     
@@ -856,7 +847,6 @@ class ASTBuilder:
     def build_functioncall(self, node: ParsedNode) -> FunctionCallStmt:
         function_name = self.find_first_token(node, Definitions.Symbol.name)
         self.emit_token(function_name, "function")
-        self.argument_index = 0
         args = self.build_varlist1(self.find_first_node(node, "args"))
         stmt = FunctionCallStmt(
             function_name.literal,
@@ -946,8 +936,6 @@ class ASTBuilder:
             shared,
             span=symbol_token.span
         )
-
-        self.var_definitions[stmt] = stmt.span
     
         return stmt
 
@@ -1048,8 +1036,6 @@ class ASTBuilder:
             span=parts.span, 
             dummy=node.dummy_node
         )
-
-        self.function_definitions[stmt] = stmt.span
         
         return stmt
     
