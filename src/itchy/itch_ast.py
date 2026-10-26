@@ -1,10 +1,10 @@
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, replace, field
 from typing import TypeVar
 from itchy.tree import ParsedNode
 from itchy.parser import Token, Sequence, Repeat, OptionalNode, Alternative
 from itchy.shared_templates import ASTNode, AssetTypes
 from itchy.tokenizer import GenericRules, Definitions, Tokenizer
-from itchy.shared_templates import SourceSpan, SourcePosition
+from itchy.shared_templates import SourceSpan, SourcePosition, VariableTypes
 from typing import Callable
 import ast
 
@@ -28,15 +28,21 @@ class Stmt(ASTNode):
     pass
 
 
+@dataclass()
 class Expr(ASTNode):
-    pass
+    return_types: set[VariableTypes] = field(
+        default_factory=lambda: set(),
+        init=False,
+        compare=False,
+        repr=False
+    )
 
 
 class Event(ASTNode):
     pass
 
 
-@dataclass(frozen=True)
+@dataclass()
 class Program(ASTNode):
     body: tuple[Stmt, ...]
 
@@ -57,7 +63,7 @@ class WhileStmt(Stmt):
     body: tuple[Stmt, ...]
 
 
-@dataclass(frozen=True)
+@dataclass()
 class IfBranch(ASTNode):
     condition: Expr
     body: tuple[Stmt, ...]
@@ -108,7 +114,7 @@ class VarDefStmt(Stmt):
     shared: bool = False
 
 
-@dataclass(frozen=True)
+@dataclass()
 class VarRef(ASTNode):
     root: str
     slice_expr: Expr | None = None
@@ -136,55 +142,55 @@ class ReturnStmt(Stmt):
     values: tuple[Expr, ...]
 
 
-@dataclass(frozen=True)
+@dataclass()
 class Param(ASTNode):
     name: str
     type_name: str
 
 
-@dataclass(frozen=True)
+@dataclass()
 class VarExpr(Expr):
     ref: VarRef
 
 
-@dataclass(frozen=True)
+@dataclass()
 class FunctionCallExpr(Expr):
     callee: str
     args: tuple[Expr, ...]
 
 
-@dataclass(frozen=True)
+@dataclass()
 class TableExpr(Expr):
     values: tuple[Expr, ...]
 
 
-@dataclass(frozen=True)
+@dataclass()
 class BoolExpr(Expr):
     value: bool
 
 
-@dataclass(frozen=True)
+@dataclass()
 class NumberExpr(Expr):
     value: int | float
 
 
-@dataclass(frozen=True)
+@dataclass()
 class StringExpr(Expr):
     value: str
 
 
-@dataclass(frozen=True)
+@dataclass()
 class AssetExpr(Expr):
     asset_type: AssetTypes
     args: tuple[Expr, ...]
 
-@dataclass(frozen=True)
+@dataclass()
 class UnaryOpExpr(Expr):
     op: str
     value: Expr
 
 
-@dataclass(frozen=True)
+@dataclass()
 class BinaryOpExpr(Expr):
     left: Expr
     op: str

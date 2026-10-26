@@ -2698,7 +2698,7 @@ class Assembler(SharedMethods):
             "<": ("operator_lt", "OPERAND1", "OPERAND2"),
             "and": ("operator_and", "OPERAND1", "OPERAND2"),
             "or": ("operator_or", "OPERAND1", "OPERAND2"),
-            "in": ("operator_contains", "STRING1", "STRING2")
+            # "in": ("operator_contains", "STRING1", "STRING2")
         }[op]
         if op in {"==", ">", "<", "and", "or"}:
             return_type = VariableTypes.BOOL

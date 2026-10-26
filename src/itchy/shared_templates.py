@@ -17,7 +17,7 @@ class SourceSpan:
     end: SourcePosition
 
 
-@dataclass(frozen=True, kw_only=True)
+@dataclass(kw_only=True)
 class ASTNode:
     span: SourceSpan = field(default=SourceSpan(SourcePosition(-1, -1), SourcePosition(-1, -1)), kw_only=True, repr=False)
     dummy: bool=False
