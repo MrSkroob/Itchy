@@ -104,6 +104,7 @@ class FunctionDefStmt(Stmt):
     params: tuple["Param", ...]
     body: tuple[Stmt, ...]
     type_annotation: tuple[str, ...]=()
+    inferred_types: set[VariableTypes] = field(default_factory=lambda: set())
     warp: bool = False
 
 
@@ -1028,11 +1029,11 @@ class ASTBuilder:
         parts = self.build_function(function)
 
         stmt = FunctionDefStmt(
-            parts.name,
-            parts.params,
-            parts.body,
-            parts.type_annotation,
-            warp,
+            name=parts.name,
+            params=parts.params,
+            body=parts.body,
+            type_annotation=parts.type_annotation,
+            warp=warp,
             span=parts.span, 
             dummy=node.dummy_node
         )

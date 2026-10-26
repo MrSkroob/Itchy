@@ -977,8 +977,8 @@ class Assembler(SharedMethods):
                 )
 
             proc_data.unfulfilled_types.difference_update(return_type)
-            if VariableTypes.VAR in return_type:
-                proc_data.unfulfilled_types.intersection_update({VariableTypes.NOTHING})
+            # if VariableTypes.VAR in return_type:
+            #     proc_data.unfulfilled_types.intersection_update({VariableTypes.NOTHING})
         else:
             proc_data.return_nothings += 1
 
@@ -1765,7 +1765,7 @@ class Assembler(SharedMethods):
             argument_types=argument_types_tuple,
             unfulfilled_types=unfulfilled_types,
             # An annotation is available immediately, even for forward calls.
-            return_types=set(unfulfilled_types) if stmt.type_annotation else {VariableTypes.NOTHING},
+            return_types=stmt.inferred_types,
             definition_location=stmt.span,
         )
 
@@ -1802,8 +1802,8 @@ class Assembler(SharedMethods):
             self.blocks[definition_id]["next"] = body_range.first
             self.blocks[body_range.first]["parent"] = definition_id
 
-        if body_range.terminates and proc_info.return_nothings == 0 and VariableTypes.NOTHING in proc_info.return_types: 
-            proc_info.return_types.remove(VariableTypes.NOTHING)
+        # if body_range.terminates and proc_info.return_nothings == 0 and VariableTypes.NOTHING in proc_info.return_types: 
+        #     proc_info.return_types.remove(VariableTypes.NOTHING)
 
         if len(proc_info.unfulfilled_types) != 0 and not (len(proc_info.unfulfilled_types) == 1 and VariableTypes.NOTHING in proc_info.unfulfilled_types):
             self.raise_or_return(TypeMismatch(
