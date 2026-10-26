@@ -11,49 +11,22 @@ from itchy.itch_ast import (
     AssetExpr, AssignStmt, BinaryOpExpr, BlockStmt, BoolExpr, BreakStmt,
     EventHandlerStmt, Expr, ForInStmt, ForRangeStmt, ForeverStmt,
     FunctionCallExpr, FunctionCallStmt, FunctionDefStmt, IfStmt,
-    NumberExpr, Program, ReturnStmt, Stmt, StringExpr, TableExpr, ASTNode,
-    UnaryOpExpr, VarDefStmt, VarExpr, WhileStmt, SourceSpan
+    NumberExpr, Program, ReturnStmt, Stmt, StringExpr, TableExpr,
+    UnaryOpExpr, VarDefStmt, VarExpr, WhileStmt
 )
 
 
 StrOptional = str | None
-
-
-class SymbolType(StrEnum):
-    PARAMETER = "parameter"
-    VARIABLE = "variable"
-    FUNCTION = "function"
-    MESSAGE = "message"
-    EVENT = "event"
-    ASSET = "asset"
-
-
-@dataclass(frozen=True, kw_only=True)
-class SymbolOccurence:
-    span: SourceSpan
-    definition_location: SourceSpan | None
-    context: StrOptional
-    symbol_type: SymbolType
-    name: str
-
 
 @dataclass
 class Context:
     proc: str | None = None
 
 
-class NodeType(Enum):
-    FUNCTION = auto()
-    VARIABLE = auto()
-
-
 class TypeInferer:
     def __init__(self) -> None:
-        self.symbols: list[tuple[SymbolOccurence, ASTNode]]
         self.variables: dict[str, VariableTypes] = {}
         self.parameters: dict[tuple[str, str], VariableTypes] = {}
-
-        self.uncalled_procedures: set[str] = set()
         self.procedures: dict[str, FunctionDefStmt] = {}
 
     def _get_var_type(self, var_name: str, context: Context) -> VariableTypes:
@@ -102,7 +75,8 @@ class TypeInferer:
             case FunctionDefStmt():
                 types.update(self.handle_body(stmt.body, Context(stmt.name)))
             case FunctionCallStmt():
-                pass
+                for i in stmt.args:
+                    self.handle_expr(i, context);
             case BreakStmt():
                 pass
             case ReturnStmt():
@@ -156,9 +130,14 @@ class TypeInferer:
                 types = self.procedure_return_types.get(expr.callee, {VariableTypes.UNKNOWN}).copy()
             case VarExpr():
                 if expr.ref.slice_expr:
-                    self.handle_expr(expr.ref.slice_expr, context)
+                    if self._get_var_type(expr.ref.root, context) == VariableTypes.LIST:
+                        self.handle_expr(expr.ref.slice_expr, context)
+                        types = {VariableTypes.VAR}
+                    else:
+                        types = {VariableTypes.STRING}
+                else:
                     # expr.return_types = 
-                types = {self._get_var_type(expr.ref.root, context)}
+                    types = {self._get_var_type(expr.ref.root, context)}
             case TableExpr() :
                 types = {VariableTypes.LIST}
                 for value in expr.values: 
@@ -185,6 +164,9 @@ class TypeInferer:
         return types
 
     def handle_program(self, program: Program):
+        self.procedures = {}
+        self.parameters = {}
+        self.procedures = {}
         self._collect_procedures(program)
 
         # collect global variables before inference.

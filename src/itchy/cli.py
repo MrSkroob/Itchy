@@ -8,6 +8,7 @@ from itchy.itch_ast import ASTBuilder, Program
 from itchy.errors import format_compiler_error, format_syntax_error
 from itchy.compilers.assembler import Assembler, CompilerError
 from itchy.compilers.javascriptassembler import JavascriptAssembler
+from itchy.compilers.type_analyser import TypeInferer
 
 # from tools.ast_printer import print_ast
 # from itchy.dummy_nodes import find_last_node
@@ -19,6 +20,7 @@ from pathlib import Path
 import time
 
 
+type_inferer = TypeInferer()
 # Replace RULES with whatever list of grammar rules your parser uses.
 strict_parser = Parser()
 
@@ -74,6 +76,7 @@ def compile_targets(
             )
             return None
         tree = ast_builder.build(parsed.tree)
+        type_inferer.handle_program(tree)
 
         programs[file.stem] = tree
         metadata[file.stem] = (source, file)
