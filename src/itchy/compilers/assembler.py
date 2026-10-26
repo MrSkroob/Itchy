@@ -60,7 +60,6 @@ ScratchFieldRaw = tuple[str, None] | tuple[str, str]
 @dataclass
 class ScratchInput:
     value: ScratchInputRaw
-    return_type: set[VariableTypes] = field(default_factory=lambda: {VariableTypes.NOTHING})
     manufactured: bool=False # tells code that this input was automatically generated (not by the user) 
     # so should be ignored in subsequent error collection.
 
@@ -83,7 +82,7 @@ class InputType(Enum):
     BLOCK_AND_SHADOW = 3 # do not use - because compiler does not have default values.
 
 
-PLACE_HOLDER_0 = ScratchInput((InputType.BLOCK_AND_SHADOW, (DataType.NUMBER, "0")), {VariableTypes.VAR}, True)
+PLACE_HOLDER_0 = ScratchInput((InputType.BLOCK_AND_SHADOW, (DataType.NUMBER, "0")), True)
 
 
 class SymbolType(StrEnum):
@@ -809,34 +808,75 @@ class Assembler(SharedMethods):
             case _:
                 raise TypeError("Bad statement type")
 
+    def expression_return_types(self, expr: Expr, context: Context) -> set[VariableTypes]:
+        """Get an expression's types, without depending on emitted Scratch inputs.
+
+        The AST owns the ordinary type information. Scratch reporters are the
+        exception: their AST type is UNKNOWN, but scratch_blocks.py has their
+        exact return types. Compiler-generated expressions have no ASTBuilder
+        pass, so we infer their types locally when return_types is empty.
+        """
+        if isinstance(expr, FunctionCallExpr):
+            block_data = self.block_pool.get(expr.callee)
+            if isinstance(block_data, Reporter):
+                return set(block_data.return_type)
+
+            proc_info = self.procedures.get(expr.callee)
+            if proc_info is not None:
+                return set(proc_info.return_types)
+
+        if expr.return_types:
+            return set(expr.return_types)
+
+        # Fallback for expressions built by the assembler itself (e.g. its
+        # return-stack helper statements), which never visit ASTBuilder.
+        match expr:
+            case NumberExpr():
+                return {VariableTypes.NUMBER}
+            case StringExpr() | AssetExpr():
+                return {VariableTypes.STRING}
+            case BoolExpr():
+                return {VariableTypes.BOOL}
+            case TableExpr():
+                return {VariableTypes.LIST}
+            case VarExpr(ref=ref):
+                key = (ref.root, context.function_context)
+                var_id = self.variable_map.get(key)
+                if var_id is None:
+                    var_id = self.variable_map.get((ref.root, None))
+                if var_id is not None:
+                    var_type = self.variables[var_id].var_type
+                    if ref.slice_expr is not None:
+                        return {VariableTypes.VAR if var_type == VariableTypes.LIST else VariableTypes.STRING}
+                    return {var_type}
+            case UnaryOpExpr(op=op):
+                return {VariableTypes.BOOL if op == "not" else VariableTypes.NUMBER}
+            case BinaryOpExpr(op=op):
+                if op in {"==", ">", "<", "and", "or", "in"}:
+                    return {VariableTypes.BOOL}
+                return {VariableTypes.NUMBER}
+
+        return {VariableTypes.UNKNOWN}
+
     @staticmethod
     def static_type_check(a: VariableTypes, b: set[VariableTypes]):
         if a in b:
             return True
 
-        # scratch represents the contents of a list as a space separated string... for some reason.
-        # so, whenever you use it as a parameter, it is treated is a string. 
-
-        # if a == VariableTypes.LIST:
-        #     a = VariableTypes.STRING
-
+        # A list used as an expression is coerced to a space-separated string
+        # by Scratch. Do not mutate b: it may be an AST node's return_types.
         if VariableTypes.LIST in b:
-            b.add(VariableTypes.STRING)
-            b.remove(VariableTypes.LIST)
+            b = (b - {VariableTypes.LIST}) | {VariableTypes.STRING}
+            if a in b:
+                return True
 
         if a == VariableTypes.NOTHING:
             return False
 
-        if a == VariableTypes.VAR:
+        if a in {VariableTypes.VAR, VariableTypes.UNKNOWN}:
             return True
 
-        if a == VariableTypes.UNKNOWN:
-            return True
-
-        if VariableTypes.VAR in b:
-            return True
-
-        return False
+        return VariableTypes.VAR in b
 
 
     def type_check(self, a: VariableTypes, b: set[VariableTypes], node: ASTNode | None) -> TypeErrorSeverity:
@@ -904,7 +944,7 @@ class Assembler(SharedMethods):
             self._emit_return_helpers()
             # technically it's always 1 or 0, but this was left over for future where we might support more than one
             # return expressions (tuples)
-            return_type = self.emit_expr(stmt.values[0], context, BlockRange(None, None, True), None).return_type
+            return_type = self.expression_return_types(stmt.values[0], context)
 
             proc_data.return_types = \
                 proc_data.return_types.union(return_type)
@@ -1123,9 +1163,10 @@ class Assembler(SharedMethods):
                 block_id,
             )
 
+            actual_types = self.expression_return_types(arg_expr, context)
             if self.type_check(
                 VariableTypes.STRING,
-                emitted.return_type,
+                actual_types,
                 arg_expr,
             ) != TypeErrorSeverity.OK:
                 return self.raise_or_return(
@@ -1133,7 +1174,7 @@ class Assembler(SharedMethods):
                         callee,
                         index,
                         VariableTypes.STRING,
-                        emitted.return_type,
+                        actual_types,
                         arg_expr,
                     ),
                     PLACE_HOLDER_0.value,
@@ -1146,7 +1187,7 @@ class Assembler(SharedMethods):
         ]
 
         if isinstance(arg_expr, StringExpr):
-            actual_type = {VariableTypes.STRING}
+            actual_type = self.expression_return_types(arg_expr, context)
 
             if self.type_check(
                 expected_type,
@@ -1176,9 +1217,10 @@ class Assembler(SharedMethods):
             block_id,
         )
 
+        actual_types = self.expression_return_types(arg_expr, context)
         if self.type_check(
             expected_type,
-            emitted.return_type,
+            actual_types,
             arg_expr,
         ) != TypeErrorSeverity.OK:
             return self.raise_or_return(
@@ -1186,7 +1228,7 @@ class Assembler(SharedMethods):
                     callee,
                     index,
                     expected_type,
-                    emitted.return_type,
+                    actual_types,
                     arg_expr,
                 ),
                 PLACE_HOLDER_0.value,
@@ -1433,7 +1475,7 @@ class Assembler(SharedMethods):
                 block_id,
             )
 
-            user_arg_type = emitted_arg.return_type
+            user_arg_type = self.expression_return_types(arg_expr, context)
 
             if isinstance(arg_expr, VarRef) and not arg_expr.dummy:
                 self.get_variable(arg_expr, context)
@@ -2175,15 +2217,16 @@ class Assembler(SharedMethods):
             expr = self.emit_expr(
                 value, context, block_range, block_id
             )
-            error_severity = self.type_check(self.variables[var_id].var_type, expr.return_type, value)
+            actual_types = self.expression_return_types(value, context)
+            error_severity = self.type_check(self.variables[var_id].var_type, actual_types, value)
 
             if error_severity == TypeErrorSeverity.DISCRETION:
                 error = TypeMismatch(
-                    f"'{target.root}': not one of ({', '.join(i.value for i in expr.return_type)}) matches {self.variables[var_id].var_type}", 
+                    f"'{target.root}': not one of ({', '.join(i.value for i in actual_types)}) matches {self.variables[var_id].var_type}", 
                     value)
                 self.raise_or_return(error)
             elif error_severity == TypeErrorSeverity.ERROR:
-                error = type_error_factory(target.root, 0, expected=self.variables[var_id].var_type, actual=expr.return_type, stmt=value)
+                error = type_error_factory(target.root, 0, expected=self.variables[var_id].var_type, actual=actual_types, stmt=value)
                 self.raise_or_return(error)
 
             inputs["VALUE"] = expr.value
@@ -2198,12 +2241,12 @@ class Assembler(SharedMethods):
         
         match expr:
             case NumberExpr(value=value):
-                return ScratchInput((InputType.SHADOW_ONLY, (DataType.NUMBER, str(value))), {VariableTypes.NUMBER})
+                return ScratchInput((InputType.SHADOW_ONLY, (DataType.NUMBER, str(value))))
             case StringExpr(value=value):
                 if re.match(HEXCODE, value) is not None:
-                    return ScratchInput((InputType.SHADOW_ONLY, (DataType.COLOR, value)), {VariableTypes.STRING})
+                    return ScratchInput((InputType.SHADOW_ONLY, (DataType.COLOR, value)))
                 else:
-                    return ScratchInput((InputType.SHADOW_ONLY, (DataType.STRING, value)), {VariableTypes.STRING})
+                    return ScratchInput((InputType.SHADOW_ONLY, (DataType.STRING, value)))
             case AssetExpr():
                 if self.count_args(expr.args) != 1:
                     return self.raise_or_return(ArgumentError(
@@ -2224,7 +2267,7 @@ class Assembler(SharedMethods):
                         name=expr.args[0].value
                     ), expr)
 
-                return ScratchInput((InputType.SHADOW_ONLY, (DataType.STRING, expr.args[0].value)), {VariableTypes.STRING})
+                return ScratchInput((InputType.SHADOW_ONLY, (DataType.STRING, expr.args[0].value)))
             case BoolExpr(value=value):
                 # in scratch:
                 # if (0 == 0) == "true" is true, so we can just use strings without any fancy conversion
@@ -2248,7 +2291,7 @@ class Assembler(SharedMethods):
                     }
                 )
 
-                return ScratchInput((InputType.BLOCK_ONLY, operator_id), {VariableTypes.BOOL})
+                return ScratchInput((InputType.BLOCK_ONLY, operator_id))
             case VarExpr(ref=ref):
                 return self.emit_var_ref(ref, context, block_parent, parent)
             case UnaryOpExpr(op=op, value=value):
@@ -2290,7 +2333,6 @@ class Assembler(SharedMethods):
                                     var_id
                                 )
                             ),
-                            {VariableTypes.LIST}
                         )
 
 
@@ -2498,10 +2540,7 @@ class Assembler(SharedMethods):
             else InputType.BLOCK_AND_SHADOW
         )
 
-        return ScratchInput(
-            (input_type, block_id),
-            block_data.return_type,
-        )
+        return ScratchInput((input_type, block_id))
 
     def _emit_procedure_expr(
         self,
@@ -2608,17 +2647,16 @@ class Assembler(SharedMethods):
             block_parent,
             parent,
         )
-        return_input.return_type = set(proc_info.return_types)
-
         return return_input
 
     def emit_unary_expr(self, op: str, value: Expr, context: Context, block_parent: BlockRange, parent: StrOptional) -> ScratchInput:
         block_id = self.new_id()
         if op == "not":
             emitted_return = self.emit_expr(value, context, block_parent, block_id)
-            if self.type_check(VariableTypes.BOOL, emitted_return.return_type, value) != TypeErrorSeverity.OK:
+            actual_types = self.expression_return_types(value, context)
+            if self.type_check(VariableTypes.BOOL, actual_types, value) != TypeErrorSeverity.OK:
                 return self.raise_or_return(
-                    type_error_factory("not", 0, VariableTypes.BOOL, emitted_return.return_type, value),
+                    type_error_factory("not", 0, VariableTypes.BOOL, actual_types, value),
                     PLACE_HOLDER_0,
                 )
             
@@ -2630,13 +2668,14 @@ class Assembler(SharedMethods):
                     "OPERAND": emitted_return.value,
                 },
             )
-            return ScratchInput((InputType.BLOCK_ONLY, block_id), {VariableTypes.BOOL})
+            return ScratchInput((InputType.BLOCK_ONLY, block_id))
 
         if op == "-":
             emitted_return = self.emit_expr(value, context, block_parent, block_id)
-            if self.type_check(VariableTypes.NUMBER, emitted_return.return_type, value) != TypeErrorSeverity.OK:
+            actual_types = self.expression_return_types(value, context)
+            if self.type_check(VariableTypes.NUMBER, actual_types, value) != TypeErrorSeverity.OK:
                 self.raise_or_return(
-                    type_error_factory("-", 0, VariableTypes.NUMBER, emitted_return.return_type, value)
+                    type_error_factory("-", 0, VariableTypes.NUMBER, actual_types, value)
                 )
 
             self.make_block(
@@ -2648,7 +2687,7 @@ class Assembler(SharedMethods):
                     "NUM2": emitted_return.value,
                 },
             )
-            return ScratchInput((InputType.BLOCK_AND_SHADOW, block_id), {VariableTypes.NUMBER})
+            return ScratchInput((InputType.BLOCK_AND_SHADOW, block_id))
 
         raise NotImplementedError(f"Unsupported unary operator: {op}")
     
@@ -2658,10 +2697,13 @@ class Assembler(SharedMethods):
         left_expr = self.emit_expr(left, context, block_parent, block_id)
         right_expr = self.emit_expr(right, context, block_parent, block_id)
 
+        left_types = self.expression_return_types(left, context)
+        right_types = self.expression_return_types(right, context)
+
         if op == "in":
-            if VariableTypes.LIST in right_expr.return_type:
+            if VariableTypes.LIST in right_types:
                 if not isinstance(right, VarExpr):
-                    return self.raise_or_return(type_error_factory("in", 1, VariableTypes.LIST, right_expr.return_type, right), PLACE_HOLDER_0)
+                    return self.raise_or_return(type_error_factory("in", 1, VariableTypes.LIST, right_types, right), PLACE_HOLDER_0)
                 try:
                     list_id = self.get_variable(right.ref, context)
                 except NameError:
@@ -2683,9 +2725,7 @@ class Assembler(SharedMethods):
                     }
                 )
 
-                return ScratchInput(
-                    (InputType.BLOCK_ONLY, block_id), {VariableTypes.BOOL}
-                )
+                return ScratchInput((InputType.BLOCK_ONLY, block_id))
                 
         
         opcode, left_name, right_name = {
@@ -2720,14 +2760,14 @@ class Assembler(SharedMethods):
             left_type_check = VariableTypes.NUMBER
             right_type_check = VariableTypes.NUMBER
 
-        if self.type_check(left_type_check, left_expr.return_type, left) != TypeErrorSeverity.OK:
+        if self.type_check(left_type_check, left_types, left) != TypeErrorSeverity.OK:
             self.raise_or_return(
-                type_error_factory(opcode, 0, left_type_check, left_expr.return_type, left),
+                type_error_factory(opcode, 0, left_type_check, left_types, left),
             )
 
-        if self.type_check(right_type_check, right_expr.return_type, right) != TypeErrorSeverity.OK:
+        if self.type_check(right_type_check, right_types, right) != TypeErrorSeverity.OK:
             self.raise_or_return(
-                type_error_factory(opcode, 1, right_type_check, right_expr.return_type, right),
+                type_error_factory(opcode, 1, right_type_check, right_types, right),
             )
 
         left_input = left_expr.value
@@ -2744,8 +2784,7 @@ class Assembler(SharedMethods):
         )
 
         return ScratchInput(
-            (InputType.BLOCK_ONLY if VariableTypes.BOOL == return_type else InputType.BLOCK_AND_SHADOW, block_id),
-            {return_type},
+            (InputType.BLOCK_ONLY if VariableTypes.BOOL == return_type else InputType.BLOCK_AND_SHADOW, block_id)
         )
 
     def emit_var_ref(self, ref: VarRef, context: Context, block_parent: BlockRange, parent: StrOptional) -> ScratchInput:
@@ -2797,8 +2836,7 @@ class Assembler(SharedMethods):
                 (
                     InputType.BLOCK_AND_SHADOW,
                     reporter_id
-                ),
-                return_type={arg_type}
+                )
             )
         else:
             try:
@@ -2827,8 +2865,7 @@ class Assembler(SharedMethods):
                     )
                     return ScratchInput(
                         (InputType.BLOCK_AND_SHADOW,
-                        operator_id), 
-                        {VariableTypes.VAR}
+                        operator_id)
                     )
                 else:
                     operator_id = self.make_block(
@@ -2850,7 +2887,7 @@ class Assembler(SharedMethods):
                         (
                             InputType.BLOCK_AND_SHADOW,
                             operator_id
-                        ), {VariableTypes.STRING}
+                        )
                     )
 
             else:
@@ -2867,16 +2904,14 @@ class Assembler(SharedMethods):
                                         ref.root,
                                         var_id
                                     )
-                                ),
-                                {var_type}
+                                )
                             ).value,
-                            "OPERAND2": ScratchInput((InputType.SHADOW_ONLY, (DataType.STRING, "true")), {VariableTypes.STRING}).value,
+                            "OPERAND2": ScratchInput((InputType.SHADOW_ONLY, (DataType.STRING, "true"))).value,
                         }
                     )
 
                     return ScratchInput(
-                                (InputType.BLOCK_ONLY, block_id),
-                                {VariableTypes.BOOL},
+                                (InputType.BLOCK_ONLY, block_id)
                             )
 
                 return ScratchInput(
@@ -2887,8 +2922,7 @@ class Assembler(SharedMethods):
                             ref.root,
                             var_id
                         )
-                    ),
-                    {var_type}
+                    )
                 )
         
 
