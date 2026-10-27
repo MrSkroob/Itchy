@@ -842,7 +842,7 @@ class Assembler(SharedMethods):
         # User-defined calls already have their return types in the AST.
         # Prefer these over ProcedureInfo: the callee body may not have been
         # emitted yet, particularly for forward calls and mutual recursion.
-        if expr.return_types:
+        if expr.return_types and not (VariableTypes.UNKNOWN in expr.return_types):
             return set(expr.return_types)
 
         if isinstance(expr, FunctionCallExpr):
@@ -861,16 +861,18 @@ class Assembler(SharedMethods):
                 return {VariableTypes.BOOL}
             case TableExpr():
                 return {VariableTypes.LIST}
-            case VarExpr(ref=ref):
-                key = (ref.root, context.function_context)
-                var_id = self.variable_map.get(key)
-                if var_id is None:
-                    var_id = self.variable_map.get((ref.root, None))
-                if var_id is not None:
-                    var_type = self.variables[var_id].var_type
-                    if ref.slice_expr is not None:
-                        return {VariableTypes.VAR if var_type == VariableTypes.LIST else VariableTypes.STRING}
-                    return {var_type}
+            case VarExpr():
+                # key = (ref.root, context.function_context)
+                key = self.get_variable_safe(expr.ref, context)
+                if key is not None:
+
+                    variable = self.variables[self.variable_map[key]]
+
+                    if expr.ref.slice_expr:
+                        if variable.var_type == VariableTypes.LIST:
+                            return {VariableTypes.VAR}
+                
+                    return {variable.var_type}
             case UnaryOpExpr(op=op):
                 return {VariableTypes.BOOL if op == "not" else VariableTypes.NUMBER}
             case BinaryOpExpr(op=op):
@@ -1502,6 +1504,7 @@ class Assembler(SharedMethods):
                 self.get_variable(arg_expr, context)
 
             if self.type_check(arg_type, user_arg_type, arg_expr) != TypeErrorSeverity.OK:
+                print(arg_type, user_arg_type)
                 failure = type_error_factory(stmt.callee, index, arg_type, user_arg_type, arg_expr)
                 self.errors.append(failure)
             

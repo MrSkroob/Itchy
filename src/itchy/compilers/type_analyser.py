@@ -127,14 +127,16 @@ class TypeInferer:
             case FunctionCallExpr():
                 for arg in expr.args:
                     self.handle_expr(arg, context)
+                    # print(arg.return_types)
 
                 types = self.procedure_return_types.get(expr.callee, {VariableTypes.UNKNOWN}).copy()
             case VarExpr():
                 if expr.ref.slice_expr:
-                    if self._get_var_type(expr.ref.root, context) == VariableTypes.LIST:
+                    var_type = self._get_var_type(expr.ref.root, context)
+                    if var_type == VariableTypes.LIST:
                         self.handle_expr(expr.ref.slice_expr, context)
                         types = {VariableTypes.VAR}
-                    else:
+                    elif var_type != VariableTypes.UNKNOWN:
                         types = {VariableTypes.STRING}
                 else:
                     # expr.return_types = 
@@ -145,6 +147,7 @@ class TypeInferer:
                     self.handle_expr(value, context)
             case _:
                 types = {VariableTypes.UNKNOWN}
+                raise TypeError("WHAT")
 
         # raise TypeError("NOTHING MATCHED?!?!??!?!?!")
         expr.return_types = types
