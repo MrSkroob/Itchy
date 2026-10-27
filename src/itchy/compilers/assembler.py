@@ -155,7 +155,6 @@ class ProcedureInfo:
 
     # if applicable. counts the number of return statements that return nothing.
     return_nothings: int = 0
-    unfulfilled_types: set[VariableTypes]=field(default_factory=lambda: set())
     return_types: set[VariableTypes]=field(default_factory=lambda: {VariableTypes.NOTHING})
 
 
@@ -969,14 +968,13 @@ class Assembler(SharedMethods):
             # return expressions (tuples)
             return_type = self.expression_return_types(stmt.values[0], context)
 
-            proc_data.return_types = \
-                proc_data.return_types.union(return_type)
+            proc_data.return_types.update(return_type)
             for value in stmt.values:
                 body.append(
                     FunctionCallStmt(SET_RETURN_VALUE, (value, VarExpr(VarRef(FRAME_INDEX))))
                 )
 
-            proc_data.unfulfilled_types.difference_update(return_type)
+            # proc_data.unfulfilled_types.difference_update(return_type)
             # if VariableTypes.VAR in return_type:
             #     proc_data.unfulfilled_types.intersection_update({VariableTypes.NOTHING})
         else:
@@ -1748,13 +1746,6 @@ class Assembler(SharedMethods):
         argument_types_tuple = tuple(argument_types)
         proccode = " ".join(proccode_parts)
 
-        unfulfilled_types: set[VariableTypes] = set()
-
-        for i in stmt.type_annotation:
-            if i not in VariableTypes:
-                return self.raise_or_return(type_param_error_factory(stmt, "Type annotation"))
-            unfulfilled_types.add(VariableTypes(i))
-
         proc_info = ProcedureInfo(
             name=stmt.name,
             prototype_id=prototype_id,
@@ -1763,7 +1754,6 @@ class Assembler(SharedMethods):
             argument_names=argument_names_tuple,
             argument_defaults=argument_defaults_tuple,
             argument_types=argument_types_tuple,
-            unfulfilled_types=unfulfilled_types,
             # An annotation is available immediately, even for forward calls.
             return_types=stmt.inferred_types,
             definition_location=stmt.span,
@@ -1805,14 +1795,23 @@ class Assembler(SharedMethods):
         # if body_range.terminates and proc_info.return_nothings == 0 and VariableTypes.NOTHING in proc_info.return_types: 
         #     proc_info.return_types.remove(VariableTypes.NOTHING)
 
-        if len(proc_info.unfulfilled_types) != 0 and not (len(proc_info.unfulfilled_types) == 1 and VariableTypes.NOTHING in proc_info.unfulfilled_types):
+        type_annotations = set()
+
+        for i in stmt.type_annotation:
+            type_annotations.add(VariableTypes(i))
+
+        missing = type_annotations.difference(stmt.inferred_types)
+
+        if len(missing) > 0:
             self.raise_or_return(TypeMismatch(
-                f"'{stmt.name}': Not all codepaths end in specified types. Missing: ({', '.join(i for i in proc_info.unfulfilled_types)})",
+                f"'{stmt.name}': Not all codepaths end in specified types. Missing: ({', '.join(i for i in missing)})",
                 stmt
                 ))
 
         if len(stmt.type_annotation) > 0:
             proc_info.return_types = set(VariableTypes(i) for i in stmt.type_annotation)
+
+        # FIXME: still no worky - return_types seem to not update?
 
         return BlockRange(
             first=definition_id,

@@ -74,7 +74,7 @@ class TypeInferer:
                 types.update(self.handle_body(stmt.body, context))
             case FunctionDefStmt():
                 types.update(self.handle_body(stmt.body, Context(stmt.name)))
-                stmt.inferred_types = types.copy()
+                # stmt.inferred_types = types.copy()
             case FunctionCallStmt():
                 for i in stmt.args:
                     self.handle_expr(i, context);
@@ -199,7 +199,11 @@ class TypeInferer:
                     current.update(inferred)
                     changed = True
 
+                self.procedures[name].inferred_types = current
+
             if not changed:
                 break
 
         self.handle_body(program.body, Context())
+
+
