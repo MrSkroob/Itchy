@@ -1803,7 +1803,6 @@ class Assembler(SharedMethods):
         missing = type_annotations.difference(stmt.inferred_types)
 
         if len(missing) > 0:
-            print(type_annotations, stmt.inferred_types)
             self.raise_or_return(TypeMismatch(
                 f"'{stmt.name}': Not all codepaths end in specified types. Missing: ({', '.join(i for i in missing)})",
                 stmt
