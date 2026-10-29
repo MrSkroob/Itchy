@@ -973,11 +973,12 @@ class Assembler(SharedMethods):
 
             # if self.type_check(return_type, )
 
-            for return_type in return_types:
-                if self.type_check(return_type, proc_data.user_annotations, stmt.values[0]) != TypeErrorSeverity.OK:
-                    self.raise_or_return(
-                        TypeMismatch(f"{return_type.value} is not compatible with any of ({', '.join(i for i in proc_data.user_annotations)})", stmt.values[0])
-                    )
+            if len(proc_data.user_annotations) > 0:
+                for return_type in return_types:
+                    if self.type_check(return_type, proc_data.user_annotations, stmt.values[0]) != TypeErrorSeverity.OK:
+                        self.raise_or_return(
+                            TypeMismatch(f"{return_type.value} is not compatible with any of ({', '.join(i for i in proc_data.user_annotations)})", stmt.values[0])
+                        )
 
             proc_data.return_types.update(return_types)
 
