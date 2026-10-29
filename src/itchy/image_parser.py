@@ -64,6 +64,9 @@ def get_png_size(path: str) -> tuple[int, int]:
         header = f.read(24)
 
     if header[:8] != b"\x89PNG\r\n\x1a\n":
+        print(f"File: {path}")
+        print(f"Header: {header!r}")
+        print(f"Signature: {header[:8].hex(' ')}")
         raise ValueError("Not a PNG file")
 
     width, height = struct.unpack(">II", header[16:24])
