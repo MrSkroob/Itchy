@@ -155,6 +155,7 @@ class ProcedureInfo:
 
     # if applicable. counts the number of return statements that return nothing.
     return_nothings: int = 0
+    user_annotations: set[VariableTypes]=field(default_factory=lambda: {VariableTypes.NOTHING})
     return_types: set[VariableTypes]=field(default_factory=lambda: {VariableTypes.NOTHING})
 
 
@@ -968,9 +969,18 @@ class Assembler(SharedMethods):
             self._emit_return_helpers()
             # technically it's always 1 or 0, but this was left over for future where we might support more than one
             # return expressions (tuples)
-            return_type = self.expression_return_types(stmt.values[0], context)
+            return_types = self.expression_return_types(stmt.values[0], context)
 
-            proc_data.return_types.update(return_type)
+            # if self.type_check(return_type, )
+
+            for return_type in return_types:
+                if self.type_check(return_type, proc_data.user_annotations, stmt.values[0]) != TypeErrorSeverity.OK:
+                    self.raise_or_return(
+                        TypeMismatch(f"{return_type.value} is not compatible with any of ({', '.join(i for i in proc_data.user_annotations)})", stmt.values[0])
+                    )
+
+            proc_data.return_types.update(return_types)
+
             for value in stmt.values:
                 body.append(
                     FunctionCallStmt(SET_RETURN_VALUE, (value, VarExpr(VarRef(FRAME_INDEX))))
@@ -1749,6 +1759,11 @@ class Assembler(SharedMethods):
         argument_types_tuple = tuple(argument_types)
         proccode = " ".join(proccode_parts)
 
+        user_annotations = set()
+
+        for i in stmt.type_annotation:
+            user_annotations.add(VariableTypes(i))
+
         proc_info = ProcedureInfo(
             name=stmt.name,
             prototype_id=prototype_id,
@@ -1758,6 +1773,9 @@ class Assembler(SharedMethods):
             argument_defaults=argument_defaults_tuple,
             argument_types=argument_types_tuple,
             # An annotation is available immediately, even for forward calls.
+
+            user_annotations=user_annotations,
+            
             return_types=stmt.inferred_types,
             definition_location=stmt.span,
         )
@@ -1804,6 +1822,9 @@ class Assembler(SharedMethods):
             type_annotations.add(VariableTypes(i))
 
         missing = type_annotations.difference(stmt.inferred_types)
+
+        if VariableTypes.VAR in stmt.inferred_types:
+            missing.intersection_update({VariableTypes.NOTHING})
 
         if len(missing) > 0:
             self.raise_or_return(TypeMismatch(

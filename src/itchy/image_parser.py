@@ -73,6 +73,39 @@ def get_png_size(path: str) -> tuple[int, int]:
     return width, height
 
 
+# def get_webp_size():
+#     chunk_type = header[12:16]
+    
+#     # Lossy WebP
+#     if chunk_type == b"VP8 ":
+#         if len(header) < 30 or header[23:26] != b"\x9d\x01\x2a":
+#             raise ValueError("Invalid VP8 header")
+
+#         width, height = struct.unpack("<HH", header[26:30])
+#         return width & 0x3FFF, height & 0x3FFF
+
+#     # Lossless WebP
+#     if chunk_type == b"VP8L":
+#         if len(header) < 25 or header[20] != 0x2F:
+#             raise ValueError("Invalid VP8L header")
+
+#         bits = int.from_bytes(header[21:25], "little")
+#         width = (bits & 0x3FFF) + 1
+#         height = ((bits >> 14) & 0x3FFF) + 1
+#         return width, height
+
+#     # Extended WebP (including animated WebP)
+#     if chunk_type == b"VP8X":
+#         if len(header) < 30:
+#             raise ValueError("Incomplete VP8X header")
+
+#         width = int.from_bytes(header[24:27], "little") + 1
+#         height = int.from_bytes(header[27:30], "little") + 1
+#         return width, height
+
+#     raise ValueError(f"Unsupported WebP chunk: {chunk_type!r}")
+
+
 def get_svg_size(path: str) -> tuple[float, float]:
     root = ET.parse(path).getroot()
 

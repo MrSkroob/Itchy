@@ -198,6 +198,8 @@ class TypeInferer:
 
                 current = self.procedure_return_types[name]
 
+                # print(inferred, stmt.name)
+
                 if not inferred.issubset(current):
                     current.update(inferred)
                     changed = True
@@ -206,6 +208,9 @@ class TypeInferer:
 
             if not changed:
                 break
+
+        # for i in self.procedures.values():
+        #     print(i.inferred_types, i.name)
 
         self.handle_body(program.body, Context())
 
